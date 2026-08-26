@@ -14,6 +14,7 @@ from google.adk import Context, Event, Workflow
 from google.adk.events import EventActions
 from google.adk.workflow import node
 
+from harness.context import prefix_hash
 from harness.models.agent_step import AgentStep
 from harness.models.checkpoint import Checkpoint
 from harness.models.ledger import TaskLedger
@@ -62,10 +63,8 @@ _WORKSPACE_MANAGER = (
     if SETTINGS.source_repository
     else None
 )
-_STATIC_PREFIX_HASH = hashlib.sha256(
-    SETTINGS.static_instruction.encode()
-).hexdigest()
-_STATIC_PREFIX_TOKEN_ESTIMATE = len(SETTINGS.static_instruction) // 4
+_STATIC_PREFIX_HASH = prefix_hash(SETTINGS.static_prefix)
+_STATIC_PREFIX_TOKEN_ESTIMATE = len(SETTINGS.static_prefix) // 4
 
 
 def _session_id(ctx: Context) -> str | None:
@@ -258,6 +257,19 @@ def _malformed_step(error: ValueError) -> AgentStep:
     )
 
 
+def _set_model_call_state(ctx: Context, *, task_id: str, dynamic_tokens: int) -> None:
+    """Expose current packet identity to ADK callbacks before the model call."""
+
+    ctx.state.update(
+        {
+            "task_id": task_id,
+            "stable_instruction_sha256": _STATIC_PREFIX_HASH,
+            "static_prefix_tokens_estimate": _STATIC_PREFIX_TOKEN_ESTIMATE,
+            "dynamic_context_tokens_estimate": dynamic_tokens,
+        }
+    )
+
+
 @node
 async def verify_task(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any]:
     """Run deterministic checks; model claims are evidence, not verdicts."""
@@ -416,6 +428,7 @@ async def orchestrate(
         total_context_estimate = _STATIC_PREFIX_TOKEN_ESTIMATE + dynamic_tokens
         should_compact = total_context_estimate >= SETTINGS.compact_at_tokens
 
+        _set_model_call_state(ctx, task_id=task_id, dynamic_tokens=dynamic_tokens)
         raw_step = await ctx.run_node(coding_worker, node_input=packet)
         try:
             step = parse_agent_step(raw_step)

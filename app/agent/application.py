@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.apps.app import App, EventsCompactionConfig, ResumabilityConfig
 
+from harness.context import prefix_hash
 from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin, pricing_from_env
 
@@ -16,8 +16,8 @@ from .workflow import root_agent
 
 _METRICS_PLUGIN = HarnessMetricsPlugin(
     database=SETTINGS.state_root / "metrics.db",
-    static_prefix_hash=hashlib.sha256(SETTINGS.static_instruction.encode()).hexdigest(),
-    static_prefix_tokens=len(SETTINGS.static_instruction) // 4,
+    static_prefix_hash=prefix_hash(SETTINGS.static_prefix),
+    static_prefix_tokens=len(SETTINGS.static_prefix) // 4,
     default_model=SETTINGS.model,
     default_task_id=SETTINGS.task_id_override,
     pricing=pricing_from_env(),

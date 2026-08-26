@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from harness.context import build_static_prefix
 from harness.repo import collect_project_instructions
 
 _BASE_INSTRUCTION = """
@@ -57,6 +58,7 @@ class HarnessSettings:
     compact_at_tokens: int
     recent_event_limit: int
     static_instruction: str
+    static_prefix: str
 
 
 def _state_root(workspace: Path) -> Path:
@@ -73,6 +75,7 @@ def _state_root(workspace: Path) -> Path:
 def load_settings() -> HarnessSettings:
     workspace = Path(os.getenv("ADK_CODING_WORKSPACE", os.getcwd())).resolve()
     source_value = os.getenv("ADK_CODING_SOURCE_REPOSITORY")
+    model = os.getenv("ADK_CODING_MODEL", "gemini-3.7-flash")
     project_instructions = collect_project_instructions(workspace)
     if len(project_instructions) > 16_000:
         project_instructions = (
@@ -85,7 +88,7 @@ def load_settings() -> HarnessSettings:
 
     return HarnessSettings(
         app_name="pi_inspired_adk_coding_agent",
-        model=os.getenv("ADK_CODING_MODEL", "gemini-3.7-flash"),
+        model=model,
         workspace=workspace,
         source_repository=(Path(source_value).resolve() if source_value else None),
         state_root=_state_root(workspace),
@@ -98,9 +101,13 @@ def load_settings() -> HarnessSettings:
         ),
         recent_event_limit=int(os.getenv("ADK_CODING_RECENT_EVENTS", "12")),
         static_instruction=instruction,
+        static_prefix=build_static_prefix(
+            model_name=model,
+            instruction=instruction,
+        ),
     )
 
 
 SETTINGS = load_settings()
 
-__all__ = ["HarnessSettings", "SETTINGS", "load_settings"]
+__all__ = ["SETTINGS", "HarnessSettings", "load_settings"]

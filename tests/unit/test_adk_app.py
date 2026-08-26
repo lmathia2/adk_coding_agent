@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -25,3 +26,14 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     )
     tool_names = {getattr(tool, "name", getattr(tool, "__name__", "")) for tool in module.coding_worker.tools}
     assert {"read", "bash", "edit", "write"}.issubset(tool_names)
+
+    workflow = importlib.import_module("app.agent.workflow")
+    state: dict[str, object] = {}
+    workflow._set_model_call_state(
+        SimpleNamespace(state=state),
+        task_id="task-1",
+        dynamic_tokens=321,
+    )
+    assert state["task_id"] == "task-1"
+    assert state["dynamic_context_tokens_estimate"] == 321
+    assert state["stable_instruction_sha256"]
