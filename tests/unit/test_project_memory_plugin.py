@@ -9,13 +9,13 @@ import pytest
 
 pytest.importorskip("google.adk")
 
-from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin  # noqa: E402
-from harness.models.ledger import TaskLedger  # noqa: E402
-from harness.models.verification import (  # noqa: E402
+from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
+from harness.models.ledger import TaskLedger
+from harness.models.verification import (
     CriterionEvidence,
     VerificationReport,
 )
-from harness.state import EventKind, JsonlEventStore  # noqa: E402
+from harness.state import EventKind, JsonlEventStore
 
 
 @dataclass
@@ -47,10 +47,12 @@ def _repository(root: Path) -> Path:
     return root
 
 
-def test_plugin_writes_memory_only_after_verified_completion(tmp_path: Path) -> None:
-    workspace = _repository(tmp_path / "repository")
-    state = tmp_path / "state"
-    task_id = "task-1"
+def _record_verified_task(
+    events: JsonlEventStore,
+    task_id: str,
+    *,
+    finished: bool,
+) -> None:
     ledger = TaskLedger(
         task_id=task_id,
         goal="Improve authentication",
@@ -72,7 +74,6 @@ def test_plugin_writes_memory_only_after_verified_completion(tmp_path: Path) -> 
         tests_passed=1,
         tests_failed=0,
     )
-    events = JsonlEventStore(state / "events")
     events.append(
         task_id,
         EventKind.TASK_CREATED,
@@ -83,7 +84,36 @@ def test_plugin_writes_memory_only_after_verified_completion(tmp_path: Path) -> 
         EventKind.VERIFICATION_COMPLETED,
         {"report": report.model_dump(mode="json")},
     )
-    events.append(task_id, EventKind.TASK_FINISHED, {"verification": {}})
+    if finished:
+        events.append(task_id, EventKind.TASK_FINISHED, {"verification": {}})
+
+
+def test_plugin_does_not_write_memory_before_task_finished(tmp_path: Path) -> None:
+    workspace = _repository(tmp_path / "repository")
+    state = tmp_path / "state"
+    task_id = "task-1"
+    _record_verified_task(JsonlEventStore(state / "events"), task_id, finished=False)
+    plugin = VerifiedProjectMemoryPlugin(
+        workspace=workspace,
+        state_root=state,
+        project_root=workspace,
+    )
+
+    asyncio.run(
+        plugin.after_run_callback(
+            invocation_context=_Context(state={"task_id": task_id})
+        )
+    )
+
+    assert plugin.memories.search(plugin.project_id, "run tests") == []
+
+
+def test_plugin_writes_memory_only_after_verified_completion(tmp_path: Path) -> None:
+    workspace = _repository(tmp_path / "repository")
+    state = tmp_path / "state"
+    task_id = "task-1"
+    events = JsonlEventStore(state / "events")
+    _record_verified_task(events, task_id, finished=True)
 
     plugin = VerifiedProjectMemoryPlugin(
         workspace=workspace,

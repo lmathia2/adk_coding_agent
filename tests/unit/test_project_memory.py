@@ -4,6 +4,7 @@ from pathlib import Path
 
 from harness.memory import ProjectMemoryStore, extract_verified_memories
 from harness.models.ledger import TaskLedger
+from harness.models.task import Decision
 from harness.models.verification import CriterionEvidence, VerificationReport
 from harness.repo import BuildCommand, RepositoryManifest
 
@@ -87,3 +88,27 @@ def test_store_confirms_duplicate_facts_and_renders_bounded_context(
     context = store.render_context("project", "run tests", max_tokens=100)
     assert "Canonical test command: pytest -q" in context
     assert len(context) <= 500
+
+
+def test_typed_decision_uses_summary_and_rationale() -> None:
+    ledger = _ledger()
+    ledger.decisions.append(
+        Decision(
+            summary="Keep the model-visible tool surface narrow",
+            rationale="Protect prompt stability",
+            affected_paths=["harness/tools"],
+        )
+    )
+
+    memories = extract_verified_memories(
+        project_id="project",
+        manifest=RepositoryManifest(root=Path(".")),
+        ledger=ledger,
+        verification=_report(),
+    )
+
+    decisions = [memory for memory in memories if memory.kind == "decision"]
+    assert len(decisions) == 1
+    assert decisions[0].content == (
+        "Keep the model-visible tool surface narrow: Protect prompt stability"
+    )

@@ -10,9 +10,10 @@ import hashlib
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,13 +22,15 @@ from harness.models.ledger import TaskLedger
 from harness.models.verification import VerificationReport
 from harness.repo import RepositoryManifest
 
+MemoryKind = Literal["command", "decision", "convention", "failure", "fact"]
+
 
 class ProjectMemory(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     memory_id: str = Field(default_factory=lambda: uuid4().hex)
     project_id: str
-    kind: Literal["command", "decision", "convention", "failure", "fact"]
+    kind: MemoryKind
     content: str
     scope: str = "repository"
     confidence: float = Field(ge=0.0, le=1.0)
@@ -35,9 +38,9 @@ class ProjectMemory(BaseModel):
     source_task_id: str
     source_event_ids: list[str] = Field(default_factory=list)
     supersedes: str | None = None
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     last_confirmed_at: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
 
@@ -91,7 +94,7 @@ class ProjectMemoryStore:
                 (memory.project_id, memory.content_hash),
             ).fetchone()
             if existing:
-                now = datetime.now(timezone.utc).isoformat()
+                now = datetime.now(UTC).isoformat()
                 confidence = max(float(existing["confidence"]), memory.confidence)
                 source_ids = sorted(
                     set(json.loads(existing["source_event_ids"]))
@@ -215,7 +218,12 @@ def _decision_text(value: Any) -> str:
     if hasattr(value, "model_dump"):
         value = value.model_dump(mode="python")
     if isinstance(value, dict):
-        title = value.get("decision") or value.get("title") or value.get("name")
+        title = (
+            value.get("summary")
+            or value.get("decision")
+            or value.get("title")
+            or value.get("name")
+        )
         rationale = value.get("rationale") or value.get("reason")
         if title and rationale:
             return f"{title}: {rationale}"
@@ -238,7 +246,7 @@ def extract_verified_memories(
     if not verification.passed:
         return []
     events = source_event_ids or []
-    candidates: list[tuple[str, str, str, float]] = []
+    candidates: list[tuple[MemoryKind, str, str, float]] = []
 
     for command in manifest.commands:
         candidates.append(
