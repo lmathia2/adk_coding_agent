@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .interactive import InteractiveApprovalTransport
 from .store import ApprovalStore
 
 
@@ -42,6 +43,11 @@ def _parser() -> argparse.ArgumentParser:
 
     show = subparsers.add_parser("show")
     show.add_argument("request_id")
+
+    review = subparsers.add_parser("review")
+    review.add_argument("request_id", nargs="?")
+    review.add_argument("--task-id")
+    review.add_argument("--actor", required=True)
 
     for decision in ("approve", "deny"):
         command = subparsers.add_parser(decision)
@@ -78,6 +84,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         request = store.get(args.request_id)
         if request is None:
             raise SystemExit(f"unknown approval request: {args.request_id}")
+        _print(request)
+        return 0
+    if args.command == "review":
+        transport = InteractiveApprovalTransport(store)
+        request = (
+            transport.review(args.request_id, actor=args.actor)
+            if args.request_id
+            else transport.review_next(actor=args.actor, task_id=args.task_id)
+        )
+        if request is None:
+            raise SystemExit("no pending approval requests")
         _print(request)
         return 0
 
