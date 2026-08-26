@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
+import tempfile
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -12,6 +14,7 @@ from typing import Protocol
 
 from harness.models.verification import CriterionEvidence, VerificationReport
 
+from .managed import managed_executor_from_env
 from .models import CommandResult, ValidationCommand, ValidationPlan
 from .scope import check_scope
 
@@ -27,6 +30,15 @@ def local_executor(root: Path, timeout_seconds: int = 600) -> CommandExecutor:
         started = time.monotonic()
         environment = os.environ.copy()
         environment.setdefault("UV_OFFLINE", "1")
+        environment.setdefault("UV_NO_SYNC", "1")
+        environment.setdefault(
+            "UV_CACHE_DIR",
+            str(Path(tempfile.gettempdir()) / "adk-coding-agent-uv-cache"),
+        )
+        executable_directory = str(Path(sys.executable).parent)
+        environment["PATH"] = (
+            executable_directory + os.pathsep + environment.get("PATH", "")
+        )
         try:
             completed = subprocess.run(
                 command.command,
@@ -42,6 +54,8 @@ def local_executor(root: Path, timeout_seconds: int = 600) -> CommandExecutor:
             return CommandResult(
                 category=command.category,
                 command=command.command,
+                source=command.source,
+                status="ok" if completed.returncode == 0 else "error",
                 exit_code=completed.returncode,
                 stdout=completed.stdout[-16_000:],
                 stderr=completed.stderr[-16_000:],
@@ -56,6 +70,8 @@ def local_executor(root: Path, timeout_seconds: int = 600) -> CommandExecutor:
             return CommandResult(
                 category=command.category,
                 command=command.command,
+                source=command.source,
+                status="timeout",
                 exit_code=124,
                 stdout=stdout[-16_000:],
                 stderr="validation command timed out",
@@ -141,7 +157,7 @@ def run_validation_plan(
     executor: CommandExecutor | None = None,
     stop_on_failure: bool = True,
 ) -> tuple[VerificationReport, list[CommandResult]]:
-    execute = executor or local_executor(root)
+    execute = executor or managed_executor_from_env(root)
     results: list[CommandResult] = []
     for command in plan.commands:
         result = execute(command)

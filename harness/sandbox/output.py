@@ -3,9 +3,39 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from harness.safety.redaction import SecretRedactor
+
 from .base import SandboxResult, SandboxStatus
+
+_SENSITIVE_ENVIRONMENT_MARKERS = (
+    "API_KEY",
+    "AUTH",
+    "CREDENTIAL",
+    "PASSWORD",
+    "PASSWD",
+    "PRIVATE_KEY",
+    "SECRET",
+    "TOKEN",
+)
+
+
+def environment_secret_values(environment: Mapping[str, str]) -> tuple[str, ...]:
+    """Select explicitly sensitive environment values for output redaction."""
+
+    values = {
+        value
+        for name, value in environment.items()
+        if isinstance(name, str)
+        and isinstance(value, str)
+        and any(
+            marker in name.upper().replace("-", "_")
+            for marker in _SENSITIVE_ENVIRONMENT_MARKERS
+        )
+    }
+    return tuple(sorted(values))
 
 
 def bounded_result(
@@ -17,7 +47,11 @@ def bounded_result(
     duration_ms: int,
     artifact_root: Path,
     max_bytes: int = 16_000,
+    known_secrets: Sequence[str] = (),
 ) -> SandboxResult:
+    redactor = SecretRedactor(known_secrets=known_secrets)
+    stdout = redactor.redact_text(stdout)
+    stderr = redactor.redact_text(stderr)
     stdout_bytes = stdout.encode(errors="replace")
     stderr_bytes = stderr.encode(errors="replace")
     total_bytes = len(stdout_bytes) + len(stderr_bytes)
@@ -68,4 +102,4 @@ def bounded_result(
     )
 
 
-__all__ = ["bounded_result"]
+__all__ = ["bounded_result", "environment_secret_values"]

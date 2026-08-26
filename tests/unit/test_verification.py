@@ -3,12 +3,29 @@ from __future__ import annotations
 from pathlib import Path
 
 from harness.repo.discovery import BuildCommand, RepositoryManifest
+from harness.sandbox import SandboxRequest, SandboxResult
 from harness.verification import (
     CommandResult,
     check_scope,
     discover_validation_plan,
     run_validation_plan,
 )
+
+
+class _RecordingSandbox:
+    def __init__(self, workspace: Path) -> None:
+        self.workspace = workspace
+        self.requests: list[SandboxRequest] = []
+
+    def execute(self, request: SandboxRequest) -> SandboxResult:
+        self.requests.append(request)
+        return SandboxResult(
+            status="ok",
+            exit_code=0,
+            stdout="verification passed",
+            stderr="",
+            duration_ms=21,
+        )
 
 
 def test_discovery_selects_syntax_targeted_tests_and_diff(tmp_path: Path) -> None:
@@ -88,3 +105,32 @@ def test_failed_command_stops_ladder_and_recommends_fix(tmp_path: Path) -> None:
     assert len(results) == 1
     assert report.tests_failed == 1
     assert report.recommended_next_action
+
+
+def test_default_verifier_uses_configured_managed_sandbox(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    sandbox = _RecordingSandbox(tmp_path)
+    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setattr(
+        "harness.verification.managed.create_command_sandbox",
+        lambda root, state: sandbox,
+    )
+    plan = discover_validation_plan(
+        RepositoryManifest(root=tmp_path),
+        ["README.md"],
+    )
+
+    report, results = run_validation_plan(
+        tmp_path,
+        plan,
+        acceptance_criteria=["Verification is managed"],
+        criterion_evidence={"Verification is managed": ["git diff --check"]},
+    )
+
+    assert report.passed
+    assert [result.status for result in results] == ["ok"]
+    assert len(sandbox.requests) == 1
+    assert sandbox.requests[0].command == "git diff --check"
+    assert sandbox.requests[0].environment["UV_OFFLINE"] == "1"

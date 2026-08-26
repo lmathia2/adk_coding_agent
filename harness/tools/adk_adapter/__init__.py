@@ -19,6 +19,7 @@ from typing import Any
 
 from harness.approvals import ApprovalStore
 from harness.safety import ApprovalAction, ApprovalPolicy, SecretRedactor
+from harness.sandbox import CommandSandbox, SandboxRequest, create_command_sandbox
 from harness.state import ToolReceiptStore
 
 
@@ -100,11 +101,17 @@ def _normalize_result(value: Any) -> dict[str, Any]:
 
 
 class _ManagedTools:
-    def __init__(self, workspace: Path) -> None:
+    def __init__(
+        self,
+        workspace: Path,
+        *,
+        sandbox: CommandSandbox | None = None,
+    ) -> None:
         self.workspace = workspace.resolve()
         legacy = _legacy_module()
         self.base = legacy.create_adk_tools(self.workspace)
         state_root = _state_root(self.workspace)
+        self.sandbox = sandbox or create_command_sandbox(self.workspace, state_root)
         self.receipts = ToolReceiptStore(state_root / "managed-tools.db")
         self.approvals = ApprovalStore(state_root / "approvals.db")
         self.redactor = SecretRedactor(known_secrets=_known_secrets())
@@ -170,7 +177,12 @@ class _ManagedTools:
                 "risk": decision.risk.value,
             }
         return self._redact(
-            self.base.bash(command=command, timeout_seconds=timeout_seconds)
+            self.sandbox.execute(
+                SandboxRequest(
+                    command=command,
+                    timeout_seconds=timeout_seconds,
+                )
+            ).to_tool_result()
         )
 
     def _mutate(
@@ -269,8 +281,12 @@ class _ManagedTools:
         )
 
 
-def create_adk_tools(workspace: Path) -> AdkCodingTools:
-    managed = _ManagedTools(workspace)
+def create_adk_tools(
+    workspace: Path,
+    *,
+    sandbox: CommandSandbox | None = None,
+) -> AdkCodingTools:
+    managed = _ManagedTools(workspace, sandbox=sandbox)
     return AdkCodingTools(
         read=managed.read,
         bash=managed.bash,

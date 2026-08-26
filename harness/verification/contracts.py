@@ -20,12 +20,13 @@ ValidationStatus: TypeAlias = Literal["ok", "error", "blocked", "timeout"]
 
 
 class ValidationCommand(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     category: ValidationCategory
     command: str
     source: str
     required: bool = True
+    targeted: bool = False
     timeout_seconds: int = Field(default=300, ge=1, le=3_600)
 
 
@@ -43,8 +44,8 @@ class CommandResult(BaseModel):
 
     category: ValidationCategory
     command: str
-    source: str
-    status: ValidationStatus
+    source: str = ""
+    status: ValidationStatus = "ok"
     exit_code: int | None = None
     stdout: str = ""
     stderr: str = ""

@@ -5,11 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from harness.approvals import ApprovalStore
 from harness.safety import ApprovalAction, ApprovalPolicy, CommandRisk, SecretRedactor
-from harness.sandbox import SandboxRequest, create_command_sandbox
+from harness.sandbox import CommandSandbox, SandboxRequest, create_command_sandbox
 from harness.telemetry import MetricsStore, ToolUsageSample
 
 from .contracts import CommandResult, ValidationCommand
@@ -79,17 +80,35 @@ def _fingerprint(validation: ValidationCommand) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _sandbox_environment() -> dict[str, str]:
+    environment = {"UV_OFFLINE": "1"}
+    configured_cache = os.getenv("ADK_CODING_UV_CACHE_DIR")
+    backend = os.getenv("ADK_CODING_SANDBOX", "local").strip().lower()
+    if configured_cache:
+        environment["UV_CACHE_DIR"] = configured_cache
+    elif backend == "local":
+        environment["UV_CACHE_DIR"] = str(
+            Path(tempfile.gettempdir()) / "adk-coding-agent-uv-cache"
+        )
+    return environment
+
+
 class ManagedValidationExecutor:
     """Run completion checks under approval, sandbox, redaction, and telemetry."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        sandbox: CommandSandbox | None = None,
+    ) -> None:
         self.root = root.resolve()
         state = _state_root(self.root)
         self.task_id = _task_id(self.root)
         self.redactor = SecretRedactor(known_secrets=_known_secrets())
         self.approvals = ApprovalStore(state / "approvals.db")
         self.metrics = MetricsStore(state / "metrics.db")
-        self.sandbox = create_command_sandbox(self.root, state)
+        self.sandbox = sandbox or create_command_sandbox(self.root, state)
         approved = {
             item.strip()
             for item in os.getenv(
@@ -153,11 +172,7 @@ class ManagedValidationExecutor:
         self._record(validation, result)
         return result
 
-    def __call__(self, root: Path, validation: ValidationCommand) -> CommandResult:
-        if root.resolve() != self.root:
-            raise ValueError(
-                f"validation root changed from {self.root} to {root.resolve()}"
-            )
+    def __call__(self, validation: ValidationCommand) -> CommandResult:
         fingerprint = _fingerprint(validation)
         persisted = self.approvals.for_fingerprint(self.task_id, fingerprint)
         if persisted and persisted.status == "approved":
@@ -205,6 +220,7 @@ class ManagedValidationExecutor:
             SandboxRequest(
                 command=validation.command,
                 timeout_seconds=validation.timeout_seconds,
+                environment=_sandbox_environment(),
             )
         )
         result = CommandResult(

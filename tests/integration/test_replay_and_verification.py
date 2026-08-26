@@ -15,7 +15,11 @@ from harness.state import (
     rebuild_ledger,
 )
 from harness.tools.adk_adapter import create_adk_tools
-from harness.verification import discover_validation_plan, run_validation_plan
+from harness.verification import (
+    discover_validation_plan,
+    local_executor,
+    run_validation_plan,
+)
 from harness.workspace import GitWorktreeManager
 
 
@@ -122,5 +126,6 @@ def test_interrupted_task_replays_state_and_mutation_without_duplication(
         criterion_evidence={
             "multiply(6, 7) returns 42": ["test_calculator.py::test_multiply"]
         },
+        executor=local_executor(restored_workspace.path),
     )
     assert report.passed
