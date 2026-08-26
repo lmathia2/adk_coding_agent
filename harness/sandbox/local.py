@@ -9,9 +9,10 @@ from __future__ import annotations
 import os
 import resource
 import subprocess
+import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 
 from .base import SandboxRequest, SandboxResult
 from .output import bounded_result
@@ -23,18 +24,25 @@ def _limit_resources(
     max_processes: int,
     max_file_bytes: int,
 ) -> None:
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (max_file_bytes, max_file_bytes))
+    def set_limit(kind: int, requested: int) -> None:
+        try:
+            _, hard = resource.getrlimit(kind)
+            limit = requested if hard == resource.RLIM_INFINITY else min(requested, hard)
+            resource.setrlimit(kind, (limit, limit))
+        except (OSError, ValueError):
+            # Some development hosts disallow selected limits in a pre-exec child.
+            # The local adapter is not a security boundary; managed deployments use
+            # Docker or a remote sandbox for enforceable resource isolation.
+            return
+
+    set_limit(resource.RLIMIT_CORE, 0)
+    set_limit(resource.RLIMIT_FSIZE, max_file_bytes)
     if hasattr(resource, "RLIMIT_AS"):
-        resource.setrlimit(
-            resource.RLIMIT_AS,
-            (max_memory_bytes, max_memory_bytes),
-        )
-    if hasattr(resource, "RLIMIT_NPROC"):
-        resource.setrlimit(
-            resource.RLIMIT_NPROC,
-            (max_processes, max_processes),
-        )
+        set_limit(resource.RLIMIT_AS, max_memory_bytes)
+    if hasattr(resource, "RLIMIT_NPROC") and sys.platform != "darwin":
+        # RLIMIT_NPROC is per-user on macOS, so lowering it in a child can block
+        # ordinary shell pipelines when the desktop user already has many processes.
+        set_limit(resource.RLIMIT_NPROC, max_processes)
 
 
 class LocalSandbox:
@@ -101,8 +109,16 @@ class LocalSandbox:
                 max_bytes=self.max_output_bytes,
             )
         except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            stdout = (
+                exc.stdout.decode(errors="replace")
+                if isinstance(exc.stdout, bytes)
+                else (exc.stdout or "")
+            )
+            stderr = (
+                exc.stderr.decode(errors="replace")
+                if isinstance(exc.stderr, bytes)
+                else (exc.stderr or "")
+            )
             return bounded_result(
                 status="timeout",
                 exit_code=124,

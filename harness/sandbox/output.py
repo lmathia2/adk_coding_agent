@@ -37,16 +37,25 @@ def bounded_result(
     if not path.exists():
         path.write_text(full, encoding="utf-8")
 
-    head_budget = max_bytes // 2
-    tail_budget = max_bytes - head_budget
-    combined = f"{stdout}\n{stderr}"
-    head = combined[:head_budget]
-    tail = combined[-tail_budget:] if tail_budget else ""
-    visible = (
-        head
-        + f"\n[... {total_bytes - max_bytes} bytes omitted; full log: {path} ...]\n"
-        + tail
-    )
+    combined = stdout_bytes + b"\n" + stderr_bytes
+    omitted_bytes = total_bytes
+    marker = b""
+    data_budget = 0
+    for _ in range(2):
+        marker = (
+            f"\n[... {omitted_bytes} bytes omitted; full log: {path} ...]\n"
+        ).encode()
+        data_budget = max(max_bytes - len(marker), 0)
+        omitted_bytes = max(total_bytes - data_budget, 0)
+    if len(marker) >= max_bytes:
+        visible_bytes = marker[:max_bytes]
+    else:
+        head_budget = data_budget // 2
+        tail_budget = data_budget - head_budget
+        head = combined[:head_budget]
+        tail = combined[-tail_budget:] if tail_budget else b""
+        visible_bytes = head + marker + tail
+    visible = visible_bytes.decode("utf-8", errors="ignore")
     return SandboxResult(
         status=status,
         exit_code=exit_code,
@@ -54,7 +63,7 @@ def bounded_result(
         stderr="",
         duration_ms=duration_ms,
         truncated=True,
-        omitted_bytes=max(total_bytes - max_bytes, 0),
+        omitted_bytes=omitted_bytes,
         artifact_uri=path.as_uri(),
     )
 
