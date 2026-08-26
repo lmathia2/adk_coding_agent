@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Iterable
 from pathlib import PurePosixPath
-from typing import Iterable
 
 
 def _matches(path: str, pattern: str) -> bool:

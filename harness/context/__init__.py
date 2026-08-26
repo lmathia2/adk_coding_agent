@@ -5,9 +5,9 @@ from .compiler import ContextCompiler, estimate_tokens, truncate_to_tokens
 from .prompt import STATIC_CODING_INSTRUCTION, build_static_prefix, prefix_hash
 
 __all__ = [
+    "STATIC_CODING_INSTRUCTION",
     "CompactionPolicy",
     "ContextCompiler",
-    "STATIC_CODING_INSTRUCTION",
     "build_compaction_snapshot",
     "build_static_prefix",
     "estimate_tokens",

@@ -89,11 +89,7 @@ class ManagedValidationExecutor:
         self.redactor = SecretRedactor(known_secrets=_known_secrets())
         self.approvals = ApprovalStore(state / "approvals.db")
         self.metrics = MetricsStore(state / "metrics.db")
-        self.sandbox = create_command_sandbox(
-            self.root,
-            state,
-            output_filter=self.redactor.redact_text,
-        )
+        self.sandbox = create_command_sandbox(self.root, state)
         approved = {
             item.strip()
             for item in os.getenv(
@@ -209,7 +205,6 @@ class ManagedValidationExecutor:
             SandboxRequest(
                 command=validation.command,
                 timeout_seconds=validation.timeout_seconds,
-                network_access=(decision.risk == CommandRisk.NETWORK_ACCESS),
             )
         )
         result = CommandResult(
@@ -218,8 +213,8 @@ class ManagedValidationExecutor:
             source=validation.source,
             status=sandbox_result.status,
             exit_code=sandbox_result.exit_code,
-            stdout=sandbox_result.stdout,
-            stderr=sandbox_result.stderr,
+            stdout=self.redactor.redact_text(sandbox_result.stdout),
+            stderr=self.redactor.redact_text(sandbox_result.stderr),
             duration_ms=sandbox_result.duration_ms,
             truncated=sandbox_result.truncated,
             omitted_bytes=sandbox_result.omitted_bytes,

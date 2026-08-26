@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Literal, Protocol
+
+SandboxStatus = Literal["ok", "error", "blocked", "timeout"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,7 +19,7 @@ class SandboxRequest:
 
 @dataclass(frozen=True, slots=True)
 class SandboxResult:
-    status: str
+    status: SandboxStatus
     exit_code: int | None
     stdout: str
     stderr: str
@@ -46,4 +49,4 @@ class CommandSandbox(Protocol):
     def execute(self, request: SandboxRequest) -> SandboxResult: ...
 
 
-__all__ = ["CommandSandbox", "SandboxRequest", "SandboxResult"]
+__all__ = ["CommandSandbox", "SandboxRequest", "SandboxResult", "SandboxStatus"]

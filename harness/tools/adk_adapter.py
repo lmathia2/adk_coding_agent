@@ -11,9 +11,10 @@ import hashlib
 import importlib
 import inspect
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, cast
 
 
 @dataclass(frozen=True)
@@ -131,15 +132,26 @@ def _fallback(root: Path) -> AdkCodingTools:
 def _normalize(value: Any) -> AdkCodingTools | None:
     names = ("read", "bash", "edit", "write")
     if isinstance(value, dict) and all(name in value for name in names):
-        return AdkCodingTools(**{name: value[name] for name in names})
+        tools = {
+            name: cast(Callable[..., dict[str, Any]], value[name]) for name in names
+        }
+        return AdkCodingTools(**tools)
     if all(callable(getattr(value, name, None)) for name in names):
-        return AdkCodingTools(**{name: getattr(value, name) for name in names})
+        tools = {
+            name: cast(Callable[..., dict[str, Any]], getattr(value, name))
+            for name in names
+        }
+        return AdkCodingTools(**tools)
     if isinstance(value, (list, tuple)):
         functions = {
             getattr(item, "__name__", ""): item for item in value if callable(item)
         }
         if all(name in functions for name in names):
-            return AdkCodingTools(**{name: functions[name] for name in names})
+            tools = {
+                name: cast(Callable[..., dict[str, Any]], functions[name])
+                for name in names
+            }
+            return AdkCodingTools(**tools)
     return None
 
 

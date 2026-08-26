@@ -12,9 +12,10 @@ import hashlib
 import json
 import os
 import re
+from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 _EXCLUDED_DIRS = {
     ".git",
@@ -166,10 +167,8 @@ class _PythonVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         bases = []
         for base in node.bases:
-            try:
+            with suppress(AttributeError, ValueError):
                 bases.append(ast.unparse(base))
-            except (AttributeError, ValueError):
-                pass
         signature = f"class {node.name}" + (f"({', '.join(bases)})" if bases else "")
         record = self._add(node, node.name, "class", signature)
         if bases:

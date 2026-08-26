@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -22,7 +22,7 @@ class ApprovalRequest(BaseModel):
     reason: str
     status: Literal["pending", "approved", "denied", "expired"] = "pending"
     requested_at: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     decided_at: str | None = None
     decided_by: str | None = None
@@ -163,7 +163,7 @@ class ApprovalStore:
         actor: str,
         note: str | None = None,
     ) -> ApprovalRequest:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT * FROM approval_requests WHERE request_id=?",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -118,7 +118,7 @@ def test_checkpoint_store_returns_latest(tmp_path: Path) -> None:
         git_tree_hash="tree",
         ledger_version=1,
         ledger_hash="ledger",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     store.save(checkpoint)
     assert store.get("cp-1") == checkpoint

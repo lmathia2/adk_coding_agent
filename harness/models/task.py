@@ -56,7 +56,7 @@ class TaskRequest(StrictModel):
     max_iterations: int = Field(default=24, ge=1, le=500)
 
     @model_validator(mode="after")
-    def ensure_acceptance_criteria(self) -> "TaskRequest":
+    def ensure_acceptance_criteria(self) -> TaskRequest:
         if not self.acceptance_criteria:
             self.acceptance_criteria = ["The requested change is implemented and verified."]
         return self
@@ -149,7 +149,7 @@ class TaskLedger(StrictModel):
         workspace_id: str,
         base_revision: str,
         branch_id: str = "main",
-    ) -> "TaskLedger":
+    ) -> TaskLedger:
         return cls(
             task_id=task_id,
             goal=request.goal,

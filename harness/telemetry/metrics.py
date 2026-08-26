@@ -7,7 +7,7 @@ visible even when total input tokens appear stable.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -32,7 +32,7 @@ class ModelUsageSample(BaseModel):
     reasoning_tokens: int = Field(default=0, ge=0)
     cost_usd: float = Field(default=0.0, ge=0)
     latency_ms: int = Field(default=0, ge=0)
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     @property
     def uncached_input_tokens(self) -> int:
@@ -53,7 +53,7 @@ class ToolUsageSample(BaseModel):
     model_visible_bytes: int = Field(default=0, ge=0)
     omitted_bytes: int = Field(default=0, ge=0)
     replayed: bool = False
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class TaskOutcomeSample(BaseModel):
@@ -70,7 +70,7 @@ class TaskOutcomeSample(BaseModel):
     tests_passed: int = Field(default=0, ge=0)
     tests_failed: int = Field(default=0, ge=0)
     wall_time_ms: int = Field(default=0, ge=0)
-    completed_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    completed_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class MetricsStore:

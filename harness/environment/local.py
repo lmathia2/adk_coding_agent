@@ -55,11 +55,11 @@ def _text_diff(path: str, before: bytes, after: bytes, *, max_lines: int = 200) 
     )
     if len(lines) > max_lines:
         omitted = len(lines) - max_lines
-        lines = (
-            lines[: max_lines // 2]
-            + [f"... {omitted} diff lines omitted ...\n"]
-            + lines[-max_lines // 2 :]
-        )
+        lines = [
+            *lines[: max_lines // 2],
+            f"... {omitted} diff lines omitted ...\n",
+            *lines[-max_lines // 2 :],
+        ]
     return "".join(lines) or "(no textual diff)"
 
 

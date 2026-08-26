@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from enum import StrEnum
-from typing import Iterable
 
 from harness.models.agent_step import AgentStep
 from harness.models.ledger import TaskLedger

@@ -5,12 +5,12 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from .base import SandboxResult
+from .base import SandboxResult, SandboxStatus
 
 
 def bounded_result(
     *,
-    status: str,
+    status: SandboxStatus,
     exit_code: int | None,
     stdout: str,
     stderr: str,

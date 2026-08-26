@@ -18,8 +18,8 @@ from .output import bound_output
 _TOOL_OBSERVER: ContextVar[Callable[[str, dict[str, object], ToolEnvelope], None] | None] = ContextVar(
     "adk_coding_tool_observer", default=None
 )
-_COMMAND_POLICY: ContextVar[CommandPolicy] = ContextVar(
-    "adk_coding_command_policy", default=CommandPolicy()
+_COMMAND_POLICY: ContextVar[CommandPolicy | None] = ContextVar(
+    "adk_coding_command_policy", default=None
 )
 
 
@@ -36,7 +36,7 @@ def bind_tool_runtime(
     policy: CommandPolicy | None = None,
     observer: Callable[[str, dict[str, object], ToolEnvelope], None] | None = None,
 ) -> Iterator[None]:
-    policy_token: Token[CommandPolicy] | None = None
+    policy_token: Token[CommandPolicy | None] | None = None
     observer_token: Token[Callable[[str, dict[str, object], ToolEnvelope], None] | None] | None = None
     if policy is not None:
         policy_token = _COMMAND_POLICY.set(policy)
@@ -179,7 +179,7 @@ def execute_write(
 def execute_bash(command: str, timeout_seconds: int = 120) -> ToolEnvelope:
     arguments: dict[str, object] = {"command": command, "timeout_seconds": timeout_seconds}
     started = time.monotonic()
-    policy = _COMMAND_POLICY.get()
+    policy = _COMMAND_POLICY.get() or CommandPolicy()
     decision = policy.evaluate(command)
     if not decision.allowed:
         return _emit(

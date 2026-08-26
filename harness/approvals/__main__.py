@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
+
+from pydantic import BaseModel
 
 from .store import ApprovalStore
 
@@ -50,11 +52,11 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _print(value: object) -> None:
-    if hasattr(value, "model_dump"):
+    if isinstance(value, BaseModel):
         value = value.model_dump(mode="json")
     elif isinstance(value, list):
         value = [
-            item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+            item.model_dump(mode="json") if isinstance(item, BaseModel) else item
             for item in value
         ]
     print(json.dumps(value, sort_keys=True, indent=2))

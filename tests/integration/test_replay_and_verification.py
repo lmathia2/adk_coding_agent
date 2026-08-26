@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from harness.models.checkpoint import Checkpoint
@@ -92,7 +92,7 @@ def test_interrupted_task_replays_state_and_mutation_without_duplication(
         git_tree_hash=fingerprint,
         ledger_version=1,
         ledger_hash=hashlib.sha256(ledger.model_dump_json().encode()).hexdigest(),
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     checkpoints = CheckpointStore(state / "state.db")
     checkpoints.save(checkpoint)

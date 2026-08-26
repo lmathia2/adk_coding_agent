@@ -50,9 +50,11 @@ def bound_output(text: str, *, max_chars: int = 16_000, max_lines: int = 400) ->
     if over_lines:
         head_count = max_lines * 2 // 3
         tail_count = max_lines - head_count
-        line_limited = (
-            lines[:head_count] + ["... [output lines omitted] ..."] + lines[-tail_count:]
-        )
+        line_limited = [
+            *lines[:head_count],
+            "... [output lines omitted] ...",
+            *lines[-tail_count:],
+        ]
     candidate = "\n".join(line_limited)
     if len(candidate) > max_chars:
         marker = "\n... [output characters omitted] ...\n"

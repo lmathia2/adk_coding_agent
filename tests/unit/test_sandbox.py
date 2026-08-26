@@ -86,12 +86,12 @@ def test_docker_sandbox_builds_hardened_networkless_command(tmp_path: Path) -> N
     command = sandbox.build_command(SandboxRequest(command="pytest -q"))
 
     assert command[:3] == ["docker", "run", "--rm"]
-    assert ["--network", "none"] == command[
+    assert command[
         command.index("--network") : command.index("--network") + 2
-    ]
-    assert ["--cap-drop", "ALL"] == command[
+    ] == ["--network", "none"]
+    assert command[
         command.index("--cap-drop") : command.index("--cap-drop") + 2
-    ]
+    ] == ["--cap-drop", "ALL"]
     assert "no-new-privileges:true" in command
     assert "type=bind" in next(value for value in command if value.startswith("type=bind"))
     assert "python:3.12-slim" in command

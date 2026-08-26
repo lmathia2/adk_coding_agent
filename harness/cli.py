@@ -7,9 +7,9 @@ import hashlib
 import json
 import os
 import subprocess
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Sequence
 
 from harness.workspace import GitWorktreeManager, WorkspaceRecord
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
 
 from .base import SandboxRequest, SandboxResult
 from .output import bounded_result
@@ -121,8 +121,16 @@ class DockerSandbox:
                 max_bytes=self.max_output_bytes,
             )
         except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            stdout = (
+                exc.stdout.decode(errors="replace")
+                if isinstance(exc.stdout, bytes)
+                else (exc.stdout or "")
+            )
+            stderr = (
+                exc.stderr.decode(errors="replace")
+                if isinstance(exc.stderr, bytes)
+                else (exc.stderr or "")
+            )
             return bounded_result(
                 status="timeout",
                 exit_code=124,

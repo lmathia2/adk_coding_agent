@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -89,7 +89,7 @@ class ToolReceiptStore:
         arguments_hash: str,
         side_effect_key: str | None = None,
     ) -> ToolReceipt:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._connect() as connection:
             try:
                 connection.execute(
@@ -109,7 +109,7 @@ class ToolReceiptStore:
                         now,
                     ),
                 )
-            except sqlite3.IntegrityError:
+            except sqlite3.IntegrityError as error:
                 existing = self.get(task_id, tool_call_id)
                 if existing is None and side_effect_key is not None:
                     row = connection.execute(
@@ -120,7 +120,9 @@ class ToolReceiptStore:
                 if existing is None:
                     raise
                 if existing.tool_name != tool_name or existing.arguments_hash != arguments_hash:
-                    raise ValueError("tool receipt key reused with different arguments")
+                    raise ValueError(
+                        "tool receipt key reused with different arguments"
+                    ) from error
                 return existing
         receipt = self.get(task_id, tool_call_id)
         assert receipt is not None
@@ -136,7 +138,7 @@ class ToolReceiptStore:
         artifact_uri: str | None = None,
         error: str | None = None,
     ) -> ToolReceipt:
-        completed_at = datetime.now(timezone.utc).isoformat()
+        completed_at = datetime.now(UTC).isoformat()
         with self._connect() as connection:
             cursor = connection.execute(
                 """

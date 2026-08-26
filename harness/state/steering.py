@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -64,7 +64,7 @@ class SteeringQueue:
         priority: int = 0,
         idempotency_key: str | None = None,
     ) -> SteeringMessage:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         message_id = uuid4().hex
         with self._connect() as connection:
             try:
@@ -77,7 +77,7 @@ class SteeringQueue:
                     """,
                     (message_id, task_id, content, priority, now, idempotency_key),
                 )
-            except sqlite3.IntegrityError:
+            except sqlite3.IntegrityError as error:
                 row = connection.execute(
                     "SELECT * FROM steering_messages WHERE task_id=? AND idempotency_key=?",
                     (task_id, idempotency_key),
@@ -85,7 +85,9 @@ class SteeringQueue:
                 assert row is not None
                 existing = self._from_row(row)
                 if existing.content != content or existing.priority != priority:
-                    raise ValueError("steering idempotency key reused with different content")
+                    raise ValueError(
+                        "steering idempotency key reused with different content"
+                    ) from error
                 return existing
             row = connection.execute(
                 "SELECT * FROM steering_messages WHERE message_id=?", (message_id,)
@@ -101,7 +103,7 @@ class SteeringQueue:
         limit: int = 10,
         lease_seconds: int = 60,
     ) -> list[SteeringMessage]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         lease_until = now + timedelta(seconds=lease_seconds)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")

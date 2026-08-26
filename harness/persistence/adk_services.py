@@ -11,11 +11,12 @@ from __future__ import annotations
 import importlib
 import inspect
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Iterable
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class SessionBackend(StrEnum):
@@ -186,15 +187,19 @@ def build_service_bundle(settings: PersistenceSettings) -> AdkServiceBundle:
 
 def settings_from_env() -> PersistenceSettings:
     return PersistenceSettings(
-        session_backend=os.getenv("ADK_SESSION_BACKEND", SessionBackend.DATABASE.value),
+        session_backend=SessionBackend(
+            os.getenv("ADK_SESSION_BACKEND", SessionBackend.DATABASE.value)
+        ),
         database_url=os.getenv(
             "ADK_DATABASE_URL",
             "sqlite+aiosqlite:///./.adk-coding-agent/sessions.db",
         ),
-        artifact_backend=os.getenv(
-            "ADK_ARTIFACT_BACKEND", ArtifactBackend.IN_MEMORY.value
+        artifact_backend=ArtifactBackend(
+            os.getenv("ADK_ARTIFACT_BACKEND", ArtifactBackend.IN_MEMORY.value)
         ),
-        memory_backend=os.getenv("ADK_MEMORY_BACKEND", MemoryBackend.IN_MEMORY.value),
+        memory_backend=MemoryBackend(
+            os.getenv("ADK_MEMORY_BACKEND", MemoryBackend.IN_MEMORY.value)
+        ),
         google_cloud_project=os.getenv("GOOGLE_CLOUD_PROJECT"),
         google_cloud_location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
         agent_engine_id=os.getenv("ADK_AGENT_ENGINE_ID"),
