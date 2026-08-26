@@ -7,9 +7,10 @@ import os
 import threading
 import time
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 from uuid import uuid4
 
 from google.adk.plugins.base_plugin import BasePlugin
@@ -111,10 +112,13 @@ def usage_counts(response: Any) -> dict[str, int]:
 
 
 def estimate_cost(counts: Mapping[str, int], pricing: ModelPricing) -> float:
+    input_tokens = max(counts.get("input_tokens", 0), 0)
+    cache_read_tokens = max(counts.get("cache_read_tokens", 0), 0)
+    uncached_input_tokens = max(input_tokens - cache_read_tokens, 0)
     total = (
-        counts.get("input_tokens", 0) * pricing.input
+        uncached_input_tokens * pricing.input
         + counts.get("output_tokens", 0) * pricing.output
-        + counts.get("cache_read_tokens", 0) * pricing.cache_read
+        + cache_read_tokens * pricing.cache_read
         + counts.get("cache_write_tokens", 0) * pricing.cache_write
         + counts.get("reasoning_tokens", 0) * pricing.reasoning
     )
@@ -149,8 +153,9 @@ def _context_value(context: Any, name: str, default: Any = None) -> Any:
     if value is not None:
         return value
     state = getattr(context, "state", None)
-    if isinstance(state, Mapping):
-        return state.get(name, default)
+    state_get = getattr(state, "get", None)
+    if callable(state_get):
+        return state_get(name, default)
     return default
 
 
@@ -191,7 +196,19 @@ class HarnessMetricsPlugin(BasePlugin):
         if self.default_task_id:
             return self.default_task_id
         session_id = _context_value(context, "session_id")
+        if not session_id:
+            session_id = _attribute(getattr(context, "session", None), "id")
         return str(session_id or "unknown")
+
+    def _pop_start(self, invocation_id: str) -> tuple[float, str, str] | None:
+        with self._lock:
+            pending = self._starts.get(invocation_id)
+            if not pending:
+                return None
+            started = pending.popleft()
+            if not pending:
+                self._starts.pop(invocation_id, None)
+            return started
 
     async def before_model_callback(
         self,
@@ -220,14 +237,17 @@ class HarnessMetricsPlugin(BasePlugin):
         callback_context: Any,
         llm_response: Any,
     ) -> None:
+        if bool(_attribute(llm_response, "partial", default=False)):
+            return None
+
         invocation_id = self._invocation_id(callback_context)
-        with self._lock:
-            if self._starts[invocation_id]:
-                started, model, task_id = self._starts[invocation_id].popleft()
-            else:
-                started = time.monotonic()
-                model = self.default_model
-                task_id = self._task_id(callback_context)
+        pending = self._pop_start(invocation_id)
+        if pending is None:
+            started = time.monotonic()
+            model = self.default_model
+            task_id = self._task_id(callback_context)
+        else:
+            started, model, task_id = pending
         counts = usage_counts(llm_response)
         dynamic_tokens = _integer(
             _context_value(callback_context, "dynamic_context_tokens_estimate", 0)
@@ -250,6 +270,17 @@ class HarnessMetricsPlugin(BasePlugin):
                 latency_ms=max(int((time.monotonic() - started) * 1_000), 0),
             )
         )
+        return None
+
+    async def on_model_error_callback(
+        self,
+        *,
+        callback_context: Any,
+        llm_request: Any,
+        error: Exception,
+    ) -> None:
+        del llm_request, error
+        self._pop_start(self._invocation_id(callback_context))
         return None
 
 
