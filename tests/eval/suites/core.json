@@ -1,0 +1,40 @@
+{
+  "suite_id": "core-v1",
+  "description": "Small deterministic cases used to compare harness changes before large-repository evaluation.",
+  "cases": [
+    {
+      "case_id": "python-localized-bugfix",
+      "description": "Correct a localized arithmetic bug without changing the held-out test.",
+      "fixture": "tests/fixtures/buggy_calculator",
+      "request": {
+        "goal": "Fix calculator.multiply so it returns the mathematical product of its two integer arguments.",
+        "acceptance_criteria": [
+          "multiply(6, 7) returns 42",
+          "multiply(-3, 4) returns -12",
+          "The public function signature is unchanged"
+        ]
+      },
+      "expected_changed_globs": [
+        "calculator.py"
+      ],
+      "forbidden_changed_globs": [
+        "test_*.py"
+      ],
+      "required_command_fragments": [
+        "pytest",
+        "git diff --check"
+      ],
+      "budgets": {
+        "max_iterations": 8,
+        "max_cost_usd": 0.25,
+        "max_uncached_input_tokens": 20000,
+        "max_wall_time_ms": 180000
+      },
+      "tags": [
+        "python",
+        "localized",
+        "fail-to-pass"
+      ]
+    }
+  ]
+}
