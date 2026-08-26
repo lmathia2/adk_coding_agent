@@ -50,6 +50,16 @@ def test_fingerprint_changes_with_workspace_content(tmp_path: Path) -> None:
     assert manager.dirty_paths("task") == ["README.md", "new.txt"]
 
 
+def test_dirty_paths_parse_rename_source_and_destination(tmp_path: Path) -> None:
+    source = _repository(tmp_path / "source")
+    manager = GitWorktreeManager(source, tmp_path / "state")
+    workspace = manager.create("task")
+
+    _run(workspace.path, "git", "mv", "README.md", "renamed.md")
+
+    assert manager.dirty_paths("task") == ["README.md", "renamed.md"]
+
+
 def test_dirty_workspace_requires_force_to_remove(tmp_path: Path) -> None:
     source = _repository(tmp_path / "source")
     manager = GitWorktreeManager(source, tmp_path / "state")

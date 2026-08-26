@@ -36,7 +36,22 @@ def parse_agent_step(value: str | dict[str, Any] | AgentStep) -> AgentStep:
         return value
     if isinstance(value, dict):
         return AgentStep.model_validate(value)
-    return AgentStep.model_validate_json(value)
+
+    text = value.strip()
+    decoder = json.JSONDecoder()
+    last_error: ValueError | None = None
+    for index, character in enumerate(text):
+        if character != "{":
+            continue
+        try:
+            payload, _ = decoder.raw_decode(text, index)
+            return AgentStep.model_validate(payload)
+        except ValueError as error:
+            last_error = error
+
+    raise ValueError(
+        "model response did not contain a valid AgentStep JSON object"
+    ) from last_error
 
 
 def task_id_for(request: TaskRequest, session_id: str | None = None) -> str:
@@ -52,9 +67,11 @@ def task_id_for(request: TaskRequest, session_id: str | None = None) -> str:
 
 
 def changed_paths(root: Path, base_revision: str | None) -> list[str]:
-    command = ["git", "diff", "--name-only"]
+    command = ["git", "diff", "--name-only", "-z"]
     if base_revision and base_revision != "unknown":
         command.append(base_revision)
+    else:
+        command.append("HEAD")
     completed = subprocess.run(
         command,
         cwd=root,
@@ -63,6 +80,19 @@ def changed_paths(root: Path, base_revision: str | None) -> list[str]:
         text=True,
         timeout=30,
     )
-    if completed.returncode != 0:
-        return []
-    return sorted(path for path in completed.stdout.splitlines() if path.strip())
+    tracked = completed.stdout.split("\0") if completed.returncode == 0 else []
+
+    untracked_result = subprocess.run(
+        ("git", "ls-files", "--others", "--exclude-standard", "-z"),
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    untracked = (
+        untracked_result.stdout.split("\0")
+        if untracked_result.returncode == 0
+        else []
+    )
+    return sorted(set(path for path in [*tracked, *untracked] if path))

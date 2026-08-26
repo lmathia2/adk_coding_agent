@@ -8,10 +8,10 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +31,7 @@ def _run(
     *args: str,
     check: bool = True,
     timeout: int = 120,
+    strip: bool = True,
 ) -> str:
     completed = subprocess.run(
         args,
@@ -43,7 +44,7 @@ def _run(
     if check and completed.returncode != 0:
         message = completed.stderr.strip() or completed.stdout.strip()
         raise RuntimeError(f"command failed ({' '.join(args)}): {message}")
-    return completed.stdout.strip()
+    return completed.stdout.strip() if strip else completed.stdout
 
 
 def _safe_name(task_id: str) -> str:
@@ -169,14 +170,34 @@ class GitWorktreeManager:
         record = self.load(task_id)
         if record is None:
             raise KeyError(task_id)
-        output = _run(record.path, "git", "status", "--porcelain=v1", "-z")
+        output = _run(
+            record.path,
+            "git",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            strip=False,
+        )
         paths: list[str] = []
-        for entry in output.split("\0"):
+        entries = output.split("\0")
+        index = 0
+        while index < len(entries):
+            entry = entries[index]
+            index += 1
             if not entry:
                 continue
-            # Two status columns, one separator, then path. Rename entries include
-            # an additional path in the next NUL record; recording both is safe.
-            paths.append(entry[3:] if len(entry) > 3 else entry)
+            if len(entry) < 4 or entry[2] != " ":
+                raise RuntimeError("malformed git status --porcelain=v1 -z output")
+
+            status = entry[:2]
+            paths.append(entry[3:])
+            if "R" in status or "C" in status:
+                if index >= len(entries) or not entries[index]:
+                    raise RuntimeError(
+                        "rename or copy missing source path in git status output"
+                    )
+                paths.append(entries[index])
+                index += 1
         return sorted(set(path for path in paths if path))
 
     def fingerprint(self, task_id: str) -> str:
