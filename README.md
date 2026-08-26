@@ -15,6 +15,7 @@ The model-facing surface is intentionally small: a stable instruction prefix and
 - Bound tool output and spill full logs to artifacts.
 - Require deterministic verification before accepting a completion claim.
 - Isolate the workspace behind an environment interface so a managed sandbox can replace the local backend.
+- Trace redacted ADK interactions and turn repeated verified workflows into quality-gated Agent Skills.
 
 ## Quick start
 
@@ -84,10 +85,12 @@ Behavioral assertions about model output belong in Agents CLI eval datasets, not
 ```text
 ADK Workflow
   -> deterministic context compiler
+  -> trusted skill catalog + selected skill bodies
   -> one coding Agent
   -> read | bash | edit | write
   -> Task Ledger reducer
   -> verification gate
+  -> verified trace learner + candidate trials
   -> continue | compact | block | finish
 ```
 

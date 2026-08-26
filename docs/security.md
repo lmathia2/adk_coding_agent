@@ -139,6 +139,13 @@ Project instructions, skills, scripts, and extensions are executable supply-chai
 
 Audit logs should contain operation hashes, classifications, approval decisions, paths, exit status, byte counts, and redacted diagnostics. Avoid storing source bodies, complete prompts, secrets, or customer data in centralized telemetry unless retention and access controls explicitly allow it.
 
+The local trace store has only `metadata` and `redacted` content modes (plus `off`).
+There is no raw mode. Redaction precedes byte bounding and persistence, exports read
+the already-sanitized records, and learned skills retain normalized action labels and
+trace provenance rather than prompt, response, tool-argument, tool-result, or source
+bodies. Operators must still apply retention, access-control, and backup policy to the
+state directory.
+
 ## Required adversarial tests
 
 Before production release, exercise:

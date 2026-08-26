@@ -11,6 +11,8 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from harness.learning import SkillRegistry as LearnedSkillRegistry
+from harness.tracing import TraceStore
 from harness.workspace import GitWorktreeManager, WorkspaceRecord
 
 
@@ -117,11 +119,59 @@ def _parser() -> argparse.ArgumentParser:
     cleanup.add_argument("--task-id", required=True)
     cleanup.add_argument("--state-root", type=Path)
     cleanup.add_argument("--force", action="store_true")
+
+    trace_export = subparsers.add_parser(
+        "trace-export",
+        help="Print an already-redacted task trace as JSONL",
+    )
+    trace_export.add_argument("--state-root", type=Path, required=True)
+    trace_export.add_argument("--task-id", required=True)
+
+    learned = subparsers.add_parser(
+        "learned-skills",
+        help="List learned skill lifecycle records",
+    )
+    learned.add_argument("--state-root", type=Path, required=True)
+
+    disable = subparsers.add_parser(
+        "disable-skill",
+        help="Move a learned skill to the disabled lifecycle",
+    )
+    disable.add_argument("--state-root", type=Path, required=True)
+    disable.add_argument("name")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "trace-export":
+        exported = TraceStore(args.state_root.resolve() / "traces.db").export_jsonl(
+            args.task_id
+        )
+        if exported:
+            print(exported)
+        return 0
+    if args.command in {"learned-skills", "disable-skill"}:
+        registry = LearnedSkillRegistry(
+            args.state_root.resolve() / "learned-skills"
+        )
+        if args.command == "disable-skill":
+            print(registry.disable(args.name).model_dump_json(indent=2))
+            return 0
+        lifecycles = []
+        for root in (
+            registry.active_root,
+            registry.candidate_root,
+            registry.disabled_root,
+        ):
+            for directory in sorted(root.iterdir(), key=lambda item: item.name):
+                if not directory.is_dir():
+                    continue
+                lifecycle = registry.load(directory.name)
+                if lifecycle is not None:
+                    lifecycles.append(lifecycle.model_dump(mode="json"))
+        print(json.dumps(lifecycles, sort_keys=True, indent=2))
+        return 0
     if args.command == "cleanup":
         repository = args.repository.resolve()
         state = (args.state_root or _default_state_root(repository)).resolve()

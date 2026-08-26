@@ -66,6 +66,15 @@ class HarnessSettings:
     final_reviewer_enabled: bool
     review_model: str
     review_max_chars: int
+    trace_mode: str
+    trace_max_content_bytes: int
+    skill_roots: tuple[Path, ...]
+    learned_skill_root: Path
+    skill_max_selected: int
+    skill_context_bytes: int
+    learning_enabled: bool
+    learning_min_support: int
+    learning_trial_percent: int
 
 
 def _state_root(workspace: Path) -> Path:
@@ -77,6 +86,31 @@ def _state_root(workspace: Path) -> Path:
         root = Path.home() / ".cache" / "adk-coding-agent" / digest
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _enabled(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _trace_mode() -> str:
+    value = os.getenv("ADK_CODING_TRACE_MODE", "metadata").strip().lower()
+    if value not in {"off", "metadata", "redacted"}:
+        raise ValueError(
+            "ADK_CODING_TRACE_MODE must be one of: off, metadata, redacted"
+        )
+    return value
+
+
+def _skill_roots(workspace: Path) -> tuple[Path, ...]:
+    roots = [workspace / ".agents" / "skills"]
+    configured = os.getenv("ADK_CODING_SKILL_DIRS", "").strip()
+    if configured:
+        roots.extend(
+            Path(value).expanduser()
+            for value in configured.split(os.pathsep)
+            if value.strip()
+        )
+    return tuple(dict.fromkeys(path.absolute() for path in roots))
 
 
 def load_settings() -> HarnessSettings:
@@ -97,12 +131,13 @@ def load_settings() -> HarnessSettings:
     if project_instructions:
         instruction += "\n\nStable project instructions:\n" + project_instructions
 
+    state_root = _state_root(workspace)
     return HarnessSettings(
         app_name="pi_inspired_adk_coding_agent",
         model=model,
         workspace=workspace,
         source_repository=(Path(source_value).resolve() if source_value else None),
-        state_root=_state_root(workspace),
+        state_root=state_root,
         task_id_override=os.getenv("ADK_CODING_TASK_ID"),
         base_revision_override=os.getenv("ADK_CODING_BASE_REVISION"),
         workspace_id_override=os.getenv("ADK_CODING_WORKSPACE_ID"),
@@ -132,6 +167,30 @@ def load_settings() -> HarnessSettings:
         review_max_chars=max(
             1_000,
             int(os.getenv("ADK_CODING_REVIEW_MAX_CHARS", "60000")),
+        ),
+        trace_mode=_trace_mode(),
+        trace_max_content_bytes=max(
+            64,
+            int(os.getenv("ADK_CODING_TRACE_MAX_CONTENT_BYTES", "8192")),
+        ),
+        skill_roots=_skill_roots(workspace),
+        learned_skill_root=state_root / "learned-skills",
+        skill_max_selected=max(
+            0,
+            int(os.getenv("ADK_CODING_SKILL_MAX_SELECTED", "3")),
+        ),
+        skill_context_bytes=max(
+            0,
+            int(os.getenv("ADK_CODING_SKILL_CONTEXT_BYTES", "24000")),
+        ),
+        learning_enabled=_enabled("ADK_CODING_LEARNING_ENABLED", "1"),
+        learning_min_support=max(
+            2,
+            int(os.getenv("ADK_CODING_LEARNING_MIN_SUPPORT", "3")),
+        ),
+        learning_trial_percent=min(
+            100,
+            max(0, int(os.getenv("ADK_CODING_LEARNING_TRIAL_PERCENT", "20"))),
         ),
     )
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from dataclasses import replace
 from datetime import UTC, datetime
 from importlib.metadata import version
@@ -12,6 +13,7 @@ import pytest
 from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.state.postgres import TaskLease
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin
+from harness.tracing import HarnessTracePlugin, TraceContentMode
 
 
 def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> None:
@@ -28,6 +30,17 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert any(isinstance(plugin, HarnessMetricsPlugin) for plugin in module.app.plugins)
     assert any(
         isinstance(plugin, VerifiedProjectMemoryPlugin)
+        for plugin in module.app.plugins
+    )
+    trace_plugin = next(
+        plugin
+        for plugin in module.app.plugins
+        if isinstance(plugin, HarnessTracePlugin)
+    )
+    assert trace_plugin.content_mode == TraceContentMode.METADATA_ONLY
+    learning = importlib.import_module("app.agent.learning")
+    assert any(
+        isinstance(plugin, learning.VerifiedTraceLearningPlugin)
         for plugin in module.app.plugins
     )
     tool_names = {getattr(tool, "name", getattr(tool, "__name__", "")) for tool in module.coding_worker.tools}
@@ -58,6 +71,30 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert state["stable_instruction_sha256"] == "review-prefix"
     assert state["static_prefix_tokens_estimate"] == 99
 
+    skill_runtime = importlib.import_module("app.agent.skills")
+    workflow._set_skill_state(
+        SimpleNamespace(state=state),
+        skill_runtime.SkillRuntimeContext(
+            selected_names=("python-review",),
+            selected_hashes=("a" * 64,),
+            candidate_name="learned-python-change",
+            experiment_id="skill:learned-python-change:v1",
+            variant="candidate",
+        ),
+    )
+    assert state["selected_skill_names"] == ["python-review"]
+    assert state["learning_variant"] == "candidate"
+    assert workflow._skill_runtime_from_state(SimpleNamespace(state=state)) == (
+        skill_runtime.SkillRuntimeContext(
+            selected_names=("python-review",),
+            selected_hashes=("a" * 64,),
+            candidate_name="learned-python-change",
+            experiment_id="skill:learned-python-change:v1",
+            variant="candidate",
+        )
+    )
+    assert workflow._workflow_kind_hint("Repair it", ["Python"]) == "python-change"
+
 
 def test_control_state_settings_are_environment_driven(monkeypatch, tmp_path) -> None:
     config = importlib.import_module("app.agent.config")
@@ -69,12 +106,64 @@ def test_control_state_settings_are_environment_driven(monkeypatch, tmp_path) ->
     )
     monkeypatch.setenv("ADK_CODING_WORKER_ID", "worker-a")
     monkeypatch.setenv("ADK_CODING_TASK_LEASE_SECONDS", "45")
+    monkeypatch.setenv("ADK_CODING_TRACE_MODE", "metadata")
+    monkeypatch.setenv("ADK_CODING_TRACE_MAX_CONTENT_BYTES", "2048")
+    monkeypatch.setenv(
+        "ADK_CODING_SKILL_DIRS",
+        f"{tmp_path / 'team-skills'}{os.pathsep}{tmp_path / 'personal-skills'}",
+    )
+    monkeypatch.setenv("ADK_CODING_SKILL_MAX_SELECTED", "2")
+    monkeypatch.setenv("ADK_CODING_SKILL_CONTEXT_BYTES", "12000")
+    monkeypatch.setenv("ADK_CODING_LEARNING_ENABLED", "false")
+    monkeypatch.setenv("ADK_CODING_LEARNING_MIN_SUPPORT", "4")
+    monkeypatch.setenv("ADK_CODING_LEARNING_TRIAL_PERCENT", "25")
 
     settings = config.load_settings()
 
     assert settings.control_database_url == "postgresql://control.example/harness"
     assert settings.worker_id == "worker-a"
     assert settings.task_lease_seconds == 45
+    assert settings.trace_mode == "metadata"
+    assert settings.trace_max_content_bytes == 2048
+    assert settings.skill_roots == (
+        (tmp_path / ".agents" / "skills").resolve(),
+        (tmp_path / "team-skills").resolve(),
+        (tmp_path / "personal-skills").resolve(),
+    )
+    assert settings.learned_skill_root == tmp_path / "state" / "learned-skills"
+    assert settings.skill_max_selected == 2
+    assert settings.skill_context_bytes == 12000
+    assert not settings.learning_enabled
+    assert settings.learning_min_support == 4
+    assert settings.learning_trial_percent == 25
+
+
+def test_invalid_trace_mode_fails_closed(monkeypatch, tmp_path) -> None:
+    config = importlib.import_module("app.agent.config")
+    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ADK_CODING_TRACE_MODE", "raw")
+
+    with pytest.raises(ValueError, match="off, metadata, redacted"):
+        config.load_settings()
+
+
+def test_skill_root_symlink_is_preserved_for_registry_validation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    config = importlib.import_module("app.agent.config")
+    workspace = tmp_path / "workspace"
+    external = tmp_path / "external"
+    (workspace / ".agents").mkdir(parents=True)
+    external.mkdir()
+    (workspace / ".agents" / "skills").symlink_to(external, target_is_directory=True)
+    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(workspace))
+    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+
+    settings = config.load_settings()
+
+    assert settings.skill_roots[0].is_symlink()
 
 
 def test_control_state_builder_forwards_settings_without_connecting() -> None:

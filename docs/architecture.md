@@ -38,6 +38,7 @@ Stable prefix
 Dynamic suffix
   compact Task Ledger
   project instructions
+  bounded skill catalog + selected skill bodies
   repository manifest
   ranked repository map
   compaction summary
@@ -169,6 +170,9 @@ A task passes only when required commands succeed, no scope violation exists, an
 | Large outputs | artifact service |
 | Cross-session knowledge | ADK MemoryService |
 | Cache/cost/quality metrics | SQLite MetricsStore |
+| Redacted ADK lifecycle traces | append-only SQLite TraceStore |
+| Workflow observations and trials | SQLite LearningStore |
+| Learned skill revisions | lifecycle directories under the state root |
 
 Local JSONL and SQLite implementations remain the single-process default. Multi-worker
 deployments can select the transactional PostgreSQL event adapter, which serializes
@@ -190,6 +194,9 @@ harness/workspace/         Git worktree lifecycle
 harness/verification/      validation planning and completion gate
 harness/persistence/       ADK service factories
 harness/telemetry/         cache/cost/tool/task metrics
+harness/tracing/           redacted ADK lifecycle spans and export
+harness/skills/            trusted Agent Skills discovery and selection
+harness/learning/          verified episodes, trials, promotion, and rollback
 harness/evals/             portable cases and deterministic graders
 harness/review/            bounded advisory diff review and paired ablation metrics
 harness/sandbox/           local, Docker, Kubernetes, and remote command backends
@@ -205,3 +212,21 @@ New capabilities should normally be implemented as one of:
 - a project-memory entry retrieved at task initialization
 
 A new model-visible tool is justified only when an ablation improves pass rate, cost per passed task, recovery, safety, or cross-model reliability.
+
+## Trace-driven improvement
+
+Tracing observes user messages, runs, agents, models, tools, events, successes, and
+errors through ADK callbacks. Stored projections are always metadata-only or redacted
+and byte-bounded; raw trace storage is not supported. Traces never mutate provider
+objects.
+
+Skill discovery is progressive: the dynamic packet gets a compact catalog and only
+the enabled bodies matched by an explicit `$skill-name` or deterministic lexical
+ranking. Candidate bodies can enter only through an exact-name trial assignment.
+
+Verified tasks are reduced to normalized action sequences and quality metrics. A
+repeated pattern may create a candidate, but it is promoted only after paired baseline
+and candidate evidence meets non-regression gates. Repeated failures move candidate or
+active revisions to the disabled lifecycle directory. See
+[`design/trace-driven-skill-learning.md`](design/trace-driven-skill-learning.md) for
+the complete contract.

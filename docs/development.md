@@ -112,6 +112,14 @@ agents-cli run "Fix the failing authentication tests"
 | `ADK_CODING_FINAL_REVIEWER` | `0` | Enable the advisory no-tool final-diff reviewer |
 | `ADK_CODING_REVIEW_MODEL` | coding model | Optional reviewer model override |
 | `ADK_CODING_REVIEW_MAX_CHARS` | `60000` | Maximum redacted diff characters sent to the reviewer |
+| `ADK_CODING_TRACE_MODE` | `metadata` | Lifecycle trace mode: `off`, `metadata`, or `redacted`; raw storage is unsupported |
+| `ADK_CODING_TRACE_MAX_CONTENT_BYTES` | `8192` | Maximum already-redacted JSON bytes per trace span |
+| `ADK_CODING_SKILL_DIRS` | unset | Additional trusted Agent Skills roots, separated by the platform path separator |
+| `ADK_CODING_SKILL_MAX_SELECTED` | `3` | Maximum enabled skill bodies in one work packet |
+| `ADK_CODING_SKILL_CONTEXT_BYTES` | `24000` | Total catalog and selected-skill byte budget |
+| `ADK_CODING_LEARNING_ENABLED` | `1` | Learn candidates from verified traces and run guarded trials |
+| `ADK_CODING_LEARNING_MIN_SUPPORT` | `3` | Minimum observations per arm before promotion is possible |
+| `ADK_CODING_LEARNING_TRIAL_PERCENT` | `20` | Deterministic percentage of matching tasks assigned the candidate |
 
 ## Approval policy
 
@@ -227,6 +235,28 @@ skills/my-workflow/
 ```
 
 `SKILL.md` should contain a precise description that tells the model when to load it. Keep detailed references and scripts outside the always-visible description.
+
+The project root `${ADK_CODING_WORKSPACE}/.agents/skills` is discovered by default.
+Additional roots must be named explicitly with `ADK_CODING_SKILL_DIRS`. Explicit
+`$skill-name` mentions take precedence over lexical matches and are also required to
+disclose linked reference files. Learned revisions live under
+`${ADK_CODING_STATE_DIR}/learned-skills/{candidates,active,disabled}`; do not edit or
+move them while a task is running.
+
+Inspect the sanitized trace and learned lifecycle records with:
+
+```bash
+uv run adk-coding-agent trace-export \
+  --state-root /path/to/durable-state --task-id issue-1842
+uv run adk-coding-agent learned-skills \
+  --state-root /path/to/durable-state
+uv run adk-coding-agent disable-skill \
+  --state-root /path/to/durable-state learned-skill-name
+```
+
+Launcher runs trace under the supplied task ID. A direct Agents CLI/API run has no
+task ID before its first callbacks, so its trace is consistently keyed by the ADK
+session ID; use that ID for `trace-export`.
 
 ## Change discipline
 

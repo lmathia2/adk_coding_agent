@@ -134,8 +134,16 @@ Use the same model, reasoning settings, task set, and concurrency for each varia
 | H | Structural repository map |
 | I | Optional semantic retrieval |
 | J | Optional final-diff reviewer |
+| K | Verified skill catalog and enabled skill selection |
+| L | K plus trace-learned candidate trials |
 
 Do not compare a prompt change bundled with a model change. Do not compare a tool change bundled with a new test-selection policy.
+
+For K/L, report paired baseline and candidate results per skill revision. Promotion
+requires minimum support in both arms, no pass-rate regression, and configured bounds
+for cost per passed task, uncached input, cache ratio, tool calls, and wall time.
+Disabled or rolled-back revisions remain in the audit history and must not be counted
+as active treatment.
 
 ## Run deterministic tests
 

@@ -62,6 +62,15 @@ This file is the commit-driven status view for the implementation. Each checked 
 - [x] Interruption/replay integration scenario.
 - [x] GitHub Actions unit and integration workflows.
 
+### Trace-driven skills and improvement
+
+- [x] Redacted, bounded, append-only ADK lifecycle tracing for users, runs, agents, models, tools, events, and errors.
+- [x] Trusted multi-root Agent Skills discovery with path confinement, validation, hashing, and progressive disclosure.
+- [x] Deterministic explicit and lexical skill selection in the volatile work packet.
+- [x] Verified-only workflow episodes, repeated-pattern discovery, and privacy-safe heuristic synthesis.
+- [x] Candidate/baseline assignment, multi-metric promotion gates, provenance, and automatic rollback.
+- [x] Runtime integration that cannot broaden the four-tool surface or override deterministic verification.
+
 ## Remaining hardening
 
 - [ ] Exercise the live Gemini/ADK workflow in a credentialed environment.

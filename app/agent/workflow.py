@@ -61,6 +61,7 @@ from .reviewer import (
     final_diff_reviewer,
     parse_final_diff_review,
 )
+from .skills import SkillRuntimeContext, build_skill_context
 from .worker import coding_worker
 
 ControlStateFactory = Callable[..., ControlStateBackend]
@@ -375,6 +376,53 @@ def _set_model_call_state(
     )
 
 
+def _set_skill_state(
+    ctx: Context,
+    runtime: SkillRuntimeContext,
+) -> None:
+    ctx.state.update(
+        {
+            "skill_selection_initialized": True,
+            "skill_context_text": runtime.text,
+            "selected_skill_names": list(runtime.selected_names),
+            "selected_skill_hashes": list(runtime.selected_hashes),
+            "learning_skill_name": runtime.candidate_name,
+            "learning_experiment_id": runtime.experiment_id,
+            "learning_variant": runtime.variant,
+        }
+    )
+
+
+def _skill_runtime_from_state(ctx: Context) -> SkillRuntimeContext | None:
+    state = ctx.state
+    if not bool(state.get("skill_selection_initialized", False)):
+        return None
+    return SkillRuntimeContext(
+        text=str(state.get("skill_context_text", "")),
+        selected_names=tuple(state.get("selected_skill_names", ())),
+        selected_hashes=tuple(state.get("selected_skill_hashes", ())),
+        candidate_name=state.get("learning_skill_name"),
+        experiment_id=state.get("learning_experiment_id"),
+        variant=state.get("learning_variant"),
+    )
+
+
+def _workflow_kind_hint(goal: str, languages: list[str]) -> str | None:
+    lowered = goal.lower()
+    if any(term in lowered for term in ("python", "pytest", "typescript", "rust", "golang")):
+        return None
+    normalized = {language.lower() for language in languages}
+    if "python" in normalized and not normalized & {"typescript", "javascript"}:
+        return "python-change"
+    if normalized & {"typescript", "javascript"} and "python" not in normalized:
+        return "javascript-change"
+    if normalized == {"rust"}:
+        return "rust-change"
+    if normalized == {"go"}:
+        return "go-change"
+    return None
+
+
 @node
 async def verify_task(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any]:
     """Run deterministic checks; model claims are evidence, not verdicts."""
@@ -526,6 +574,45 @@ async def _orchestrate_owned(
             compaction_id=compaction_id,
         )
 
+    skill_runtime = _skill_runtime_from_state(ctx)
+    if skill_runtime is None:
+        try:
+            skill_runtime = build_skill_context(
+                task_id=task_id,
+                goal=ledger.goal,
+                next_action=ledger.next_action or "",
+                workflow_kind=_workflow_kind_hint(ledger.goal, manifest.languages),
+            )
+        except Exception as error:
+            skill_runtime = SkillRuntimeContext()
+            _EVENT_STORE.append(
+                task_id,
+                EventKind.ACTION_RECORDED,
+                {
+                    "kind": "skill_loading_failed",
+                    "error_type": type(error).__name__,
+                },
+                idempotency_key=f"skill-loading-failed:{type(error).__name__}",
+            )
+        _set_skill_state(ctx, skill_runtime)
+    skill_event = {
+        "kind": "skills_selected",
+        "names": list(skill_runtime.selected_names),
+        "hashes": list(skill_runtime.selected_hashes),
+        "candidate": skill_runtime.candidate_name,
+        "experiment_id": skill_runtime.experiment_id,
+        "variant": skill_runtime.variant,
+    }
+    skill_event_hash = hashlib.sha256(
+        json.dumps(skill_event, sort_keys=True).encode()
+    ).hexdigest()[:16]
+    _EVENT_STORE.append(
+        task_id,
+        EventKind.ACTION_RECORDED,
+        skill_event,
+        idempotency_key=f"skills-selected:{skill_event_hash}",
+    )
+
     while ledger.iteration < max_iterations:
         if not lease_guard.renew():
             yield _lease_blocked_result(
@@ -556,7 +643,7 @@ async def _orchestrate_owned(
         )
         packet = build_work_packet(
             ledger,
-            project_instructions="",
+            project_instructions=skill_runtime.text,
             repository_manifest=manifest.to_compact_text(),
             repository_map=repository_map,
             compaction_summary=compaction_summary,
