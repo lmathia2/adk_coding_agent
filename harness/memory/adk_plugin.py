@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +21,9 @@ def _context_value(context: Any, name: str, default: Any = None) -> Any:
     if value is not None:
         return value
     state = getattr(context, "state", None)
-    if isinstance(state, Mapping):
-        return state.get(name, default)
+    state_get = getattr(state, "get", None)
+    if callable(state_get):
+        return state_get(name, default)
     return default
 
 

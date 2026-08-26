@@ -4,10 +4,13 @@ import asyncio
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 pytest.importorskip("google.adk")
+
+from google.adk.sessions.state import State
 
 from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.models.ledger import TaskLedger
@@ -20,7 +23,7 @@ from harness.state import EventKind, JsonlEventStore
 
 @dataclass
 class _Context:
-    state: dict[str, object]
+    state: Any
 
 
 def _repository(root: Path) -> Path:
@@ -122,7 +125,9 @@ def test_plugin_writes_memory_only_after_verified_completion(tmp_path: Path) -> 
     )
     asyncio.run(
         plugin.after_run_callback(
-            invocation_context=_Context(state={"task_id": task_id})
+            invocation_context=_Context(
+                state=State(value={"task_id": task_id}, delta={})
+            )
         )
     )
 

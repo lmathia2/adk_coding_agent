@@ -69,7 +69,7 @@ This file is the commit-driven status view for the implementation. Each checked 
 - [ ] Add container runtime adapters for Docker, Kubernetes, and enterprise remote sandboxes.
 - [ ] Add a human approval transport for interactive CLI, API, and managed-queue deployments.
 - [ ] Add provider usage callbacks that write live ADK token/cost events into `MetricsStore`.
-- [ ] Add curated project-memory extraction after verified task completion.
+- [x] Add curated project-memory extraction after verified task completion.
 - [ ] Add optional narrow final-diff reviewer and benchmark it as an ablation.
 - [ ] Add distributed locking/database implementations for multi-worker production deployments.
 
