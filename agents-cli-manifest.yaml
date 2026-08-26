@@ -1,0 +1,8 @@
+name: adk-coding-agent
+agent_directory: app
+agents_cli_version: "1.4.1"
+create_params:
+  agent: adk
+  deployment_target: none
+  session_type: in_memory
+  prototype: true

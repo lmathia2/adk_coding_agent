@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "adk-coding-agent"
+version = "0.1.0"
+description = "Pi-inspired token-efficient coding harness on Google ADK 2.x"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Lambert Mathias" }]
+dependencies = [
+  "google-adk[gcp]>=2.0.0,<3.0.0",
+  "pydantic>=2.10,<3.0",
+  "PyYAML>=6.0,<7.0",
+]
+
+[project.scripts]
+adk-coding-agent = "harness.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<9.0",
+  "pytest-asyncio>=0.25,<1.0",
+  "pyright>=1.1.400,<2.0",
+  "ruff>=0.12,<1.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app", "harness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+include = ["app", "harness", "tests"]

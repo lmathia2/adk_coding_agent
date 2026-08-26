@@ -1,0 +1,10 @@
+# Third-party notices
+
+This repository is designed to use development skills from
+[`google/agents-cli`](https://github.com/google/agents-cli), pinned in
+`.agents/skills/upstream-lock.json`. Those skills are licensed under Apache-2.0
+by Google LLC. Synchronized copies retain their upstream notices and metadata.
+
+The implementation also studies transferable patterns from the
+[`long-horizon-harness`](https://github.com/google/adk-samples/tree/main/core/python/long-horizon-harness)
+recipe in `google/adk-samples`, also Apache-2.0.
