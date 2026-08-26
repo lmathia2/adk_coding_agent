@@ -22,6 +22,7 @@ class EventKind(StrEnum):
     COMPACTION_CREATED = "compaction.created"
     CHECKPOINT_CREATED = "checkpoint.created"
     VERIFICATION_COMPLETED = "verification.completed"
+    REVIEW_COMPLETED = "review.completed"
     TASK_BLOCKED = "task.blocked"
     TASK_FINISHED = "task.finished"
 

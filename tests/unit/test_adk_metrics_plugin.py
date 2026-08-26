@@ -102,6 +102,49 @@ def test_plugin_records_one_model_call(tmp_path) -> None:
     assert summary["prefix_versions"] == 1
 
 
+def test_plugin_captures_per_call_prefix_before_state_changes(tmp_path) -> None:
+    database = tmp_path / "metrics.db"
+    plugin = HarnessMetricsPlugin(
+        database=database,
+        static_prefix_hash="default-prefix",
+        static_prefix_tokens=500,
+        default_model="test-model",
+        default_task_id="task-1",
+    )
+    state = {
+        "stable_instruction_sha256": "review-prefix",
+        "static_prefix_tokens_estimate": 125,
+        "dynamic_context_tokens_estimate": 250,
+    }
+    context = _Context(state=state)
+    asyncio.run(
+        plugin.before_model_callback(
+            callback_context=context,
+            llm_request=_Request(),
+        )
+    )
+    state.update(
+        {
+            "stable_instruction_sha256": "changed-after-start",
+            "static_prefix_tokens_estimate": 999,
+            "dynamic_context_tokens_estimate": 999,
+        }
+    )
+    asyncio.run(
+        plugin.after_model_callback(
+            callback_context=context,
+            llm_response=_Response(usage_metadata=_Usage()),
+        )
+    )
+
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            "SELECT static_prefix_hash, static_prefix_tokens, dynamic_suffix_tokens "
+            "FROM model_usage"
+        ).fetchone()
+    assert row == ("review-prefix", 125, 250)
+
+
 def test_plugin_reads_real_adk_state_and_session_fallback(tmp_path) -> None:
     database = tmp_path / "metrics.db"
     plugin = HarnessMetricsPlugin(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,11 +55,17 @@ class HarnessSettings:
     task_id_override: str | None
     base_revision_override: str | None
     workspace_id_override: str | None
+    control_database_url: str | None
+    worker_id: str
+    task_lease_seconds: int
     max_iterations: int
     compact_at_tokens: int
     recent_event_limit: int
     static_instruction: str
     static_prefix: str
+    final_reviewer_enabled: bool
+    review_model: str
+    review_max_chars: int
 
 
 def _state_root(workspace: Path) -> Path:
@@ -76,6 +83,10 @@ def load_settings() -> HarnessSettings:
     workspace = Path(os.getenv("ADK_CODING_WORKSPACE", os.getcwd())).resolve()
     source_value = os.getenv("ADK_CODING_SOURCE_REPOSITORY")
     model = os.getenv("ADK_CODING_MODEL", "gemini-3.7-flash")
+    review_model = os.getenv("ADK_CODING_REVIEW_MODEL", model)
+    worker_id = os.getenv("ADK_CODING_WORKER_ID", "").strip()
+    if not worker_id:
+        worker_id = f"{socket.gethostname()}:{os.getpid()}"
     project_instructions = collect_project_instructions(workspace)
     if len(project_instructions) > 16_000:
         project_instructions = (
@@ -95,6 +106,14 @@ def load_settings() -> HarnessSettings:
         task_id_override=os.getenv("ADK_CODING_TASK_ID"),
         base_revision_override=os.getenv("ADK_CODING_BASE_REVISION"),
         workspace_id_override=os.getenv("ADK_CODING_WORKSPACE_ID"),
+        control_database_url=(
+            os.getenv("ADK_CODING_CONTROL_DATABASE_URL", "").strip() or None
+        ),
+        worker_id=worker_id,
+        task_lease_seconds=max(
+            30,
+            int(os.getenv("ADK_CODING_TASK_LEASE_SECONDS", "900")),
+        ),
         max_iterations=int(os.getenv("ADK_CODING_MAX_ITERATIONS", "40")),
         compact_at_tokens=int(
             os.getenv("ADK_CODING_COMPACT_AT_TOKENS", "80000")
@@ -104,6 +123,15 @@ def load_settings() -> HarnessSettings:
         static_prefix=build_static_prefix(
             model_name=model,
             instruction=instruction,
+        ),
+        final_reviewer_enabled=(
+            os.getenv("ADK_CODING_FINAL_REVIEWER", "0").strip().lower()
+            in {"1", "true", "yes", "on"}
+        ),
+        review_model=review_model,
+        review_max_chars=max(
+            1_000,
+            int(os.getenv("ADK_CODING_REVIEW_MAX_CHARS", "60000")),
         ),
     )
 

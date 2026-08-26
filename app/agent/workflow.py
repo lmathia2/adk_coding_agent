@@ -6,7 +6,8 @@ import hashlib
 import json
 import subprocess
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -32,13 +33,19 @@ from harness.orchestration import (
     task_id_for,
 )
 from harness.repo import StructuralIndex, build_repository_manifest
+from harness.review import build_diff_review_packet
 from harness.state import (
     CheckpointStore,
     EventKind,
-    JsonlEventStore,
     SteeringQueue,
     rebuild_ledger,
 )
+from harness.state.factory import (
+    ControlStateBackend,
+    TaskLeaseStore,
+    create_control_state_backend,
+)
+from harness.state.postgres import TaskLease
 from harness.telemetry import MetricsStore, TaskOutcomeSample
 from harness.verification import (
     ValidationCommand,
@@ -47,10 +54,32 @@ from harness.verification import (
 )
 from harness.workspace import GitWorktreeManager
 
-from .config import SETTINGS
+from .config import SETTINGS, HarnessSettings
+from .reviewer import (
+    FINAL_REVIEW_STATIC_PREFIX,
+    build_review_input,
+    final_diff_reviewer,
+    parse_final_diff_review,
+)
 from .worker import coding_worker
 
-_EVENT_STORE = JsonlEventStore(SETTINGS.state_root / "events")
+ControlStateFactory = Callable[..., ControlStateBackend]
+
+
+def _build_control_state(
+    settings: HarnessSettings,
+    *,
+    factory: ControlStateFactory = create_control_state_backend,
+) -> ControlStateBackend:
+    return factory(
+        state_root=settings.state_root,
+        database_url=settings.control_database_url,
+    )
+
+
+_CONTROL_STATE = _build_control_state(SETTINGS)
+_EVENT_STORE = _CONTROL_STATE.event_store
+_TASK_LEASE_STORE = _CONTROL_STATE.task_lease_store
 _STEERING_QUEUE = SteeringQueue(SETTINGS.state_root / "state.db")
 _CHECKPOINT_STORE = CheckpointStore(SETTINGS.state_root / "state.db")
 _METRICS_STORE = MetricsStore(SETTINGS.state_root / "metrics.db")
@@ -65,6 +94,75 @@ _WORKSPACE_MANAGER = (
 )
 _STATIC_PREFIX_HASH = prefix_hash(SETTINGS.static_prefix)
 _STATIC_PREFIX_TOKEN_ESTIMATE = len(SETTINGS.static_prefix) // 4
+_REVIEW_PREFIX_HASH = prefix_hash(FINAL_REVIEW_STATIC_PREFIX)
+_REVIEW_PREFIX_TOKEN_ESTIMATE = len(FINAL_REVIEW_STATIC_PREFIX) // 4
+
+
+@dataclass(slots=True)
+class _TaskLeaseGuard:
+    store: TaskLeaseStore | None
+    task_id: str
+    owner: str
+    lease_seconds: int
+    lease: TaskLease | None = None
+
+    @classmethod
+    def acquire(
+        cls,
+        store: TaskLeaseStore | None,
+        *,
+        task_id: str,
+        owner: str,
+        lease_seconds: int,
+    ) -> _TaskLeaseGuard:
+        guard = cls(
+            store=store,
+            task_id=task_id,
+            owner=owner,
+            lease_seconds=lease_seconds,
+        )
+        if store is not None:
+            guard.lease = store.acquire(
+                task_id,
+                owner,
+                lease_seconds=lease_seconds,
+            )
+        return guard
+
+    @property
+    def acquired(self) -> bool:
+        return self.store is None or self.lease is not None
+
+    def renew(self) -> bool:
+        if self.store is None:
+            return True
+        if self.lease is None:
+            return False
+        self.lease = self.store.renew(
+            self.lease,
+            lease_seconds=self.lease_seconds,
+        )
+        return self.lease is not None
+
+    def release(self) -> bool:
+        if self.store is None:
+            return True
+        if self.lease is None:
+            return False
+        released = self.store.release(self.lease)
+        self.lease = None
+        return released
+
+
+def _lease_blocked_result(task_id: str, reason: str) -> str:
+    return json.dumps(
+        {
+            "status": "blocked",
+            "task_id": task_id,
+            "reason": reason,
+        },
+        sort_keys=True,
+    )
 
 
 def _session_id(ctx: Context) -> str | None:
@@ -257,14 +355,21 @@ def _malformed_step(error: ValueError) -> AgentStep:
     )
 
 
-def _set_model_call_state(ctx: Context, *, task_id: str, dynamic_tokens: int) -> None:
+def _set_model_call_state(
+    ctx: Context,
+    *,
+    task_id: str,
+    dynamic_tokens: int,
+    stable_prefix_hash: str = _STATIC_PREFIX_HASH,
+    static_prefix_tokens: int = _STATIC_PREFIX_TOKEN_ESTIMATE,
+) -> None:
     """Expose current packet identity to ADK callbacks before the model call."""
 
     ctx.state.update(
         {
             "task_id": task_id,
-            "stable_instruction_sha256": _STATIC_PREFIX_HASH,
-            "static_prefix_tokens_estimate": _STATIC_PREFIX_TOKEN_ESTIMATE,
+            "stable_instruction_sha256": stable_prefix_hash,
+            "static_prefix_tokens_estimate": static_prefix_tokens,
             "dynamic_context_tokens_estimate": dynamic_tokens,
         }
     )
@@ -311,10 +416,38 @@ async def verify_task(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any
     }
 
 
-@node(rerun_on_resume=True)
-async def orchestrate(
+@node
+async def review_final_diff(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any]:
+    """Run the optional bounded reviewer after deterministic verification passes."""
+
+    packet = build_diff_review_packet(
+        SETTINGS.workspace,
+        str(node_input["base_revision"]),
+        max_chars=SETTINGS.review_max_chars,
+    )
+    reviewer_input = build_review_input(packet, dict(node_input["verification"]))
+    _set_model_call_state(
+        ctx,
+        task_id=str(node_input["task_id"]),
+        dynamic_tokens=len(reviewer_input) // 4,
+        stable_prefix_hash=_REVIEW_PREFIX_HASH,
+        static_prefix_tokens=_REVIEW_PREFIX_TOKEN_ESTIMATE,
+    )
+    raw_review = await ctx.run_node(final_diff_reviewer, node_input=reviewer_input)
+    review = parse_final_diff_review(raw_review)
+    return {
+        "review": review.model_dump(mode="json"),
+        "diff_sha256": packet.diff_sha256,
+        "changed_paths": packet.changed_paths,
+        "truncated": packet.truncated,
+        "omitted_bytes": packet.omitted_bytes,
+    }
+
+
+async def _orchestrate_owned(
     ctx: Context,
     node_input: str | dict[str, Any],
+    lease_guard: _TaskLeaseGuard,
 ) -> AsyncGenerator[Event | str, None]:
     started = time.monotonic()
     request = parse_task_request(node_input)
@@ -379,7 +512,7 @@ async def orchestrate(
 
     _REPOSITORY_INDEX.index_repository()
     compaction_summary, compaction_id = _latest_compaction(task_id)
-    owner = f"adk:{session_id or task_id}"
+    owner = f"{SETTINGS.worker_id}:{session_id or task_id}"
     max_iterations = min(
         SETTINGS.max_iterations,
         int(getattr(request, "max_iterations", None) or SETTINGS.max_iterations),
@@ -394,6 +527,12 @@ async def orchestrate(
         )
 
     while ledger.iteration < max_iterations:
+        if not lease_guard.renew():
+            yield _lease_blocked_result(
+                task_id,
+                "distributed task lease was lost; another worker may own the task",
+            )
+            return
         leased = _STEERING_QUEUE.lease(task_id, owner, limit=20)
         steering = [message.content for message in leased]
         for message in leased:
@@ -430,6 +569,12 @@ async def orchestrate(
 
         _set_model_call_state(ctx, task_id=task_id, dynamic_tokens=dynamic_tokens)
         raw_step = await ctx.run_node(coding_worker, node_input=packet)
+        if not lease_guard.renew():
+            yield _lease_blocked_result(
+                task_id,
+                "distributed task lease expired during model execution",
+            )
+            return
         try:
             step = parse_agent_step(raw_step)
         except ValueError as error:
@@ -569,6 +714,12 @@ async def orchestrate(
                     ],
                 },
             )
+            if not lease_guard.renew():
+                yield _lease_blocked_result(
+                    task_id,
+                    "distributed task lease expired during verification",
+                )
+                return
             report = verification["report"]
             _EVENT_STORE.append(
                 task_id,
@@ -577,10 +728,38 @@ async def orchestrate(
                 idempotency_key=f"verify:{ledger.iteration}",
             )
             if report["passed"]:
+                review_result: dict[str, Any] | None = None
+                if SETTINGS.final_reviewer_enabled:
+                    try:
+                        review_result = await ctx.run_node(
+                            review_final_diff,
+                            node_input={
+                                "task_id": task_id,
+                                "base_revision": ledger.base_revision,
+                                "verification": report,
+                            },
+                        )
+                    except Exception as error:
+                        review_result = {
+                            "status": "unavailable",
+                            "error_type": type(error).__name__,
+                        }
+                    if not lease_guard.renew():
+                        yield _lease_blocked_result(
+                            task_id,
+                            "distributed task lease expired during final review",
+                        )
+                        return
+                    _EVENT_STORE.append(
+                        task_id,
+                        EventKind.REVIEW_COMPLETED,
+                        review_result,
+                        idempotency_key="final-diff-review",
+                    )
                 _EVENT_STORE.append(
                     task_id,
                     EventKind.TASK_FINISHED,
-                    {"verification": report},
+                    {"verification": report, "review": review_result},
                     idempotency_key="task-finished",
                 )
                 data = ledger.model_dump(mode="python")
@@ -608,6 +787,7 @@ async def orchestrate(
                         "task_id": task_id,
                         "changed_paths": verification["changed_paths"],
                         "verification": report,
+                        "review": review_result,
                         "metrics": _METRICS_STORE.task_summary(task_id),
                     },
                     sort_keys=True,
@@ -657,9 +837,37 @@ async def orchestrate(
     )
 
 
+@node(rerun_on_resume=True)
+async def orchestrate(
+    ctx: Context,
+    node_input: str | dict[str, Any],
+) -> AsyncGenerator[Event | str, None]:
+    request = parse_task_request(node_input)
+    session_id = _session_id(ctx)
+    task_id = SETTINGS.task_id_override or task_id_for(request, session_id)
+    lease_guard = _TaskLeaseGuard.acquire(
+        _TASK_LEASE_STORE,
+        task_id=task_id,
+        owner=SETTINGS.worker_id,
+        lease_seconds=SETTINGS.task_lease_seconds,
+    )
+    if not lease_guard.acquired:
+        yield _lease_blocked_result(
+            task_id,
+            "another worker owns the distributed task lease",
+        )
+        return
+
+    try:
+        async for event in _orchestrate_owned(ctx, node_input, lease_guard):
+            yield event
+    finally:
+        lease_guard.release()
+
+
 root_agent = Workflow(
     name="coding_harness",
     edges=[("START", orchestrate)],
 )
 
-__all__ = ["orchestrate", "root_agent", "verify_task"]
+__all__ = ["orchestrate", "review_final_diff", "root_agent", "verify_task"]

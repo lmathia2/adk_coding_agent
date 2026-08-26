@@ -29,6 +29,16 @@ class ModelPricing:
     reasoning: float = 0.0
 
 
+@dataclass(frozen=True, slots=True)
+class _PendingModelCall:
+    started: float
+    model: str
+    task_id: str
+    static_prefix_hash: str
+    static_prefix_tokens: int
+    dynamic_suffix_tokens: int
+
+
 def _integer(value: Any) -> int:
     try:
         return max(int(value or 0), 0)
@@ -179,7 +189,7 @@ class HarnessMetricsPlugin(BasePlugin):
         self.default_model = default_model
         self.default_task_id = default_task_id
         self.pricing = dict(pricing or {})
-        self._starts: dict[str, deque[tuple[float, str, str]]] = defaultdict(deque)
+        self._starts: dict[str, deque[_PendingModelCall]] = defaultdict(deque)
         self._lock = threading.RLock()
 
     @staticmethod
@@ -200,7 +210,7 @@ class HarnessMetricsPlugin(BasePlugin):
             session_id = _attribute(getattr(context, "session", None), "id")
         return str(session_id or "unknown")
 
-    def _pop_start(self, invocation_id: str) -> tuple[float, str, str] | None:
+    def _pop_start(self, invocation_id: str) -> _PendingModelCall | None:
         with self._lock:
             pending = self._starts.get(invocation_id)
             if not pending:
@@ -227,8 +237,34 @@ class HarnessMetricsPlugin(BasePlugin):
             )
         )
         task_id = self._task_id(callback_context)
+        prefix_hash = str(
+            _context_value(
+                callback_context,
+                "stable_instruction_sha256",
+                self.static_prefix_hash,
+            )
+        )
+        prefix_tokens = _integer(
+            _context_value(
+                callback_context,
+                "static_prefix_tokens_estimate",
+                self.static_prefix_tokens,
+            )
+        )
+        dynamic_tokens = _integer(
+            _context_value(callback_context, "dynamic_context_tokens_estimate", 0)
+        )
         with self._lock:
-            self._starts[invocation_id].append((time.monotonic(), model, task_id))
+            self._starts[invocation_id].append(
+                _PendingModelCall(
+                    started=time.monotonic(),
+                    model=model,
+                    task_id=task_id,
+                    static_prefix_hash=prefix_hash,
+                    static_prefix_tokens=prefix_tokens,
+                    dynamic_suffix_tokens=dynamic_tokens,
+                )
+            )
         return None
 
     async def after_model_callback(
@@ -246,20 +282,31 @@ class HarnessMetricsPlugin(BasePlugin):
             started = time.monotonic()
             model = self.default_model
             task_id = self._task_id(callback_context)
+            prefix_hash = self.static_prefix_hash
+            prefix_tokens = self.static_prefix_tokens
+            dynamic_tokens = _integer(
+                _context_value(
+                    callback_context,
+                    "dynamic_context_tokens_estimate",
+                    0,
+                )
+            )
         else:
-            started, model, task_id = pending
+            started = pending.started
+            model = pending.model
+            task_id = pending.task_id
+            prefix_hash = pending.static_prefix_hash
+            prefix_tokens = pending.static_prefix_tokens
+            dynamic_tokens = pending.dynamic_suffix_tokens
         counts = usage_counts(llm_response)
-        dynamic_tokens = _integer(
-            _context_value(callback_context, "dynamic_context_tokens_estimate", 0)
-        )
         pricing = self.pricing.get(model, ModelPricing())
         self.store.record_model_usage(
             ModelUsageSample(
                 task_id=task_id,
                 invocation_id=invocation_id,
                 model=model,
-                static_prefix_hash=self.static_prefix_hash,
-                static_prefix_tokens=self.static_prefix_tokens,
+                static_prefix_hash=prefix_hash,
+                static_prefix_tokens=prefix_tokens,
                 dynamic_suffix_tokens=dynamic_tokens,
                 input_tokens=counts["input_tokens"],
                 output_tokens=counts["output_tokens"],
