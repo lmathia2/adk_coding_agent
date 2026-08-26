@@ -4,17 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 import time
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from google.adk import Context, Event, Workflow
-from google.adk.agents.context_cache_config import ContextCacheConfig
-from google.adk.apps import App, EventsCompactionConfig, ResumabilityConfig
+from google.adk.events import EventActions
 from google.adk.workflow import node
 
 from harness.models.agent_step import AgentStep
@@ -189,7 +186,7 @@ def _save_checkpoint(
         ledger_version=event_stream[-1].sequence,
         ledger_hash=hashlib.sha256(ledger_json.encode()).hexdigest(),
         compaction_id=compaction_id,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     _CHECKPOINT_STORE.save(checkpoint)
     _EVENT_STORE.append(
@@ -213,7 +210,7 @@ def _record_outcome(
     *,
     task_id: str,
     ledger: TaskLedger,
-    status: str,
+    status: Literal["complete", "blocked", "failed"],
     passed: bool,
     started: float,
     tests_passed: int = 0,
@@ -462,7 +459,7 @@ async def orchestrate(
             compaction_id=compaction_id,
         )
         yield Event(
-            state={
+            actions=EventActions(state_delta={
                 "task_id": task_id,
                 "task_ledger": ledger.model_dump(mode="json"),
                 "task_route": route.value,
@@ -471,7 +468,7 @@ async def orchestrate(
                 "stable_instruction_sha256": _STATIC_PREFIX_HASH,
                 "static_prefix_tokens_estimate": _STATIC_PREFIX_TOKEN_ESTIMATE,
                 "dynamic_context_tokens_estimate": dynamic_tokens,
-            }
+            })
         )
 
         if route == HarnessRoute.BLOCKED:
@@ -652,27 +649,4 @@ root_agent = Workflow(
     edges=[("START", orchestrate)],
 )
 
-app = App(
-    name=SETTINGS.app_name,
-    root_agent=root_agent,
-    context_cache_config=ContextCacheConfig(
-        min_tokens=int(os.getenv("ADK_CODING_CACHE_MIN_TOKENS", "4096")),
-        ttl_seconds=int(os.getenv("ADK_CODING_CACHE_TTL_SECONDS", "1800")),
-        cache_intervals=int(os.getenv("ADK_CODING_CACHE_INTERVALS", "10")),
-    ),
-    events_compaction_config=EventsCompactionConfig(
-        compaction_interval=int(
-            os.getenv("ADK_CODING_COMPACTION_INTERVAL", "8")
-        ),
-        overlap_size=int(os.getenv("ADK_CODING_COMPACTION_OVERLAP", "2")),
-        token_threshold=int(
-            os.getenv("ADK_CODING_ADK_COMPACT_TOKENS", "96000")
-        ),
-        event_retention_size=int(
-            os.getenv("ADK_CODING_EVENT_RETENTION", "20")
-        ),
-    ),
-    resumability_config=ResumabilityConfig(is_resumable=True),
-)
-
-__all__ = ["app", "orchestrate", "root_agent", "verify_task"]
+__all__ = ["orchestrate", "root_agent", "verify_task"]

@@ -6,7 +6,7 @@ import hashlib
 import os
 
 from google.adk.agents.context_cache_config import ContextCacheConfig
-from google.adk.apps import App, EventsCompactionConfig, ResumabilityConfig
+from google.adk.apps.app import App, EventsCompactionConfig, ResumabilityConfig
 
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin, pricing_from_env
 
