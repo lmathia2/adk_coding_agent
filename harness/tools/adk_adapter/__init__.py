@@ -11,11 +11,13 @@ import hashlib
 import importlib.util
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
+from harness.approvals import ApprovalStore
 from harness.safety import ApprovalAction, ApprovalPolicy, SecretRedactor
 from harness.state import ToolReceiptStore
 
@@ -102,7 +104,9 @@ class _ManagedTools:
         self.workspace = workspace.resolve()
         legacy = _legacy_module()
         self.base = legacy.create_adk_tools(self.workspace)
-        self.receipts = ToolReceiptStore(_state_root(self.workspace) / "managed-tools.db")
+        state_root = _state_root(self.workspace)
+        self.receipts = ToolReceiptStore(state_root / "managed-tools.db")
+        self.approvals = ApprovalStore(state_root / "approvals.db")
         self.redactor = SecretRedactor(known_secrets=_known_secrets())
         approved = {
             item.strip()
@@ -116,7 +120,9 @@ class _ManagedTools:
             allow_unknown=_truthy("ADK_CODING_ALLOW_UNKNOWN_COMMANDS"),
             approved_fingerprints=approved,
         )
-        self.task_scope = hashlib.sha256(self.workspace.as_posix().encode()).hexdigest()[:24]
+        self.task_scope = os.getenv("ADK_CODING_TASK_ID") or hashlib.sha256(
+            self.workspace.as_posix().encode()
+        ).hexdigest()[:24]
 
     def _redact(self, value: Any) -> dict[str, Any]:
         normalized = _normalize_result(value)
@@ -127,8 +133,32 @@ class _ManagedTools:
 
     def bash(self, command: str, timeout_seconds: int = 120) -> dict[str, Any]:
         fingerprint = _canonical_hash("bash", {"command": command})
+        persisted = self.approvals.for_fingerprint(self.task_scope, fingerprint)
+        if persisted and persisted.status == "approved":
+            self.policy.approved_fingerprints.add(fingerprint)
+        elif persisted and persisted.status == "denied":
+            return {
+                "status": "blocked",
+                "model_text": self.redactor.redact_text(
+                    "Command not executed: approval denied by "
+                    f"{persisted.decided_by or 'reviewer'}."
+                ),
+                "approval_required": False,
+                "approval_request_id": persisted.request_id,
+                "risk": persisted.risk,
+            }
         decision = self.policy.decide(command, fingerprint=fingerprint)
         if decision.action != ApprovalAction.ALLOW:
+            request_id: str | None = None
+            if decision.action == ApprovalAction.REQUIRE_APPROVAL:
+                request = self.approvals.request(
+                    task_id=self.task_scope,
+                    fingerprint=fingerprint,
+                    operation=self.redactor.redact_text(command),
+                    risk=decision.risk.value,
+                    reason=decision.reason,
+                )
+                request_id = request.request_id
             return {
                 "status": "blocked",
                 "model_text": (
@@ -136,6 +166,7 @@ class _ManagedTools:
                     f"Approval fingerprint: {fingerprint}"
                 ),
                 "approval_required": decision.action == ApprovalAction.REQUIRE_APPROVAL,
+                "approval_request_id": request_id,
                 "risk": decision.risk.value,
             }
         return self._redact(

@@ -76,6 +76,28 @@ def test_managed_command_executes_after_exact_approval(
     assert "approved" in result["model_text"]
 
 
+def test_managed_command_honors_denied_approval(tmp_path: Path, monkeypatch) -> None:
+    state = tmp_path / "state"
+    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(state))
+    monkeypatch.setenv("ADK_CODING_TASK_ID", "task")
+    tools = create_adk_tools(tmp_path)
+
+    blocked = tools.bash("printf denied")
+    request_id = blocked["approval_request_id"]
+    ApprovalStore(state / "approvals.db").decide(
+        request_id,
+        decision="denied",
+        actor="reviewer",
+    )
+
+    denied = tools.bash("printf denied")
+
+    assert denied["status"] == "blocked"
+    assert denied["approval_required"] is False
+    assert denied["approval_request_id"] == request_id
+    assert "denied by reviewer" in denied["model_text"]
+
+
 def test_approval_cli_lists_and_decides_requests(
     tmp_path: Path,
     capsys,
