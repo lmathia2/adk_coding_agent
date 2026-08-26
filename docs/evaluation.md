@@ -23,6 +23,13 @@ Prefer tasks derived from recent human pull requests:
 
 The starter suite in `tests/eval/suites/core.json` demonstrates the schema with a localized Python bug. It is a smoke case, not a representative benchmark.
 
+`tests/eval/suites/real_repositories.json` contains the source-backed large-repository
+suite. Its cases are derived from merged human pull requests in Django and Ruff. Each
+case records the upstream task URL, immutable base/solution/merge revisions, repository
+size at observation time, expected scope, forbidden held-out paths, exact held-out blob
+hashes, and validation commands. `load_real_repository_suite()` rejects provenance,
+revision, path, or case-alignment drift before a runner fetches a repository.
+
 ## Portable case schema
 
 Each `EvaluationCase` contains:

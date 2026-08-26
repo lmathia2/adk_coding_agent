@@ -1,0 +1,125 @@
+{
+  "schema_version": "real-repository-v1",
+  "suite_id": "large-human-prs-v1",
+  "description": "Fail-to-pass tasks derived from merged human pull requests in large public repositories.",
+  "cases": [
+    {
+      "case_id": "django-asgi-script-prefix-boundary",
+      "description": "Preserve ASGI path_info when root_path is only a textual, not segment, prefix.",
+      "source": {
+        "repository": "django/django",
+        "repository_size_kb": 282129,
+        "metadata_observed_at": "2026-08-26T00:00:00Z",
+        "pull_request_number": 20749,
+        "pull_request_url": "https://github.com/django/django/pull/20749",
+        "api_url": "https://api.github.com/repos/django/django/pulls/20749",
+        "author_login": "KhadyotTakale",
+        "author_type": "User",
+        "title": "Fixed #36940 -- Improved ASGI script prefix path_info handling.",
+        "upstream_task_text": "The current ASGIRequest.__init__ uses str.removeprefix() to strip the script name from the request path to compute path_info. This is fragile because removeprefix is a pure string operation and does not verify that the prefix is a proper path segment boundary.",
+        "upstream_task_url": "https://code.djangoproject.com/ticket/36940",
+        "merged_at": "2026-03-06T22:32:33Z",
+        "base_revision": "864850b20f7ef89ed2f6bd8baf1a45acc9245a6c",
+        "solution_revision": "d0245ddf06a0070db0ab803f2a7643ba9abfa082",
+        "merge_revision": "b33c31d992591bc8e8d20ac156809e4ae5b45375"
+      },
+      "fixture": {
+        "kind": "git",
+        "repository_url": "https://github.com/django/django.git",
+        "base_revision": "864850b20f7ef89ed2f6bd8baf1a45acc9245a6c",
+        "solution_revision": "d0245ddf06a0070db0ab803f2a7643ba9abfa082",
+        "fetch_strategy": "commit",
+        "initialize_submodules": false
+      },
+      "request": {
+        "goal": "Fix ASGIRequest.path_info calculation so root_path is removed only at a path segment boundary or when it equals the full path, while preserving trailing-slash behavior.",
+        "acceptance_criteria": [
+          "A path that merely starts with the same text as root_path remains unchanged in path_info",
+          "A root_path ending in a slash is stripped correctly",
+          "Existing ASGI handler tests continue to pass"
+        ],
+        "permitted_paths": ["django/core/handlers/asgi.py"],
+        "forbidden_paths": ["tests/**"],
+        "verification_requirements": ["python tests/runtests.py handlers.tests.AsyncHandlerRequestTests"]
+      },
+      "expected_changed_globs": ["django/core/handlers/asgi.py"],
+      "forbidden_changed_globs": ["tests/**"],
+      "held_out_validation": {
+        "source_revision": "d0245ddf06a0070db0ab803f2a7643ba9abfa082",
+        "files": [
+          {
+            "path": "tests/handlers/tests.py",
+            "blob_sha": "625090a66d0cf388fc6deb1746b553de7f2633d8"
+          }
+        ],
+        "commands": ["python tests/runtests.py handlers.tests.AsyncHandlerRequestTests"],
+        "environment": {}
+      },
+      "tags": ["python", "django", "large-repository", "human-pr", "fail-to-pass"]
+    },
+    {
+      "case_id": "ruff-sim105-preserve-except-semantics",
+      "description": "Preserve empty-tuple and bare-except behavior in SIM105 unsafe fixes.",
+      "source": {
+        "repository": "astral-sh/ruff",
+        "repository_size_kb": 191809,
+        "metadata_observed_at": "2026-08-26T00:00:00Z",
+        "pull_request_number": 18213,
+        "pull_request_url": "https://github.com/astral-sh/ruff/pull/18213",
+        "api_url": "https://api.github.com/repos/astral-sh/ruff/pulls/18213",
+        "author_login": "VascoSch92",
+        "author_type": "User",
+        "title": "[`flake8-simplify`] Preserve original behavior for `except ()` and bare `except` (`SIM105`)",
+        "upstream_task_text": "The SIM105 fix changes behavior for an empty except tuple and a bare except. Empty tuples should produce contextlib.suppress(), while bare except handlers should preserve BaseException semantics.",
+        "upstream_task_url": "https://github.com/astral-sh/ruff/issues/18209",
+        "merged_at": "2025-06-23T14:01:58Z",
+        "base_revision": "f9ca6eb63ea8df52fa976f66da2881d81fdcb32d",
+        "solution_revision": "57927841c4b1dfb9517ff3e378136182bc3854a2",
+        "merge_revision": "ca8ed35275ef4ee3e649d56eb51e04389a5ef1fb"
+      },
+      "fixture": {
+        "kind": "git",
+        "repository_url": "https://github.com/astral-sh/ruff.git",
+        "base_revision": "f9ca6eb63ea8df52fa976f66da2881d81fdcb32d",
+        "solution_revision": "57927841c4b1dfb9517ff3e378136182bc3854a2",
+        "fetch_strategy": "commit",
+        "initialize_submodules": false
+      },
+      "request": {
+        "goal": "Fix SIM105 unsafe edits so empty tuple handlers become contextlib.suppress() and bare except handlers preserve builtins.BaseException behavior, including when BaseException is shadowed.",
+        "acceptance_criteria": [
+          "except () produces contextlib.suppress() with no exception argument",
+          "bare except produces contextlib.suppress(builtins.BaseException)",
+          "A locally shadowed BaseException name retains its original meaning"
+        ],
+        "permitted_paths": ["crates/ruff_linter/src/rules/flake8_simplify/rules/suppressible_exception.rs"],
+        "forbidden_paths": [
+          "crates/ruff_linter/resources/test/fixtures/**",
+          "crates/ruff_linter/src/rules/flake8_simplify/snapshots/**"
+        ],
+        "verification_requirements": ["cargo test -p ruff_linter --lib rules::flake8_simplify::tests::SIM105"]
+      },
+      "expected_changed_globs": ["crates/ruff_linter/src/rules/flake8_simplify/rules/suppressible_exception.rs"],
+      "forbidden_changed_globs": [
+        "crates/ruff_linter/resources/test/fixtures/**",
+        "crates/ruff_linter/src/rules/flake8_simplify/snapshots/**"
+      ],
+      "held_out_validation": {
+        "source_revision": "57927841c4b1dfb9517ff3e378136182bc3854a2",
+        "files": [
+          {
+            "path": "crates/ruff_linter/resources/test/fixtures/flake8_simplify/SIM105_0.py",
+            "blob_sha": "a893af9add7646c194d96a86fa2fbe4bcda9838c"
+          },
+          {
+            "path": "crates/ruff_linter/src/rules/flake8_simplify/snapshots/ruff_linter__rules__flake8_simplify__tests__SIM105_SIM105_0.py.snap",
+            "blob_sha": "c4fe31837ce899d988cecd1fc8e6e93bcad5a221"
+          }
+        ],
+        "commands": ["cargo test -p ruff_linter --lib rules::flake8_simplify::tests::SIM105"],
+        "environment": {"RUST_BACKTRACE": "1"}
+      },
+      "tags": ["rust", "ruff", "large-repository", "human-pr", "fail-to-pass"]
+    }
+  ]
+}

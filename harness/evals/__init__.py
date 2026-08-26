@@ -8,6 +8,15 @@ from .cases import (
     write_evaluation_suite,
 )
 from .grader import EvaluationCheck, EvaluationResult, grade_case
+from .real_repositories import (
+    GitRepositoryFixture,
+    HeldOutFile,
+    HeldOutValidation,
+    HumanPullRequestSource,
+    RealRepositoryEvaluationCase,
+    RealRepositoryEvaluationSuite,
+    load_real_repository_suite,
+)
 
 __all__ = [
     "EvaluationBudgets",
@@ -15,7 +24,14 @@ __all__ = [
     "EvaluationCheck",
     "EvaluationResult",
     "EvaluationSuite",
+    "GitRepositoryFixture",
+    "HeldOutFile",
+    "HeldOutValidation",
+    "HumanPullRequestSource",
+    "RealRepositoryEvaluationCase",
+    "RealRepositoryEvaluationSuite",
     "grade_case",
     "load_evaluation_suite",
+    "load_real_repository_suite",
     "write_evaluation_suite",
 ]
