@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from pydantic import Field
@@ -66,7 +67,7 @@ class Checkpoint(StrictModel):
     ledger_hash: str
     compaction_id: str | None = None
     label: str | None = None
-    created_at: float = Field(default_factory=time.time)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class SteeringMessage(StrictModel):
