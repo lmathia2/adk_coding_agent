@@ -6,7 +6,7 @@ Each checked item is committed independently.
 - [x] Add an Agents CLI-compatible prototype scaffold and pin upstream Google skills.
 - [x] Implement typed task, ledger, tool, context, checkpoint, and verification models.
 - [x] Implement deterministic context compilation, prefix hashing, and coding-aware compaction.
-- [ ] Implement the environment abstraction, command policy, bounded output, and four coding tools.
+- [x] Implement the environment abstraction, command policy, bounded output, and four coding tools.
 - [ ] Implement repository discovery, lexical/structural indexing, and compact repository maps.
 - [ ] Implement event reduction, SQLite persistence, tool receipts, steering, and checkpoints.
 - [ ] Implement deterministic verification and acceptance-criterion evidence.
