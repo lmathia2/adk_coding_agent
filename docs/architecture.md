@@ -170,7 +170,10 @@ A task passes only when required commands succeed, no scope violation exists, an
 | Cross-session knowledge | ADK MemoryService |
 | Cache/cost/quality metrics | SQLite MetricsStore |
 
-Local JSONL and SQLite implementations are intentionally simple. The interfaces are separable so multi-worker deployments can replace them with PostgreSQL and distributed leases.
+Local JSONL and SQLite implementations remain the single-process default. Multi-worker
+deployments can select the transactional PostgreSQL event adapter, which serializes
+sequence allocation per task, and database-clock task leases that enforce one active
+worker owner with token-checked renewal and release.
 
 ## Package map
 
@@ -188,6 +191,8 @@ harness/verification/      validation planning and completion gate
 harness/persistence/       ADK service factories
 harness/telemetry/         cache/cost/tool/task metrics
 harness/evals/             portable cases and deterministic graders
+harness/review/            bounded advisory diff review and paired ablation metrics
+harness/sandbox/           local, Docker, Kubernetes, and remote command backends
 ```
 
 ## Extension policy

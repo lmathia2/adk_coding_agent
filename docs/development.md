@@ -23,6 +23,13 @@ cd adk_coding_agent
 uv sync --all-groups
 ```
 
+The lockfile resolves the tested Google ADK 2.7 minor. Install production-only
+PostgreSQL support when a worker uses the distributed control-state backend:
+
+```bash
+uv sync --all-groups --extra production
+```
+
 Run deterministic checks:
 
 ```bash
@@ -98,6 +105,13 @@ agents-cli run "Fix the failing authentication tests"
 | `ADK_CODING_CACHE_TTL_SECONDS` | `1800` | Context-cache TTL |
 | `ADK_CODING_CACHE_INTERVALS` | `10` | ADK cache interval setting |
 | `ADK_CODING_ADK_COMPACT_TOKENS` | `96000` | ADK overflow compaction threshold |
+| `ADK_CODING_SANDBOX` | `local` | Command backend: `local`, `docker`, `kubernetes`, or `remote` |
+| `ADK_CODING_CONTROL_DATABASE_URL` | unset | PostgreSQL control events and distributed task leases |
+| `ADK_CODING_WORKER_ID` | process-derived | Stable owner identity for distributed task leases |
+| `ADK_CODING_TASK_LEASE_SECONDS` | `900` | Distributed task-lease duration, renewed around long operations |
+| `ADK_CODING_FINAL_REVIEWER` | `0` | Enable the advisory no-tool final-diff reviewer |
+| `ADK_CODING_REVIEW_MODEL` | coding model | Optional reviewer model override |
+| `ADK_CODING_REVIEW_MAX_CHARS` | `60000` | Maximum redacted diff characters sent to the reviewer |
 
 ## Approval policy
 
@@ -114,6 +128,56 @@ Safe local commands are allowed by default. Explicit opt-ins are available for c
 Publishing and deployment still require an explicit approval fingerprint. Destructive commands remain denied.
 
 Never set broad opt-ins in a shared production worker. Approve the smallest operation possible through the outer control plane.
+
+Approval requests share one durable store across three transports. An operator can
+decide one interactively:
+
+```bash
+uv run python -m harness.approvals review REQUEST_ID --actor operator@example.com
+```
+
+API servers can adapt `ApprovalHTTPTransport` to their framework, and managed workers
+can lease pending requests with `ManagedApprovalQueue`. Request submission and terminal
+decisions are idempotent; queue delivery uses exclusive expiring leases. The adapter
+does not provide HTTP authentication or authorization—deployments must enforce both at
+the server boundary before calling it.
+
+## Command sandboxes
+
+Docker requires `ADK_CODING_SANDBOX_IMAGE`. Kubernetes executes only in an existing
+task pod and requires `ADK_CODING_K8S_NAMESPACE`, `ADK_CODING_K8S_POD`,
+`ADK_CODING_K8S_WORKSPACE`, and an explicit
+`ADK_CODING_K8S_NETWORK_ISOLATED=1` assertion. The adapter does not create pods or
+silently fall back to the host.
+
+The enterprise remote backend requires `ADK_CODING_REMOTE_ENDPOINT` (HTTPS),
+`ADK_CODING_REMOTE_TOKEN`, and `ADK_CODING_REMOTE_WORKSPACE`. Deployments needing
+mTLS, workload identity, or a proprietary protocol can inject the `RemoteTransport`
+contract instead of the built-in bearer-token HTTP transport. All backends apply the
+same timeout, output-bound, artifact, and secret-redaction contracts.
+
+## Distributed control state
+
+Set `ADK_CODING_CONTROL_DATABASE_URL` to a `postgresql://` or
+`postgresql+psycopg://` URL in a multi-worker deployment. Event sequence allocation is
+serialized per task inside a transaction, and a database-clock lease prevents two
+workers from executing the same task concurrently. The local JSONL path remains the
+default for single-process development.
+
+## Final-reviewer ablation
+
+The reviewer is disabled by default and never overrides deterministic verification.
+Run the same evaluation cases once with `ADK_CODING_FINAL_REVIEWER=0` and once with it
+set to `1`, then compare paired sample metrics:
+
+```bash
+uv run python -m harness.review reviewer-ablation-samples.json
+```
+
+The comparator rejects missing pairs and changes to the harness revision, model, or
+reasoning setting. It reports pass rate, cost per passed task, uncached input, cache
+ratio, prefix versions, tool calls, and wall time; do not infer quality gains from the
+reviewer's additional tokens alone.
 
 ## Secret redaction
 

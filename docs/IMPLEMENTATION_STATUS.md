@@ -64,14 +64,15 @@ This file is the commit-driven status view for the implementation. Each checked 
 
 ## Remaining hardening
 
-- [ ] Exercise the live Gemini/ADK workflow in a credentialed environment and pin the exact tested ADK 2.x minor version.
-- [ ] Add large, real-repository evaluation tasks derived from human pull requests.
-- [ ] Add container runtime adapters for Docker, Kubernetes, and enterprise remote sandboxes.
-- [ ] Add a human approval transport for interactive CLI, API, and managed-queue deployments.
+- [ ] Exercise the live Gemini/ADK workflow in a credentialed environment.
+- [x] Pin the unit- and import-tested Google ADK 2.7 minor and commit the resolved lockfile.
+- [x] Add large, real-repository evaluation tasks derived from human pull requests.
+- [x] Add container runtime adapters for Docker, Kubernetes, and enterprise remote sandboxes.
+- [x] Add human approval transports for interactive CLI, API, and managed-queue deployments.
 - [x] Add provider usage callbacks that write live ADK token/cost events into `MetricsStore`.
 - [x] Add curated project-memory extraction after verified task completion.
-- [ ] Add optional narrow final-diff reviewer and benchmark it as an ablation.
-- [ ] Add distributed locking/database implementations for multi-worker production deployments.
+- [x] Add an optional narrow final-diff reviewer and a paired ablation comparator for required quality, cost, cache, context, tool, and latency metrics.
+- [x] Add transactional PostgreSQL events and distributed task leases for multi-worker production deployments.
 
 ## Release gate
 

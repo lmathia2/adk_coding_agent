@@ -40,7 +40,13 @@ export ADK_CODING_WORKSPACE=/absolute/path/to/repository
 agents-cli run '{"goal":"Fix the failing parser test","acceptance_criteria":["Relevant tests pass"]}'
 ```
 
-The local environment backend is a development adapter, not a security boundary. Production deployments should replace it with a container or managed sandbox implementation.
+The local environment backend is a development adapter, not a security boundary.
+Production command execution can select Docker, a pre-provisioned Kubernetes task
+pod, or a pluggable enterprise remote sandbox with fail-closed configuration.
+
+The repository lockfile pins the tested Google ADK 2.7 minor. Live credentialed
+Gemini runs remain an explicit deployment validation step; deterministic development
+and CI checks do not require cloud credentials.
 
 ## Google Agents CLI skills
 

@@ -55,7 +55,9 @@ def test_ledger_projection_is_bounded_and_model_facing() -> None:
     assert projection["goal"] == "Fix it"
     assert projection["recent_progress"] == [f"progress-{index}" for index in range(18, 30)]
     assert "created_at" not in projection
-    assert "src/changed.py" in projection["files_in_focus"]
+    files_in_focus = projection["files_in_focus"]
+    assert isinstance(files_in_focus, list)
+    assert "src/changed.py" in files_in_focus
 
 
 def test_agent_step_round_trip() -> None:

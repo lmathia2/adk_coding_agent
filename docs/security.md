@@ -33,6 +33,12 @@ The four tools resolve paths against the task worktree. Absolute paths and trave
 
 Every managed task should run in a container or remote sandbox in addition to the Git worktree. The worktree prevents task-to-task code interference; the sandbox must enforce operating-system, process, network, and secret boundaries.
 
+The production adapters fail closed: Kubernetes requires a pre-provisioned pod and an
+explicit assertion that a deny-by-default NetworkPolicy is enforced, while the remote
+adapter accepts only HTTPS or an injected enterprise transport. Neither backend falls
+back to local execution after a configuration or transport failure. Output is redacted
+before it is bounded or persisted as an artifact.
+
 Recommended production defaults:
 
 ```text
