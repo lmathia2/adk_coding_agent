@@ -33,6 +33,7 @@ packages = ["app", "harness"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]
 target-version = "py311"

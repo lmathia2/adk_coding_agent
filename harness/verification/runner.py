@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Protocol
 
 from harness.models.verification import CriterionEvidence, VerificationReport
 
@@ -23,6 +25,8 @@ def local_executor(root: Path, timeout_seconds: int = 600) -> CommandExecutor:
 
     def execute(command: ValidationCommand) -> CommandResult:
         started = time.monotonic()
+        environment = os.environ.copy()
+        environment.setdefault("UV_OFFLINE", "1")
         try:
             completed = subprocess.run(
                 command.command,
@@ -33,6 +37,7 @@ def local_executor(root: Path, timeout_seconds: int = 600) -> CommandExecutor:
                 capture_output=True,
                 text=True,
                 timeout=timeout_seconds,
+                env=environment,
             )
             return CommandResult(
                 category=command.category,
@@ -43,11 +48,16 @@ def local_executor(root: Path, timeout_seconds: int = 600) -> CommandExecutor:
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
         except subprocess.TimeoutExpired as exc:
+            stdout = (
+                exc.stdout.decode(errors="replace")
+                if isinstance(exc.stdout, bytes)
+                else (exc.stdout or "")
+            )
             return CommandResult(
                 category=command.category,
                 command=command.command,
                 exit_code=124,
-                stdout=(exc.stdout or "")[-16_000:] if isinstance(exc.stdout, str) else "",
+                stdout=stdout[-16_000:],
                 stderr="validation command timed out",
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
