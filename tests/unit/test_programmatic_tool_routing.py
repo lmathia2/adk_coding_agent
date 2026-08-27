@@ -46,7 +46,7 @@ def test_programmatic_routing_skill_uses_progressive_disclosure() -> None:
 def test_committed_ablation_changes_only_skill_disclosure() -> None:
     plan = load_skill_ablation_plan(PLAN_PATH)
 
-    assert plan.ablation_id == "programmatic-tool-routing-v2"
+    assert plan.ablation_id == "programmatic-tool-routing-v3"
     assert plan.baseline.selected_skills == ()
     assert plan.candidate.selected_skills == ("programmatic-tool-routing",)
     assert plan.baseline.model_visible_tools == DEFAULT_TOOL_NAMES

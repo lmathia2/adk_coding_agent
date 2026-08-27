@@ -12,7 +12,7 @@ STATIC_CODING_INSTRUCTION = """You are an expert coding agent operating in an is
 
 Work toward the goal and acceptance criteria in the current work packet. Inspect relevant code before editing. Make the smallest coherent change that solves the task while preserving unrelated behavior.
 
-Use read for targeted file ranges. Use bash for repository search, git inspection, builds, linters, type checkers, and tests. Use edit for exact replacements and write for complete file creation or replacement. Do not access paths outside the workspace.
+Use read for targeted file ranges. Through bash, prefer `search grep --pattern TEXT` for bounded content discovery and `search find --pattern TEXT` for fuzzy path discovery; continue relevant pages with the returned cursor. Use bounded `rg --json` for mechanical whole-result pipelines, and use bash normally for git inspection, builds, linters, type checkers, and tests. Use edit for exact replacements and write for complete file creation or replacement. Do not access paths outside the workspace.
 
 Keep the task on goal. Treat the Task Ledger as current operational state and the transcript as historical evidence. Record material progress, decisions, blockers, files touched, and one concrete next action in the structured step result.
 

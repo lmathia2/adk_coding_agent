@@ -1,6 +1,6 @@
 {
-  "ablation_id": "programmatic-tool-routing-v2",
-  "description": "Paired comparison with exact skill, harness, model, prefix, settings, and disclosure evidence pins.",
+  "ablation_id": "programmatic-tool-routing-v3",
+  "description": "Paired comparison with exact indexed-search-aware skill, harness, model, prefix, settings, and disclosure evidence pins.",
   "suite_path": "tests/eval/suites/programmatic_routing.json",
   "positive_case_ids": ["trace-jsonl-high-fanout", "source-marker-high-fanout"],
   "negative_case_ids": ["localized-calculator-negative-control"],
@@ -15,11 +15,11 @@
   ],
   "execution": {
     "skill_name": "programmatic-tool-routing",
-    "skill_content_hash": "2e92b0829e76ea13fa7575ee29f78078abc7df9ef37962e9f518ab3cddf3f5fe",
+    "skill_content_hash": "84063156d5ecbd49b30dd9604b64ef8d23bf1d6714b72f4d5b0ddc7973cecbca",
     "model": "gemini-3.7-flash",
     "reasoning": "default",
-    "harness_content_hash": "cb8d7d4ae2dbd3766b6133caed7fb9e0159b07e9bee707a3cc8194e50d694c94",
-    "static_prefix_hash": "b0755e04a87e523a23345c6608e0abf7267b0965a97baf0373503518364730fe",
+    "harness_content_hash": "e6352439ea315f5c844d0c46f7d363a26b800b192d61996c6f3f68020fd302b8",
+    "static_prefix_hash": "2d1f942c6f623038bc0520a67e6a10fe4215f7fa9336a93939ee1cdf69d0e05c",
     "settings": {
       "max_iterations": 8,
       "skill_context_bytes": 24000,
