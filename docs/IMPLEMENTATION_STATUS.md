@@ -12,6 +12,10 @@ complete.
 - [x] Pi-inspired ADK harness design brief.
 - [x] Google Agents CLI-compatible application scaffold.
 - [x] Typed task, ledger, context, tool, verification, checkpoint, and agent-step contracts.
+- [x] Strict, versioned YAML composition and separately typed volatile runtime bindings.
+- [x] Closed-registry composition contract for selecting a harness without arbitrary imports.
+- [x] ADK `BaseLlm` provider-adapter and `App` assembly interfaces without a second model runtime.
+- [x] Versioned WebSocket control and AG-UI event-envelope contracts.
 
 ### Context economy
 
@@ -83,6 +87,10 @@ complete.
 
 ## Remaining hardening
 
+- [ ] Replace import-time singleton wiring with a registered factory that builds the selected harness from YAML and reuses ADK apps, runners, services, events, plugins, tools, and resume semantics.
+- [ ] Implement the durable run registry and bidirectional WebSocket server behind the versioned AG-UI/control contract.
+- [ ] Implement the Bubble Tea protocol client without ADK or harness-implementation dependencies.
+- [ ] Add deterministic reconnect, replay, backpressure, steering, cancellation, and harness-swap integration tests.
 - [ ] Exercise the live Gemini/ADK workflow in a credentialed environment.
 - [ ] Run the programmatic-routing and optional semantic-provider ablations with live model credentials.
 - [ ] Run the FFF-versus-rg performance sample on representative developer machines; latency is reported, not a deterministic CI gate.

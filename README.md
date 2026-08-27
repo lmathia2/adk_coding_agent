@@ -18,6 +18,7 @@ The model-facing surface is intentionally small: a stable instruction prefix and
 - Require deterministic verification before accepting a completion claim.
 - Isolate the workspace behind an environment interface so a managed sandbox can replace the local backend.
 - Trace redacted ADK interactions and turn repeated verified workflows into quality-gated Agent Skills.
+- Configure harness behavior in strict YAML or select another registered harness without changing the protocol client.
 
 ## Quick start
 
@@ -95,7 +96,11 @@ Behavioral assertions about model output belong in Agents CLI eval datasets, not
 ## Architecture
 
 ```text
-ADK Workflow
+Bubble Tea or another protocol client
+  -> WebSocket control + AG-UI events
+  -> registered harness selected by YAML
+  -> harness-specific ADK App assembly
+  -> shared ADK Runner / sessions / artifacts / memory
   -> deterministic context compiler
   -> trusted skill catalog + selected skill bodies
   -> one coding Agent
@@ -107,6 +112,13 @@ ADK Workflow
 ```
 
 Large logs, repository indexes, checkpoints, and receipts stay outside the model transcript. The model sees bounded summaries and artifact references.
+
+The declarative composition, ADK model/App assembly seams, and protocol models are
+contract scaffolding; the registered factory migration, WebSocket server, and Bubble
+Tea client are still pending. Google ADK remains the execution engine, including
+workflow/agent composition, sessions, artifacts, memory, plugins, streamed events,
+and resume. See the
+[declarative runtime design](docs/design/declarative-runtime-and-clients.md).
 
 Indexed `grep`, fuzzy path discovery, and health checks are virtual commands behind
 `bash`, so the model-visible surface remains exactly four tools. See the

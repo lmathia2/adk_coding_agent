@@ -25,6 +25,61 @@ Agents CLI / API / managed task queue
                          complete
 ```
 
+## Declarative composition and stable client boundary
+
+The target runtime separates configuration, harness construction, transport, and
+presentation so either harness behavior or the complete harness implementation can
+change without rebuilding the client:
+
+```text
+Bubble Tea TUI
+      │  versioned control messages + AG-UI event envelopes
+      ▼
+WebSocket server / durable run registry
+      │  shared ADK Runner → AG-UI runtime adapter
+      ▼
+closed harness-factory registry ← strict versioned YAML + runtime bindings
+      │
+      ▼
+ADK App assembly / workflows / control hooks
+      │
+      ▼
+shared ADK Runner / sessions / artifacts / memory
+```
+
+YAML selects a closed registry key, never an arbitrary import path. The selected
+factory receives validated behavior plus separately supplied volatile runtime
+bindings and assembles the corresponding ADK application. Editing the composition
+can tune the current coding harness; registering another factory can replace its
+workflow topology. Both implementations are driven through the same ADK runner and
+expose the same run/event/control contract.
+
+The server maps normalized ADK output to standard AG-UI lifecycle, text, tool, state,
+and error events, with namespaced custom events for coding-specific checkpoints,
+verification, approvals, compaction, and learning. A small WebSocket control envelope
+adds start, attach/replay, steering, pause, cancel, acknowledgement, and heartbeat.
+The TUI speaks only this public protocol: it does not import ADK, parse the YAML, or
+know which harness factory is active.
+
+This layer is currently contract scaffolding. The declarative models and
+ADK model/App assembly interfaces are implemented; the registered factory migration,
+WebSocket server, and Bubble Tea client remain pending. See
+[`design/declarative-runtime-and-clients.md`](design/declarative-runtime-and-clients.md)
+for the full boundary and delivery plan.
+
+## ADK ownership
+
+The new boundary does not recreate an agent runtime. Harness factories reuse ADK
+`App`, workflow/agent composition, `Runner.run_async()`, streamed events, plugins and
+callbacks, `SessionService`, `ArtifactService`, `MemoryService`, `RunConfig`, and ADK
+invocation/resume semantics. The coding harness continues to own only the
+coding-specific deterministic context, tools, policy, ledger, workspace, routing,
+and verification contracts.
+
+The provider seam builds ADK `BaseLlm` instances, and the shared server runtime wraps
+ADK `Runner`. These are intentionally thin interfaces around ADK rather than a second
+model or agent runtime; a multiprovider stack is not being implemented in this phase.
+
 ## Stable and dynamic context
 
 The coding worker uses a stable `static_instruction`. Mutable state is serialized into the node input after that prefix.
@@ -199,6 +254,10 @@ worker owner with token-checked renewal and release.
 
 ```text
 app/agent/                 ADK App, coding worker, workflow nodes
+harness/config/            strict YAML composition and volatile runtime bindings
+harness/ai/                provider adapters that build ADK BaseLlm instances
+harness/agent/             ADK App assembly and shared run/control contracts
+harness/server/            AG-UI and WebSocket protocol contracts (server pending)
 harness/context/           stable-prefix and bounded-context compiler
 harness/models/            typed contracts
 harness/orchestration/     pure reducers and route decisions
