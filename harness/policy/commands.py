@@ -46,6 +46,7 @@ _READ_COMMANDS = {
     "pwd",
     "cat",
     "head",
+    "jq",
     "tail",
     "grep",
     "rg",
@@ -81,6 +82,31 @@ _BUILD_COMMANDS = {
     "eslint",
     "tsc",
 }
+
+
+def _shell_segments(command: str) -> tuple[str, ...]:
+    """Return control-flow and pipeline stages without splitting quoted programs."""
+
+    segments: list[str] = []
+    for line in command.splitlines() or (command,):
+        lexer = shlex.shlex(line, posix=True, punctuation_chars="|&;")
+        lexer.commenters = ""
+        lexer.whitespace_split = True
+        try:
+            tokens = list(lexer)
+        except ValueError:
+            return (command,)
+        current: list[str] = []
+        for token in tokens:
+            if token and all(character in "|&;" for character in token):
+                if current:
+                    segments.append(shlex.join(current))
+                    current = []
+                continue
+            current.append(token)
+        if current:
+            segments.append(shlex.join(current))
+    return tuple(segments)
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,8 +259,11 @@ def _classify_segment(segment: str) -> CommandClass:
 def classify_command(command: str) -> CommandClass:
     """Classify every shell segment and return the highest-risk result."""
 
-    segments = re.split(r"(?:&&|\|\||;|\n)", command)
-    classes = [_classify_segment(segment) for segment in segments if segment.strip()]
+    classes = [
+        _classify_segment(segment)
+        for segment in _shell_segments(command)
+        if segment.strip()
+    ]
     if not classes:
         return CommandClass.READ_ONLY
     return max(classes, key=lambda value: _RISK_ORDER[value])
