@@ -111,10 +111,12 @@ def _trial_outcome(
 
 def _terminal_trial_status(
     *,
+    task_id: str,
     events: Sequence[Any],
     metrics: dict[str, float | int | str | None],
     trace_store: TraceStore,
     trace_task_id: str,
+    trace_correlation_id: str | None = None,
 ) -> TrialStatus | None:
     if any(event.kind == EventKind.TASK_BLOCKED for event in events):
         return "blocked"
@@ -134,10 +136,19 @@ def _terminal_trial_status(
         )
         return "passed" if report.passed else "failed"
     run_errors = trace_store.query(
-        trace_task_id,
+        task_id,
         categories=["run"],
         phases=["error"],
     )
+    if trace_task_id != task_id and trace_correlation_id is not None:
+        run_errors.extend(
+            trace_store.query(
+                trace_task_id,
+                categories=["run"],
+                phases=["error"],
+                correlation_id=trace_correlation_id,
+            )
+        )
     if run_errors:
         return "error"
     outcome_status = metrics.get("outcome_status")
@@ -155,6 +166,7 @@ def episode_for_verified_task(
     trace_store: TraceStore,
     metrics_store: MetricsStore,
     trace_task_id: str | None = None,
+    trace_correlation_id: str | None = None,
 ) -> WorkflowEpisode | None:
     """Reduce durable facts into one privacy-safe learning episode."""
 
@@ -178,10 +190,22 @@ def episode_for_verified_task(
         return None
     ledger = rebuild_ledger(events)
     tool_spans = trace_store.query(
-        trace_task_id or task_id,
+        task_id,
         categories=["tool"],
         phases=["success", "error", "blocked"],
     )
+    fallback_task_id = trace_task_id or task_id
+    if fallback_task_id != task_id and trace_correlation_id is not None:
+        fallback_spans = trace_store.query(
+            fallback_task_id,
+            categories=["tool"],
+            phases=["success", "error", "blocked"],
+            correlation_id=trace_correlation_id,
+        )
+        known_span_ids = {span.span_id for span in tool_spans}
+        tool_spans.extend(
+            span for span in fallback_spans if span.span_id not in known_span_ids
+        )
     actions = tuple(
         NormalizedAction(
             action=span.name if span.name in _TOOL_CATEGORY else "tool",
@@ -282,20 +306,31 @@ class VerifiedTraceLearningPlugin(BasePlugin):
                 or getattr(session, "id", None)
                 or str(task_id)
             )
+            trace_correlation_id = _context_value(
+                invocation_context,
+                "invocation_id",
+            )
             episode = episode_for_verified_task(
                 task_id=str(task_id),
                 event_store=self.event_store,
                 trace_store=self.trace_store,
                 metrics_store=self.metrics_store,
                 trace_task_id=str(trace_task_id),
+                trace_correlation_id=(
+                    str(trace_correlation_id) if trace_correlation_id else None
+                ),
             )
             metrics = self.metrics_store.task_summary(str(task_id))
             if episode is None:
                 status = _terminal_trial_status(
+                    task_id=str(task_id),
                     events=events,
                     metrics=metrics,
                     trace_store=self.trace_store,
                     trace_task_id=str(trace_task_id),
+                    trace_correlation_id=(
+                        str(trace_correlation_id) if trace_correlation_id else None
+                    ),
                 )
                 if assigned and status is not None:
                     assert assignment is not None

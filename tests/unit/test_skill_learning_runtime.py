@@ -210,6 +210,65 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
     assert "Fix the parser" not in serialized
     assert "secret" not in serialized
 
+    shared_session = "shared-session"
+    traces.append(
+        TraceSpan(
+            span_id="other-task-blocked",
+            task_id=shared_session,
+            sequence=1,
+            correlation_id="invocation-2",
+            category="tool",
+            phase="blocked",
+            name="bash",
+            timestamp=datetime.now(UTC).isoformat(),
+            content_hash="d" * 64,
+            payload_json='{"type":"object"}',
+            idempotency_key="other-task-blocked",
+        )
+    )
+    traces.append(
+        TraceSpan(
+            span_id="current-task-shell",
+            task_id=shared_session,
+            sequence=1,
+            correlation_id="invocation-1",
+            category="tool",
+            phase="success",
+            name="bash",
+            timestamp=datetime.now(UTC).isoformat(),
+            content_hash="e" * 64,
+            payload_json='{"type":"object"}',
+            idempotency_key="current-task-shell",
+        )
+    )
+    scoped_episode = episode_for_verified_task(
+        task_id=task_id,
+        event_store=events,
+        trace_store=traces,
+        metrics_store=metrics,
+        trace_task_id=shared_session,
+        trace_correlation_id="invocation-1",
+    )
+    assert scoped_episode is not None
+    assert [action.token for action in scoped_episode.actions] == [
+        "read:inspect:ok",
+        "bash:shell:ok",
+    ]
+    assert not scoped_episode.blocked
+
+    uncorrelated_episode = episode_for_verified_task(
+        task_id=task_id,
+        event_store=events,
+        trace_store=traces,
+        metrics_store=metrics,
+        trace_task_id=shared_session,
+    )
+    assert uncorrelated_episode is not None
+    assert [action.token for action in uncorrelated_episode.actions] == [
+        "read:inspect:ok",
+    ]
+    assert not uncorrelated_episode.blocked
+
     traces.append(
         TraceSpan(
             span_id="span-2",

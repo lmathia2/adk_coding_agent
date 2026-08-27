@@ -31,6 +31,7 @@ class _Context:
     session: object
     node_path: str = "root/worker@1"
     run_id: str = "1"
+    attempt_count: int = 1
     function_call_id: str | None = None
 
 
@@ -487,6 +488,60 @@ def test_distinct_runtime_occurrences_are_replay_idempotent(tmp_path: Path) -> N
     assert len(tool_spans) == 4
     assert len({span.span_id for span in agent_spans if span.phase == "start"}) == 2
     assert len({span.span_id for span in tool_spans if span.phase == "start"}) == 2
+
+
+def test_model_retry_attempts_are_distinct_and_each_attempt_is_replay_safe(
+    tmp_path: Path,
+) -> None:
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+    context = _context()
+
+    async def invoke_attempt() -> None:
+        await plugin.before_model_callback(
+            callback_context=context,
+            llm_request={"model": "gemini-test", "prompt": "same"},
+        )
+        await plugin.after_model_callback(
+            callback_context=context,
+            llm_response={"modelVersion": "gemini-test-001", "text": "same"},
+        )
+
+    asyncio.run(invoke_attempt())
+    context.attempt_count = 2
+    asyncio.run(invoke_attempt())
+    context.attempt_count = 1
+    asyncio.run(invoke_attempt())
+
+    spans = plugin.store.query("task-1", categories=["model"])
+    assert [span.phase for span in spans] == ["start", "success", "start", "success"]
+    assert spans[1].parent_span_id == spans[0].span_id
+    assert spans[3].parent_span_id == spans[2].span_id
+
+
+def test_model_terminal_bookkeeping_is_fail_open_for_hostile_state_accessor(
+    tmp_path: Path,
+) -> None:
+    class HostileState:
+        def get(self, _name: str, _default=None):
+            raise RuntimeError("provider state unavailable")
+
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+    context = SimpleNamespace(
+        invocation_id="hostile-invocation",
+        state=HostileState(),
+        session=SimpleNamespace(id="hostile-session", state={}),
+    )
+
+    asyncio.run(
+        plugin.after_model_callback(
+            callback_context=context,
+            llm_response={"modelVersion": "gemini-test-001", "text": "ok"},
+        )
+    )
+
+    spans = plugin.store.query("hostile-session", categories=["model"])
+    assert len(spans) == 1
+    assert spans[0].phase == "success"
 
 
 def test_terminal_storage_failure_preserves_parent_for_retry(

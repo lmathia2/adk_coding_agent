@@ -58,7 +58,10 @@ def _state_value(context: Any, name: str) -> Any:
             continue
         getter = getattr(candidate, "get", None)
         if callable(getter):
-            value = getter(name, None)
+            try:
+                value = getter(name, None)
+            except Exception:  # pragma: no cover - defensive provider boundary
+                continue
             if value is not None:
                 return value
         if isinstance(candidate, Mapping) and name in candidate:
@@ -216,12 +219,12 @@ class HarnessTracePlugin(BasePlugin):
 
     @staticmethod
     def _operation_id(context: Any, category: str, name: str) -> str:
+        components: list[str] = []
         if category == "tool":
             value = _context_value(context, "function_call_id")
             if value:
-                return str(value)
-        components: list[str] = []
-        for field in ("node_path", "run_id", "branch"):
+                components.append(f"function_call_id:{value}")
+        for field in ("node_path", "run_id", "branch", "attempt_count"):
             value = _context_value(context, field)
             if value:
                 components.append(f"{field}:{value}")
@@ -463,18 +466,29 @@ class HarnessTracePlugin(BasePlugin):
         )
 
     async def after_model_callback(self, *, callback_context: Any, llm_response: Any) -> None:
-        if bool(_attribute(llm_response, "partial", default=False)):
+        try:
+            if bool(_attribute(llm_response, "partial", default=False)):
+                return None
+            name = str(
+                _attribute(
+                    llm_response,
+                    "model_version",
+                    "modelVersion",
+                    default="model",
+                )
+            )
+            if self._is_closed(callback_context, "model", name):
+                return None
+            self._record(
+                context=callback_context,
+                category="model",
+                phase="success",
+                name=name,
+                content={"response": llm_response},
+            )
+        except Exception:
+            LOGGER.exception("trace observation failed for model.success")
             return None
-        name = str(_attribute(llm_response, "model_version", "modelVersion", default="model"))
-        if self._is_closed(callback_context, "model", name):
-            return None
-        self._record(
-            context=callback_context,
-            category="model",
-            phase="success",
-            name=name,
-            content={"response": llm_response},
-        )
 
     async def on_model_error_callback(
         self, *, callback_context: Any, llm_request: Any, error: Exception
