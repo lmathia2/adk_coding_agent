@@ -227,8 +227,28 @@ def test_custom_syntax_parser_is_incremental_and_atomically_published(tmp_path: 
     with pytest.raises(RuntimeError, match="parser provider failed"):
         index.index_repository()
 
-    assert index.snapshot == published
+    assert index.snapshot.generation == published.generation
+    assert index.snapshot.fingerprint == published.fingerprint
+    assert not index.snapshot.ready
+    assert index.snapshot.stale_paths == ("worker.ts",)
     assert index.files["worker.ts"].symbols[0].name == "first()"
+
+
+def test_published_file_records_are_defensive_copies(tmp_path: Path) -> None:
+    source = tmp_path / "module.py"
+    source.write_text("def original():\n    pass\n", encoding="utf-8")
+    index = StructuralIndex(tmp_path)
+    index.index_repository()
+    published = index.snapshot
+
+    exposed = index.files
+    exposed["module.py"].symbols[0].name = "tampered"
+    exposed["module.py"].symbols[0].edges["calls"] = ["fabricated"]
+    exposed.clear()
+
+    assert index.snapshot == published
+    assert index.files["module.py"].symbols[0].name == "original"
+    assert "calls" not in index.files["module.py"].symbols[0].edges
 
 
 def test_large_files_get_bounded_head_and_tail_outlines(tmp_path: Path) -> None:

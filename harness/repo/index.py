@@ -583,7 +583,7 @@ class StructuralIndex:
     ) -> None:
         self.root = root.resolve()
         self.storage_path = storage_path
-        self.files: dict[str, FileRecord] = {}
+        self._files: dict[str, FileRecord] = {}
         parser_by_language: dict[str, StructuralParser] = {}
         for parser in (PythonAstParser(), TypeScriptOutlineParser(), *parsers):
             for language in parser.languages:
@@ -598,6 +598,12 @@ class StructuralIndex:
         """Return immutable generation, readiness, and staleness metadata."""
 
         return self._snapshot
+
+    @property
+    def files(self) -> dict[str, FileRecord]:
+        """Return a defensive copy of the published structural generation."""
+
+        return {path: _clone_file(record) for path, record in self._files.items()}
 
     @property
     def ready(self) -> bool:
@@ -617,7 +623,7 @@ class StructuralIndex:
             fingerprint=self._snapshot.fingerprint,
             ready=False,
             stale_paths=tuple(sorted(stale)),
-            indexed_files=len(self.files),
+            indexed_files=len(self._files),
         )
         return self._snapshot
 
@@ -704,27 +710,31 @@ class StructuralIndex:
 
     def update_file(self, path: Path) -> bool:
         relative = self._relative(path)
-        candidate = {key: _clone_file(value) for key, value in self.files.items()}
-        if not path.exists():
-            changed = relative in candidate
-            candidate.pop(relative, None)
-        elif path.suffix.lower() not in _SUPPORTED_EXTENSIONS:
-            return False
-        else:
-            record = self._parse_record(path, relative)
-            previous = candidate.get(relative)
-            changed = (
-                previous is None
-                or previous.content_sha256 != record.content_sha256
-                or previous.parser_name != record.parser_name
-            )
+        candidate = {key: _clone_file(value) for key, value in self._files.items()}
+        try:
+            if not path.exists():
+                changed = relative in candidate
+                candidate.pop(relative, None)
+            elif path.suffix.lower() not in _SUPPORTED_EXTENSIONS:
+                return False
+            else:
+                record = self._parse_record(path, relative)
+                previous = candidate.get(relative)
+                changed = (
+                    previous is None
+                    or previous.content_sha256 != record.content_sha256
+                    or previous.parser_name != record.parser_name
+                )
+                if changed:
+                    candidate[relative] = record
+            stale = set(self._snapshot.stale_paths)
+            stale.discard(relative)
             if changed:
-                candidate[relative] = record
-        stale = set(self._snapshot.stale_paths)
-        stale.discard(relative)
-        if changed:
-            self._resolve_edges(candidate)
-        self.files = candidate
+                self._resolve_edges(candidate)
+        except Exception:
+            self.mark_stale([relative])
+            raise
+        self._files = candidate
         self._snapshot = self._next_snapshot(
             candidate,
             ready=not stale,
@@ -734,35 +744,47 @@ class StructuralIndex:
         return changed
 
     def index_repository(self) -> int:
-        current = {self._relative(path): path for path in self._iter_source_files()}
-        candidate = {key: _clone_file(value) for key, value in self.files.items()}
-        changed_paths = set(candidate) - set(current)
-        for relative in changed_paths:
-            del candidate[relative]
-        for relative, path in sorted(current.items()):
-            language = _language_for(path)
-            if language is None:
-                continue
-            projection = _source_projection(path)
-            previous = candidate.get(relative)
-            expected_parser = self._expected_parser_name(language, projection[1])
-            if (
-                previous is None
-                or previous.content_sha256 != projection[0]
-                or previous.parser_name != expected_parser
-            ):
-                record = self._record_from_projection(relative, language, projection)
-                candidate[relative] = record
-                changed_paths.add(relative)
-        self._resolve_edges(candidate)
-        snapshot = self._next_snapshot(
-            candidate,
-            ready=True,
-            changed=bool(changed_paths),
-        )
-        if self.storage_path:
-            self._persist(candidate, snapshot)
-        self.files = candidate
+        changed_paths: set[str] = set()
+        try:
+            current = {self._relative(path): path for path in self._iter_source_files()}
+            candidate = {key: _clone_file(value) for key, value in self._files.items()}
+            changed_paths = set(candidate) - set(current)
+            for relative in changed_paths:
+                del candidate[relative]
+            for relative, path in sorted(current.items()):
+                language = _language_for(path)
+                if language is None:
+                    continue
+                projection = _source_projection(path)
+                previous = candidate.get(relative)
+                expected_parser = self._expected_parser_name(language, projection[1])
+                if (
+                    previous is None
+                    or previous.content_sha256 != projection[0]
+                    or previous.parser_name != expected_parser
+                ):
+                    changed_paths.add(relative)
+                    record = self._record_from_projection(relative, language, projection)
+                    candidate[relative] = record
+            self._resolve_edges(candidate)
+            snapshot = self._next_snapshot(
+                candidate,
+                ready=True,
+                changed=bool(changed_paths),
+            )
+            if self.storage_path:
+                self._persist(candidate, snapshot)
+        except Exception:
+            stale_paths = changed_paths or {"*"}
+            self._snapshot = IndexSnapshot(
+                generation=self._snapshot.generation,
+                fingerprint=self._snapshot.fingerprint,
+                ready=False,
+                stale_paths=tuple(sorted(stale_paths)),
+                indexed_files=len(self._files),
+            )
+            raise
+        self._files = candidate
         self._snapshot = snapshot
         return len(changed_paths)
 
@@ -818,13 +840,13 @@ class StructuralIndex:
         changed = set(changed_paths)
         recent = set(recent_paths)
         reverse_degree: dict[str, int] = {}
-        for file in self.files.values():
+        for file in self._files.values():
             for symbol in file.symbols:
                 for values in symbol.edges.values():
                     for target in values:
                         reverse_degree[target] = reverse_degree.get(target, 0) + 1
         hits: list[SearchHit] = []
-        for file in self.files.values():
+        for file in self._files.values():
             file_text = file.path.lower()
             file_lexical = sum(1 for token in tokens if token in file_text)
             if file_lexical or not tokens:
@@ -870,7 +892,7 @@ class StructuralIndex:
         by_path: dict[str, list[SymbolRecord]] = {}
         symbol_lookup = {
             (symbol.path, symbol.qualified_name): symbol
-            for file in self.files.values()
+            for file in self._files.values()
             for symbol in file.symbols
         }
         for hit in hits:
@@ -933,7 +955,7 @@ class StructuralIndex:
 
     def save(self) -> None:
         if self.storage_path is not None:
-            self._persist(self.files, self._snapshot)
+            self._persist(self._files, self._snapshot)
 
     def load(self) -> None:
         if self.storage_path is None:
@@ -951,13 +973,13 @@ class StructuralIndex:
             item.setdefault("calls", {})
             record = FileRecord(**item, symbols=symbols)
             loaded[record.path] = record
-        self.files = loaded
-        self._resolve_edges(self.files)
+        self._files = loaded
+        self._resolve_edges(self._files)
         prior_snapshot = payload.get("snapshot", {})
         self._snapshot = IndexSnapshot(
             generation=int(prior_snapshot.get("generation", 0)),
-            fingerprint=_index_fingerprint(self.files),
+            fingerprint=_index_fingerprint(self._files),
             ready=False,
             stale_paths=("*",),
-            indexed_files=len(self.files),
+            indexed_files=len(self._files),
         )
