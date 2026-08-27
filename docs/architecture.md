@@ -65,6 +65,15 @@ completion_claims
 
 The outer workflow, not the model, decides the next route. A `done` claim always routes to deterministic verification.
 
+User steering can arrive while a coding batch is active. The ADK steering adapter
+checks the durable inbox before every coding-model turn and before an unstarted tool
+call. Newly arrived messages are appended only to the dynamic request suffix and are
+repeated until the enclosing `AgentStep` is durably reduced. The workflow then
+acknowledges the lease. A final completion fence sends the task back through another
+work batch if guidance arrived during verification or review. This is cooperative
+safe-point steering; it does not terminate a model request or subprocess already in
+flight.
+
 ## Task state
 
 The event log is authoritative. `TaskLedger` is a replayable projection containing only current operational state:

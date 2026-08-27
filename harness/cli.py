@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from harness.learning import SkillRegistry as LearnedSkillRegistry
+from harness.state import SteeringMessage, SteeringQueue
 from harness.tracing import TraceStore
 from harness.workspace import GitWorktreeManager, WorkspaceRecord
 
@@ -89,6 +90,28 @@ def run_prepared(preparation: RunPreparation) -> int:
     return completed.returncode
 
 
+def _steering_state_root(*, repository: Path | None, state_root: Path | None) -> Path:
+    if state_root is not None:
+        return state_root.resolve()
+    if repository is None:
+        raise ValueError("repository or state root is required")
+    return _default_state_root(repository.resolve()).resolve()
+
+
+def _steering_record(
+    message: SteeringMessage,
+    *,
+    include_content: bool,
+) -> dict[str, object]:
+    payload = message.model_dump(mode="json")
+    content = str(payload.pop("content"))
+    payload["content_bytes"] = len(content.encode("utf-8"))
+    payload["content_sha256"] = hashlib.sha256(content.encode()).hexdigest()
+    if include_content:
+        payload["content"] = content
+    return payload
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="adk-coding-agent",
@@ -139,11 +162,82 @@ def _parser() -> argparse.ArgumentParser:
     )
     disable.add_argument("--state-root", type=Path, required=True)
     disable.add_argument("name")
+
+    def add_steering_target(command: argparse.ArgumentParser) -> None:
+        target = command.add_mutually_exclusive_group(required=True)
+        target.add_argument("--repository", type=Path)
+        target.add_argument("--state-root", type=Path)
+        command.add_argument("--task-id", required=True)
+
+    steer = subparsers.add_parser(
+        "steer",
+        help="Queue user guidance for an active or resumable task",
+    )
+    add_steering_target(steer)
+    steer.add_argument("message")
+    steer.add_argument("--priority", type=int, default=0)
+    steer.add_argument("--idempotency-key")
+
+    steering_status = subparsers.add_parser(
+        "steering-status",
+        help="Inspect durable steering delivery state",
+    )
+    add_steering_target(steering_status)
+    steering_status.add_argument("--include-content", action="store_true")
+    steering_status.add_argument("--limit", type=int, default=100)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command in {"steer", "steering-status"}:
+        state_root = _steering_state_root(
+            repository=args.repository,
+            state_root=args.state_root,
+        )
+        queue = SteeringQueue(state_root / "state.db")
+        if args.command == "steer":
+            message = queue.enqueue(
+                args.task_id,
+                args.message,
+                priority=args.priority,
+                idempotency_key=args.idempotency_key,
+            )
+            print(
+                json.dumps(
+                    {
+                        "delivery": "next_model_boundary",
+                        "message": _steering_record(message, include_content=False),
+                        "state_root": state_root.as_posix(),
+                    },
+                    sort_keys=True,
+                    indent=2,
+                )
+            )
+            return 0
+        messages = queue.list_messages(args.task_id, limit=args.limit)
+        counts = {status: 0 for status in ("queued", "leased", "acked")}
+        for message in messages:
+            counts[message.status] += 1
+        print(
+            json.dumps(
+                {
+                    "counts": counts,
+                    "messages": [
+                        _steering_record(
+                            message,
+                            include_content=args.include_content,
+                        )
+                        for message in messages
+                    ],
+                    "pending": queue.has_pending(args.task_id),
+                    "task_id": args.task_id,
+                },
+                sort_keys=True,
+                indent=2,
+            )
+        )
+        return 0
     if args.command == "trace-export":
         exported = TraceStore(args.state_root.resolve() / "traces.db").export_jsonl(
             args.task_id

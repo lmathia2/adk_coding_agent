@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from harness.adk import SteeringPlugin
 from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.state.postgres import TaskLease
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin
@@ -38,6 +39,7 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert any(isinstance(plugin, HarnessMetricsPlugin) for plugin in module.app.plugins)
     assert any(isinstance(plugin, VerifiedProjectMemoryPlugin) for plugin in module.app.plugins)
     assert any(isinstance(plugin, CodingToolArtifactPlugin) for plugin in module.app.plugins)
+    assert any(isinstance(plugin, SteeringPlugin) for plugin in module.app.plugins)
     trace_plugin = next(
         plugin for plugin in module.app.plugins if isinstance(plugin, HarnessTracePlugin)
     )

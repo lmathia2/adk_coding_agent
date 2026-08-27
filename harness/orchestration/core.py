@@ -80,7 +80,10 @@ def decide_route(
     step: AgentStep,
     *,
     should_compact: bool = False,
+    pending_steering: bool = False,
 ) -> HarnessRoute:
+    if pending_steering:
+        return HarnessRoute.CONTINUE
     if step.status == "blocked":
         return HarnessRoute.BLOCKED
     if step.status in {"verify", "done"}:
@@ -93,6 +96,16 @@ def decide_route(
     if should_compact:
         return HarnessRoute.COMPACT
     return HarnessRoute.CONTINUE
+
+
+def resume_for_steering(ledger: TaskLedger) -> TaskLedger:
+    """Return a terminal-bound ledger to an active safe-point steering state."""
+
+    data = ledger.model_dump(mode="python")
+    data["phase"] = "implement"
+    data["status"] = "active"
+    data["next_action"] = "Apply the newest user steering before continuing"
+    return TaskLedger.model_validate(data)
 
 
 def build_work_packet(

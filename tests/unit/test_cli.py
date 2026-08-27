@@ -101,3 +101,53 @@ def test_trace_export_and_learned_skill_controls(tmp_path: Path, capsys) -> None
     ) == 0
     disabled = json.loads(capsys.readouterr().out)
     assert disabled["status"] == "disabled"
+
+
+def test_steer_cli_queues_without_exposing_content_and_reports_status(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    state = tmp_path / "state"
+    assert main(
+        [
+            "steer",
+            "--state-root",
+            str(state),
+            "--task-id",
+            "task-1",
+            "--idempotency-key",
+            "user-message-1",
+            "Use the public parser API",
+        ]
+    ) == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["delivery"] == "next_model_boundary"
+    assert receipt["message"]["status"] == "queued"
+    assert "content" not in receipt["message"]
+
+    assert main(
+        [
+            "steering-status",
+            "--state-root",
+            str(state),
+            "--task-id",
+            "task-1",
+        ]
+    ) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["pending"] is True
+    assert status["counts"] == {"acked": 0, "leased": 0, "queued": 1}
+    assert "content" not in status["messages"][0]
+
+    assert main(
+        [
+            "steering-status",
+            "--state-root",
+            str(state),
+            "--task-id",
+            "task-1",
+            "--include-content",
+        ]
+    ) == 0
+    revealed = json.loads(capsys.readouterr().out)
+    assert revealed["messages"][0]["content"] == "Use the public parser API"

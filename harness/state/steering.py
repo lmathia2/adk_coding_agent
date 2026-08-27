@@ -5,22 +5,39 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+MAX_STEERING_MESSAGE_BYTES = 4_096
+STEERING_BATCH_LIMIT = 4
+SteeringStatus = Literal["queued", "leased", "acked"]
 
 
 class SteeringMessage(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
-    message_id: str
-    task_id: str
-    content: str
-    priority: int
+    message_id: str = Field(min_length=1, max_length=128)
+    task_id: str = Field(min_length=1, max_length=256)
+    content: str = Field(min_length=1)
+    priority: int = Field(ge=-1_000, le=1_000)
     created_at: str
-    status: str
+    status: SteeringStatus
     lease_owner: str | None = None
     lease_until: str | None = None
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("steering content must not be blank")
+        if len(normalized.encode("utf-8")) > MAX_STEERING_MESSAGE_BYTES:
+            raise ValueError(
+                f"steering content exceeds {MAX_STEERING_MESSAGE_BYTES} UTF-8 bytes"
+            )
+        return normalized
 
 
 class SteeringQueue:
@@ -64,6 +81,14 @@ class SteeringQueue:
         priority: int = 0,
         idempotency_key: str | None = None,
     ) -> SteeringMessage:
+        validated = SteeringMessage(
+            message_id="pending",
+            task_id=task_id,
+            content=content,
+            priority=priority,
+            created_at=datetime.now(UTC).isoformat(),
+            status="queued",
+        )
         now = datetime.now(UTC).isoformat()
         message_id = uuid4().hex
         with self._connect() as connection:
@@ -75,7 +100,14 @@ class SteeringQueue:
                         status, idempotency_key
                     ) VALUES (?, ?, ?, ?, ?, 'queued', ?)
                     """,
-                    (message_id, task_id, content, priority, now, idempotency_key),
+                    (
+                        message_id,
+                        validated.task_id,
+                        validated.content,
+                        validated.priority,
+                        now,
+                        idempotency_key,
+                    ),
                 )
             except sqlite3.IntegrityError as error:
                 row = connection.execute(
@@ -84,7 +116,10 @@ class SteeringQueue:
                 ).fetchone()
                 assert row is not None
                 existing = self._from_row(row)
-                if existing.content != content or existing.priority != priority:
+                if (
+                    existing.content != validated.content
+                    or existing.priority != validated.priority
+                ):
                     raise ValueError(
                         "steering idempotency key reused with different content"
                     ) from error
@@ -144,6 +179,63 @@ class SteeringQueue:
             )
             for message in map(self._from_row, rows)
         ]
+
+    def leased_by(self, task_id: str, owner: str) -> list[SteeringMessage]:
+        """Return the owner's live leases in deterministic delivery order."""
+
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM steering_messages
+                WHERE task_id=? AND status='leased' AND lease_owner=? AND lease_until>=?
+                ORDER BY priority DESC, created_at ASC, message_id ASC
+                """,
+                (task_id, owner, now),
+            ).fetchall()
+        return [self._from_row(row) for row in rows]
+
+    def has_pending(self, task_id: str) -> bool:
+        """Report whether new or expired leased steering awaits delivery."""
+
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM steering_messages
+                WHERE task_id=? AND (
+                    status='queued' OR (status='leased' AND lease_until<?)
+                )
+                LIMIT 1
+                """,
+                (task_id, now),
+            ).fetchone()
+        return row is not None
+
+    def list_messages(
+        self,
+        task_id: str,
+        *,
+        statuses: tuple[SteeringStatus, ...] = ("queued", "leased", "acked"),
+        limit: int = 100,
+    ) -> list[SteeringMessage]:
+        """List bounded task steering for operator status views."""
+
+        if not statuses:
+            return []
+        bounded_limit = max(1, min(limit, 1_000))
+        placeholders = ",".join("?" for _ in statuses)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT * FROM steering_messages
+                WHERE task_id=? AND status IN ({placeholders})
+                ORDER BY created_at ASC, message_id ASC
+                LIMIT ?
+                """,
+                (task_id, *statuses, bounded_limit),
+            ).fetchall()
+        return [self._from_row(row) for row in rows]
 
     def ack(self, message_ids: list[str], owner: str) -> int:
         if not message_ids:

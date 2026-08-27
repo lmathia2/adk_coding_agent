@@ -49,7 +49,8 @@ complete.
 
 - [x] Append-only task event stream and deterministic ledger replay.
 - [x] SQLite checkpoint persistence.
-- [x] Durable lease/ack user-steering queue.
+- [x] Durable, bounded lease/ack user-steering queue with CLI ingress, ADK
+  model/tool safe-point delivery, and completion fencing.
 - [x] No-progress fingerprints and replan/human-input routing.
 - [x] Resumable ADK workflow.
 - [x] Isolated Git worktree creation, reattachment, fingerprinting, and guarded cleanup.

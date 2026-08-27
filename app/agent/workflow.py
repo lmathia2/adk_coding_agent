@@ -31,11 +31,13 @@ from harness.orchestration import (
     parse_task_request,
     reduce_agent_step,
     replan_ledger,
+    resume_for_steering,
     task_id_for,
 )
 from harness.repo import StructuralIndex, build_repository_manifest
 from harness.review import build_diff_review_packet
 from harness.state import (
+    STEERING_BATCH_LIMIT,
     CheckpointStore,
     EventKind,
     SteeringQueue,
@@ -425,17 +427,23 @@ def _set_model_call_state(
     dynamic_tokens: int,
     stable_prefix_hash: str = _STATIC_PREFIX_HASH,
     static_prefix_tokens: int = _STATIC_PREFIX_TOKEN_ESTIMATE,
+    steering_owner: str | None = None,
+    steering_packet_message_ids: tuple[str, ...] = (),
 ) -> None:
     """Expose current packet identity to ADK callbacks before the model call."""
 
-    ctx.state.update(
-        {
+    state_delta: dict[str, Any] = {
             "task_id": task_id,
             "stable_instruction_sha256": stable_prefix_hash,
             "static_prefix_tokens_estimate": static_prefix_tokens,
             "dynamic_context_tokens_estimate": dynamic_tokens,
         }
-    )
+    if steering_owner is not None:
+        state_delta["steering_owner"] = steering_owner
+        state_delta["steering_packet_message_ids"] = list(
+            steering_packet_message_ids
+        )
+    ctx.state.update(state_delta)
 
 
 def _set_skill_state(
@@ -682,7 +690,12 @@ async def _orchestrate_owned(
                 "distributed task lease was lost; another worker may own the task",
             )
             return
-        leased = _STEERING_QUEUE.lease(task_id, owner, limit=20)
+        leased = _STEERING_QUEUE.lease(
+            task_id,
+            owner,
+            limit=STEERING_BATCH_LIMIT,
+            lease_seconds=SETTINGS.task_lease_seconds,
+        )
         steering = [message.content for message in leased]
         for message in leased:
             _EVENT_STORE.append(
@@ -716,8 +729,24 @@ async def _orchestrate_owned(
         total_context_estimate = _STATIC_PREFIX_TOKEN_ESTIMATE + dynamic_tokens
         should_compact = total_context_estimate >= SETTINGS.compact_at_tokens
 
-        _set_model_call_state(ctx, task_id=task_id, dynamic_tokens=dynamic_tokens)
-        raw_step = await ctx.run_node(coding_worker, node_input=packet)
+        _set_model_call_state(
+            ctx,
+            task_id=task_id,
+            dynamic_tokens=dynamic_tokens,
+            steering_owner=owner,
+            steering_packet_message_ids=tuple(
+                message.message_id for message in leased
+            ),
+        )
+        try:
+            raw_step = await ctx.run_node(coding_worker, node_input=packet)
+        except BaseException:
+            owned = _STEERING_QUEUE.leased_by(task_id, owner)
+            _STEERING_QUEUE.release(
+                [message.message_id for message in owned],
+                owner,
+            )
+            raise
         if not lease_guard.renew():
             yield _lease_blocked_result(
                 task_id,
@@ -748,16 +777,28 @@ async def _orchestrate_owned(
             _ledger_patch(previous, ledger),
             idempotency_key=f"agent-step:{ledger.iteration}",
         )
-        if leased:
+        delivered = _STEERING_QUEUE.leased_by(task_id, owner)
+        if delivered:
             _STEERING_QUEUE.ack(
-                [message.message_id for message in leased],
+                [message.message_id for message in delivered],
                 owner,
             )
 
+        pending_steering = _STEERING_QUEUE.has_pending(task_id)
+        if pending_steering:
+            previous = ledger
+            ledger = resume_for_steering(ledger)
+            _EVENT_STORE.append(
+                task_id,
+                EventKind.LEDGER_PATCHED,
+                _ledger_patch(previous, ledger),
+                idempotency_key=f"steering-safe-point:{ledger.iteration}",
+            )
         route = decide_route(
             ledger,
             step,
             should_compact=should_compact,
+            pending_steering=pending_steering,
         )
         checkpoint = _save_checkpoint(
             task_id=task_id,
@@ -907,6 +948,24 @@ async def _orchestrate_owned(
                         review_result,
                         idempotency_key="final-diff-review",
                     )
+                if _STEERING_QUEUE.has_pending(task_id):
+                    previous = ledger
+                    ledger = resume_for_steering(ledger)
+                    _EVENT_STORE.append(
+                        task_id,
+                        EventKind.LEDGER_PATCHED,
+                        _ledger_patch(previous, ledger),
+                        idempotency_key=(
+                            f"steering-completion-fence:{ledger.iteration}"
+                        ),
+                    )
+                    _save_checkpoint(
+                        task_id=task_id,
+                        ledger=ledger,
+                        session_id=session_id,
+                        compaction_id=compaction_id,
+                    )
+                    continue
                 _EVENT_STORE.append(
                     task_id,
                     EventKind.TASK_FINISHED,

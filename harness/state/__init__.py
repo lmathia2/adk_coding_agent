@@ -17,9 +17,17 @@ from .postgres import (
 )
 from .progress import ProgressRoute, action_fingerprint, register_action, route_for_progress
 from .receipts import ToolReceipt, ToolReceiptStore
-from .steering import SteeringMessage, SteeringQueue
+from .steering import (
+    MAX_STEERING_MESSAGE_BYTES,
+    STEERING_BATCH_LIMIT,
+    SteeringMessage,
+    SteeringQueue,
+    SteeringStatus,
+)
 
 __all__ = [
+    "MAX_STEERING_MESSAGE_BYTES",
+    "STEERING_BATCH_LIMIT",
     "CheckpointStore",
     "ControlStateBackend",
     "EventKind",
@@ -33,6 +41,7 @@ __all__ = [
     "PsycopgConnectionFactory",
     "SteeringMessage",
     "SteeringQueue",
+    "SteeringStatus",
     "TaskLease",
     "TaskLeaseStore",
     "ToolReceipt",

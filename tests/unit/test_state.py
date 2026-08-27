@@ -105,6 +105,34 @@ def test_steering_queue_lease_ack_and_idempotency(tmp_path: Path) -> None:
     assert queue.lease("task", "worker-2") == []
 
 
+def test_steering_queue_bounds_content_and_exposes_delivery_state(
+    tmp_path: Path,
+) -> None:
+    queue = SteeringQueue(tmp_path / "steering.db")
+    first = queue.enqueue("task", "  Use the public API  ", priority=10)
+    second = queue.enqueue("task", "Keep the compatibility shim")
+
+    assert first.content == "Use the public API"
+    assert queue.has_pending("task")
+    leased = queue.lease("task", "worker-1", limit=1)
+    assert [item.message_id for item in leased] == [first.message_id]
+    assert [item.message_id for item in queue.leased_by("task", "worker-1")] == [
+        first.message_id
+    ]
+    assert queue.has_pending("task")
+    assert [item.message_id for item in queue.list_messages("task")] == [
+        first.message_id,
+        second.message_id,
+    ]
+
+    with pytest.raises(ValueError, match="4096 UTF-8 bytes"):
+        queue.enqueue("task", "x" * 4_097)
+    assert queue.ack([first.message_id], "worker-1") == 1
+    assert [
+        item.message_id for item in queue.lease("task", "worker-2")
+    ] == [second.message_id]
+
+
 def test_checkpoint_store_returns_latest(tmp_path: Path) -> None:
     store = CheckpointStore(tmp_path / "checkpoints.db")
     checkpoint = Checkpoint(

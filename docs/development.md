@@ -84,6 +84,36 @@ uv run python -m harness.cli cleanup \
 
 A dirty worktree is not removed. `--force` is deliberately explicit.
 
+## Steer an active task
+
+The launcher task ID and state root form a durable control address. From another
+terminal, queue new guidance while `run` is still active:
+
+```bash
+uv run adk-coding-agent steer \
+  --repository /path/to/target-repository \
+  --task-id issue-1842 \
+  --idempotency-key user-message-2 \
+  "Keep the public API compatible and add a regression test"
+```
+
+The command returns immediately with a JSON receipt. The coding worker receives the
+message at its next model boundary; a tool that has not started yet yields first so
+the model can reconsider it. An already-running model request, tool, or validation
+command finishes before the safe point. Delivery remains leased until the resulting
+`AgentStep` and ledger patch are durable.
+
+Inspect delivery metadata without revealing message content by default:
+
+```bash
+uv run adk-coding-agent steering-status \
+  --repository /path/to/target-repository \
+  --task-id issue-1842
+```
+
+Add `--include-content` only in a trusted terminal. Steering text is bounded to 4096
+UTF-8 bytes and at most four messages enter one work batch.
+
 ## Direct Agents CLI run
 
 When the workspace has already been provisioned:

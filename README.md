@@ -56,6 +56,11 @@ The repository lockfile pins the tested Google ADK 2.7 minor. Live credentialed
 Gemini runs remain an explicit deployment validation step; deterministic development
 and CI checks do not require cloud credentials.
 
+Launcher runs can be steered from another terminal without waiting for task
+completion. `adk-coding-agent steer --repository PATH --task-id ID "new guidance"`
+queues a bounded durable message that is injected at the next ADK model/tool safe
+point; `steering-status` reports its delivery state.
+
 ## Google Agents CLI skills
 
 This project follows the upstream Google skills and `long-horizon-harness` recipe:

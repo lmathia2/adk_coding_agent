@@ -13,6 +13,7 @@ from harness.orchestration import (
     parse_task_request,
     reduce_agent_step,
     replan_ledger,
+    resume_for_steering,
 )
 from harness.tools.adk_adapter import create_adk_tools
 
@@ -53,6 +54,21 @@ def test_reducer_and_routes() -> None:
     replanned = replan_ledger(ledger)
     assert replanned.phase == "plan"
     assert replanned.no_progress_count == 0
+
+
+def test_pending_steering_preempts_terminal_routes_at_a_safe_point() -> None:
+    ledger = _ledger()
+    verify = AgentStep(status="done", progress=["implemented"])
+    verifying = reduce_agent_step(ledger, verify)
+
+    assert (
+        decide_route(verifying, verify, pending_steering=True)
+        == HarnessRoute.CONTINUE
+    )
+    resumed = resume_for_steering(verifying)
+    assert resumed.status == "active"
+    assert resumed.phase == "implement"
+    assert resumed.next_action == "Apply the newest user steering before continuing"
 
 
 def test_work_packet_is_deterministic_and_steering_is_last() -> None:

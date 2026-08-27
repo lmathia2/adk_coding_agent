@@ -8,6 +8,7 @@ import os
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.apps.app import App, EventsCompactionConfig, ResumabilityConfig
 
+from harness.adk import SteeringPlugin
 from harness.context import prefix_hash
 from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin, pricing_from_env
@@ -16,7 +17,7 @@ from harness.tracing import CodingToolArtifactPlugin, HarnessTracePlugin, TraceC
 from .config import SETTINGS
 from .learning import VerifiedTraceLearningPlugin
 from .skills import _LEARNING_CONTROLLER
-from .workflow import _EVENT_STORE, root_agent
+from .workflow import _EVENT_STORE, _STEERING_QUEUE, root_agent
 
 LOGGER = logging.getLogger(__name__)
 
@@ -85,11 +86,21 @@ _TOOL_ARTIFACT_PLUGIN = CodingToolArtifactPlugin(
     event_store=_EVENT_STORE,
     default_task_id=SETTINGS.task_id_override,
 )
-_PLUGINS = [_METRICS_PLUGIN, _MEMORY_PLUGIN, _TOOL_ARTIFACT_PLUGIN]
+_STEERING_PLUGIN = SteeringPlugin(
+    queue=_STEERING_QUEUE,
+    event_store=_EVENT_STORE,
+    lease_seconds=SETTINGS.task_lease_seconds,
+)
+_PLUGINS = [
+    _STEERING_PLUGIN,
+    _METRICS_PLUGIN,
+    _MEMORY_PLUGIN,
+    _TOOL_ARTIFACT_PLUGIN,
+]
 _TRACE_PLUGIN = _build_trace_plugin()
 if _TRACE_PLUGIN is not None:
     _PLUGINS.insert(
-        0,
+        1,
         _TRACE_PLUGIN,
     )
 if SETTINGS.learning_enabled and _TRACE_PLUGIN is not None:
