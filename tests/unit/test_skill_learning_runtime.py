@@ -175,6 +175,25 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
             idempotency_key="read-1",
         )
     )
+    for sequence, operation in enumerate(
+        ("search.grep", "search.find", "search.health"),
+        start=2,
+    ):
+        traces.append(
+            TraceSpan(
+                span_id=f"span-{sequence}",
+                task_id=task_id,
+                sequence=sequence,
+                correlation_id="invocation-1",
+                category="tool",
+                phase="success",
+                name=operation,
+                timestamp=datetime.now(UTC).isoformat(),
+                content_hash=f"{sequence}" * 64,
+                payload_json='{"type":"object"}',
+                idempotency_key=f"search-{sequence}",
+            )
+        )
     metrics = MetricsStore(tmp_path / "metrics.db")
     metrics.record_tool_usage(
         ToolUsageSample(
@@ -204,8 +223,13 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
 
     assert episode is not None
     assert episode.workflow_kind == "python-change"
-    assert [action.token for action in episode.actions] == ["read:inspect:ok"]
-    assert episode.quality.tool_calls == 1
+    assert [action.token for action in episode.actions] == [
+        "read:inspect:ok",
+        "search.grep:inspect:ok",
+        "search.find:inspect:ok",
+        "search.health:inspect:ok",
+    ]
+    assert episode.quality.tool_calls == 4
     serialized = episode.model_dump_json()
     assert "Fix the parser" not in serialized
     assert "secret" not in serialized
@@ -252,6 +276,9 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
     assert scoped_episode is not None
     assert [action.token for action in scoped_episode.actions] == [
         "read:inspect:ok",
+        "search.grep:inspect:ok",
+        "search.find:inspect:ok",
+        "search.health:inspect:ok",
         "bash:shell:ok",
     ]
     assert not scoped_episode.blocked
@@ -266,12 +293,15 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
     assert uncorrelated_episode is not None
     assert [action.token for action in uncorrelated_episode.actions] == [
         "read:inspect:ok",
+        "search.grep:inspect:ok",
+        "search.find:inspect:ok",
+        "search.health:inspect:ok",
     ]
     assert not uncorrelated_episode.blocked
 
     traces.append(
         TraceSpan(
-            span_id="span-2",
+            span_id="span-blocked",
             task_id=task_id,
             sequence=1,
             correlation_id="invocation-1",
@@ -293,7 +323,7 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
     assert blocked_episode is not None
     assert blocked_episode.blocked
     assert blocked_episode.security_risks == ("policy-blocked-tool-call",)
-    assert blocked_episode.quality.tool_calls == 2
+    assert blocked_episode.quality.tool_calls == 5
 
 
 def test_workflow_kind_is_coarse_and_deterministic() -> None:

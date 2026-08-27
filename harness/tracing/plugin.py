@@ -158,6 +158,30 @@ def _bounded_json(value: Any, max_bytes: int) -> tuple[str, int]:
     return best, full_size - len(preview.encode())
 
 
+def _tool_trace_name(tool: Any, tool_args: Mapping[str, Any]) -> str:
+    """Classify reserved search calls without retaining their query arguments."""
+
+    name = str(_attribute(tool, "name", default=type(tool).__name__))
+    if name != "bash":
+        return name
+    command = tool_args.get("command")
+    if not isinstance(command, str):
+        return name
+    try:
+        # Keep the native-search dependency outside tracing's import path so
+        # optional telemetry remains usable and fail-open on every platform.
+        from harness.tools.search_command import parse_search_command
+
+        search_command = parse_search_command(command)
+    except Exception:
+        # Tracing is observational. Malformed commands and parser failures keep
+        # the ordinary bash label and must never affect tool execution.
+        return name
+    if search_command is None:
+        return name
+    return f"search.{search_command.operation}"
+
+
 class HarnessTracePlugin(BasePlugin):
     """Record all ADK 2.7 lifecycle callbacks without mutating provider data."""
 
@@ -509,7 +533,7 @@ class HarnessTracePlugin(BasePlugin):
     async def before_tool_callback(
         self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any
     ) -> None:
-        name = str(_attribute(tool, "name", default=type(tool).__name__))
+        name = _tool_trace_name(tool, tool_args)
         self._record(
             context=tool_context,
             category="tool",
@@ -521,7 +545,7 @@ class HarnessTracePlugin(BasePlugin):
     async def after_tool_callback(
         self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any, result: dict[str, Any]
     ) -> None:
-        name = str(_attribute(tool, "name", default=type(tool).__name__))
+        name = _tool_trace_name(tool, tool_args)
         status = str(_attribute(result, "status", default="")).lower()
         phase = (
             "blocked"
@@ -541,7 +565,7 @@ class HarnessTracePlugin(BasePlugin):
     async def on_tool_error_callback(
         self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any, error: Exception
     ) -> None:
-        name = str(_attribute(tool, "name", default=type(tool).__name__))
+        name = _tool_trace_name(tool, tool_args)
         self._record(
             context=tool_context,
             category="tool",

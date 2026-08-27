@@ -117,6 +117,74 @@ def test_metadata_only_is_default_and_never_persists_content(tmp_path: Path) -> 
     assert len(span.content_hash) == 64
 
 
+def test_metadata_only_classifies_virtual_search_without_query_bodies(
+    tmp_path: Path,
+) -> None:
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+    tool = SimpleNamespace(name="bash")
+    commands = (
+        ("search grep --pattern 'private TODO phrase'", "search.grep"),
+        ("search find --pattern 'private filename phrase'", "search.find"),
+        ("search health", "search.health"),
+        ("pytest -q", "bash"),
+    )
+
+    async def invoke() -> None:
+        for index, (command, _expected_name) in enumerate(commands, start=1):
+            context = _context(f"search-inv-{index}", tool=True)
+            await plugin.before_tool_callback(
+                tool=tool,
+                tool_args={"command": command},
+                tool_context=context,
+            )
+            await plugin.after_tool_callback(
+                tool=tool,
+                tool_args={"command": command},
+                tool_context=context,
+                result={"status": "ok"},
+            )
+
+    asyncio.run(invoke())
+
+    spans = plugin.store.query("task-1", categories=["tool"])
+    assert [span.name for span in spans] == [
+        name
+        for _command, name in commands
+        for _phase in ("start", "success")
+    ]
+    exported = plugin.store.export_jsonl("task-1")
+    assert "private TODO phrase" not in exported
+    assert "private filename phrase" not in exported
+    assert all(
+        json.loads(span.payload_json)["keys"]
+        == (["arguments"] if span.phase == "start" else ["arguments", "result"])
+        for span in spans
+    )
+
+
+def test_virtual_search_trace_classification_is_fail_open(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+    from harness.tools import search_command
+
+    def fail_parser(_command: str):
+        raise RuntimeError("parser unavailable")
+
+    monkeypatch.setattr(search_command, "parse_search_command", fail_parser)
+    asyncio.run(
+        plugin.before_tool_callback(
+            tool=SimpleNamespace(name="bash"),
+            tool_args={"command": "search health"},
+            tool_context=_context(tool=True),
+        )
+    )
+
+    span = plugin.store.query("task-1", categories=["tool"])[0]
+    assert span.name == "bash"
+
+
 def test_redacted_content_is_bounded_and_reports_omissions(tmp_path: Path) -> None:
     secret = "super-secret-token-value"
     plugin = HarnessTracePlugin(

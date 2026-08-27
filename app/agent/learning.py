@@ -28,6 +28,9 @@ TrialStatus = Literal["passed", "failed", "blocked", "error"]
 _TOOL_CATEGORY = {
     "read": "inspect",
     "bash": "shell",
+    "search.grep": "inspect",
+    "search.find": "inspect",
+    "search.health": "inspect",
     "edit": "mutate",
     "write": "mutate",
 }
