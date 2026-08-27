@@ -22,7 +22,7 @@ def read(path: str, offset: int = 1, limit: int = 400) -> dict[str, Any]:
 
 
 def bash(command: str, timeout_seconds: int = 120) -> dict[str, Any]:
-    """Run a bounded command in the isolated workspace under command policy."""
+    """Run a bounded command or an in-process `search grep|find|health` operation."""
 
     return _TOOLS.bash(command=command, timeout_seconds=timeout_seconds)
 

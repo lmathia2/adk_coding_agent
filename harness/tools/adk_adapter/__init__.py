@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import logging
 import os
 import re
 from collections.abc import Callable
@@ -20,15 +21,31 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from harness.approvals import ApprovalStore
+from harness.repo import FffSearchService, SearchBackend, SearchError, SearchPage
 from harness.safety import ApprovalAction, ApprovalPolicy, SecretRedactor
-from harness.sandbox import CommandSandbox, SandboxRequest, create_command_sandbox
+from harness.sandbox import (
+    CommandSandbox,
+    DockerSandbox,
+    LocalSandbox,
+    SandboxRequest,
+    create_command_sandbox,
+)
 from harness.state import ToolReceiptStore
 from harness.tools.output import bound_output
+from harness.tools.search_command import (
+    SearchCommand,
+    SearchCommandParseError,
+    parse_search_command,
+)
 
 _CONTENT_ARTIFACT_NAME = re.compile(r"^(?P<digest>[0-9a-f]{64})\.[A-Za-z0-9]{1,12}$")
 _COMMAND_ARTIFACT_NAME = re.compile(r"^command-(?P<digest>[0-9a-f]{64})\.log$")
 _MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 _MAX_ARTIFACT_OUTPUT_CHARS = 31_000
+_MAX_SEARCH_OUTPUT_CHARS = 12_000
+_MAX_SEARCH_OUTPUT_LINES = 200
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,11 +241,13 @@ class _ManagedTools:
         workspace: Path,
         *,
         sandbox: CommandSandbox | None = None,
+        search_backend: SearchBackend | None = None,
     ) -> None:
         self.workspace = workspace.resolve()
         legacy = _legacy_module()
         self.base = legacy.create_adk_tools(self.workspace)
         state_root = _state_root(self.workspace)
+        self.state_root = state_root
         known_secrets = _known_secrets()
         self.sandbox = sandbox or create_command_sandbox(
             self.workspace,
@@ -257,6 +276,23 @@ class _ManagedTools:
         self.task_scope = os.getenv("ADK_CODING_TASK_ID") or hashlib.sha256(
             self.workspace.as_posix().encode()
         ).hexdigest()[:24]
+        configured_search = os.getenv("ADK_CODING_SEARCH_BACKEND", "auto").strip().lower()
+        if configured_search not in {"auto", "disabled", "fff"}:
+            raise ValueError(
+                "ADK_CODING_SEARCH_BACKEND must be auto, fff, or disabled"
+            )
+        self.search_backend = search_backend
+        self.search_unavailable_reason: str | None = None
+        if search_backend is None and configured_search != "disabled":
+            if isinstance(self.sandbox, (LocalSandbox, DockerSandbox)):
+                self.search_backend = FffSearchService(self.workspace, state_root)
+            else:
+                self.search_unavailable_reason = (
+                    "host-side FFF search is unavailable for a non-authoritative "
+                    "remote workspace"
+                )
+        elif search_backend is None:
+            self.search_unavailable_reason = "FFF search is disabled by configuration"
 
     def _redact(self, value: Any) -> dict[str, Any]:
         normalized = _normalize_result(value)
@@ -269,7 +305,128 @@ class _ManagedTools:
             raise ValueError("unsupported read URI scheme")
         return self._redact(self.base.read(path=path, offset=offset, limit=limit))
 
+    def _persist_search_output(self, content: str) -> str:
+        encoded = content.encode("utf-8", errors="replace")
+        digest = hashlib.sha256(encoded).hexdigest()
+        directory = self.workspace / ".artifacts" / "tool-output"
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / f"{digest}.txt"
+        if not target.exists():
+            target.write_bytes(encoded)
+        return f"artifact://tool-output/{target.name}"
+
+    def _search_result(self, page: SearchPage) -> dict[str, Any]:
+        safe_text = self.redactor.redact_text(page.text)
+        bounded = bound_output(
+            safe_text,
+            max_chars=_MAX_SEARCH_OUTPUT_CHARS,
+            max_lines=_MAX_SEARCH_OUTPUT_LINES,
+        )
+        artifact_uri = None
+        if bounded.truncated:
+            try:
+                artifact_uri = self._persist_search_output(safe_text)
+            except OSError:
+                LOGGER.exception("could not persist the bounded FFF output artifact")
+        model_text = bounded.text
+        if artifact_uri:
+            model_text += f"\n\n[Full redacted page: {artifact_uri}]"
+        return {
+            "status": "ok",
+            "model_text": model_text,
+            "truncated": bounded.truncated,
+            "omitted_bytes": bounded.omitted_bytes,
+            "artifact_uri": artifact_uri,
+            "next_cursor": page.cursor,
+            "ui_details": {
+                "virtual_operation": f"search.{page.operation}",
+                "backend": "fff-search/0.10.5",
+                "query_hash": page.query_hash,
+                "cursor_available": page.cursor is not None,
+                "returned_matches": page.returned_matches,
+                "collected_matches": page.collected_matches,
+                "matched_files": page.matched_files,
+                "incomplete": page.incomplete,
+                "cold_index": page.cold_index,
+                "duration_ms": page.duration_ms,
+            },
+        }
+
+    def _run_search(self, command: SearchCommand) -> dict[str, Any]:
+        backend = self.search_backend
+        if backend is None:
+            return {
+                "status": "error",
+                "model_text": self.search_unavailable_reason or "FFF search is unavailable",
+                "ui_details": {
+                    "virtual_operation": f"search.{command.operation}",
+                    "backend": "unavailable",
+                },
+            }
+        try:
+            if command.operation == "health":
+                health = self.redactor.redact(dict(backend.health()))
+                return {
+                    "status": "ok",
+                    "model_text": json.dumps(health, sort_keys=True),
+                    "ui_details": {
+                        "virtual_operation": "search.health",
+                        "backend": health.get("backend", "fff"),
+                    },
+                }
+            if command.operation == "grep":
+                page = backend.grep(
+                    pattern=command.pattern,
+                    path=command.path,
+                    mode=command.mode,
+                    case_sensitive=command.case_sensitive,
+                    context=command.context,
+                    limit=command.limit,
+                    cursor=command.cursor,
+                )
+            else:
+                page = backend.find(
+                    pattern=command.pattern,
+                    path=command.path,
+                    limit=command.limit,
+                    cursor=command.cursor,
+                )
+        except (SearchError, ValueError) as exc:
+            return {
+                "status": "error",
+                "model_text": self.redactor.redact_text(str(exc)),
+                "ui_details": {
+                    "virtual_operation": f"search.{command.operation}",
+                    "backend": "fff-search/0.10.5",
+                },
+            }
+        except Exception as exc:
+            LOGGER.exception("FFF virtual search failed unexpectedly")
+            return {
+                "status": "error",
+                "model_text": "FFF search failed unexpectedly; use a bounded rg query",
+                "ui_details": {
+                    "virtual_operation": f"search.{command.operation}",
+                    "backend": "fff-search/0.10.5",
+                    "error": type(exc).__name__,
+                },
+            }
+        return self._search_result(page)
+
     def bash(self, command: str, timeout_seconds: int = 120) -> dict[str, Any]:
+        try:
+            search_command = parse_search_command(command)
+        except SearchCommandParseError as exc:
+            return {
+                "status": "error",
+                "model_text": f"Invalid virtual search command: {exc}",
+                "ui_details": {
+                    "virtual_operation": "search.invalid",
+                    "backend": "not-dispatched",
+                },
+            }
+        if search_command is not None:
+            return self._run_search(search_command)
         fingerprint = _canonical_hash("bash", {"command": command})
         persisted = self.approvals.for_fingerprint(self.task_scope, fingerprint)
         if persisted and persisted.status == "approved":
@@ -361,6 +518,11 @@ class _ManagedTools:
             artifact_uri=result.get("artifact_uri"),
         )
         result["receipt_id"] = tool_call_id
+        if result.get("status") == "ok" and self.search_backend is not None:
+            try:
+                self.search_backend.refresh()
+            except Exception:
+                LOGGER.exception("FFF refresh failed after a verified mutation")
         return result
 
     def edit(
@@ -416,8 +578,13 @@ def create_adk_tools(
     workspace: Path,
     *,
     sandbox: CommandSandbox | None = None,
+    search_backend: SearchBackend | None = None,
 ) -> AdkCodingTools:
-    managed = _ManagedTools(workspace, sandbox=sandbox)
+    managed = _ManagedTools(
+        workspace,
+        sandbox=sandbox,
+        search_backend=search_backend,
+    )
     return AdkCodingTools(
         read=managed.read,
         bash=managed.bash,
