@@ -56,6 +56,31 @@ def test_local_sandbox_spills_full_output_and_honors_byte_budget(
     assert len(artifact.read_text(encoding="utf-8")) > 5_000
 
 
+def test_local_sandbox_redacts_environment_secrets_before_artifact_spill(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    secret = "local-sensitive-value"
+    sandbox = LocalSandbox(
+        workspace,
+        tmp_path / "artifacts",
+        known_secrets=[secret],
+        max_output_bytes=512,
+    )
+
+    result = sandbox.execute(
+        SandboxRequest(
+            command="python -c \"print('local-sensitive-value' + 'x' * 3000)\""
+        )
+    )
+
+    assert result.artifact_uri
+    artifact = Path(result.artifact_uri.removeprefix("file://"))
+    assert secret not in artifact.read_text(encoding="utf-8")
+    assert "<redacted>" in artifact.read_text(encoding="utf-8")
+
+
 def test_local_sandbox_reports_timeout(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -124,6 +149,39 @@ def test_docker_sandbox_execution_can_be_tested_without_docker(tmp_path: Path) -
     assert result.status == "ok"
     assert result.stdout == "passed"
     assert captured and captured[0][-1] == "run-tests"
+
+
+def test_docker_sandbox_redacts_timeout_output_before_artifact_spill(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    secret = "docker-sensitive-value"
+
+    def timeout_runner(command, **kwargs):
+        raise subprocess.TimeoutExpired(
+            command,
+            kwargs["timeout"],
+            output=secret + ("x" * 3_000),
+            stderr="still running",
+        )
+
+    sandbox = DockerSandbox(
+        workspace,
+        tmp_path / "artifacts",
+        image="example/image@sha256:abcdef",
+        known_secrets=[secret],
+        max_output_bytes=512,
+        runner=timeout_runner,
+    )
+
+    result = sandbox.execute(SandboxRequest(command="slow", timeout_seconds=1))
+
+    assert result.status == "timeout"
+    assert result.artifact_uri
+    artifact = Path(result.artifact_uri.removeprefix("file://"))
+    assert secret not in artifact.read_text(encoding="utf-8")
+    assert "<redacted>" in artifact.read_text(encoding="utf-8")
 
 
 def test_factory_defaults_local_and_requires_a_docker_image(

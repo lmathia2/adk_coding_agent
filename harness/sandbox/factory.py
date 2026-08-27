@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from pathlib import Path
 
 from .base import CommandSandbox
@@ -24,6 +25,7 @@ def create_command_sandbox(
     state_root: Path,
     *,
     remote_transport: RemoteTransport | None = None,
+    known_secrets: Sequence[str] = (),
 ) -> CommandSandbox:
     backend = os.getenv("ADK_CODING_SANDBOX", "local").strip().lower()
     artifact_root = state_root / "artifacts" / "commands"
@@ -31,6 +33,7 @@ def create_command_sandbox(
         return LocalSandbox(
             workspace,
             artifact_root,
+            known_secrets=known_secrets,
             max_memory_bytes=int(
                 os.getenv("ADK_CODING_LOCAL_MEMORY_BYTES", str(4 * 1024**3))
             ),
@@ -50,6 +53,7 @@ def create_command_sandbox(
             workspace,
             artifact_root,
             image=image,
+            known_secrets=known_secrets,
             docker_binary=os.getenv("ADK_CODING_DOCKER_BINARY", "docker"),
             allow_network=_truthy("ADK_CODING_ALLOW_NETWORK"),
             cpus=float(os.getenv("ADK_CODING_SANDBOX_CPUS", "2.0")),
@@ -75,6 +79,7 @@ def create_command_sandbox(
             container=os.getenv("ADK_CODING_K8S_CONTAINER") or None,
             remote_workspace=remote_workspace,
             network_isolated=_truthy("ADK_CODING_K8S_NETWORK_ISOLATED"),
+            known_secrets=known_secrets,
             kubectl_binary=os.getenv("ADK_CODING_KUBECTL_BINARY", "kubectl"),
             timeout_binary=os.getenv(
                 "ADK_CODING_K8S_TIMEOUT_BINARY", "/usr/bin/timeout"
@@ -108,6 +113,7 @@ def create_command_sandbox(
             artifact_root,
             remote_workspace=remote_workspace,
             transport=transport,
+            known_secrets=known_secrets,
             max_output_bytes=int(os.getenv("ADK_CODING_TOOL_OUTPUT_BYTES", "16000")),
         )
     raise ValueError(

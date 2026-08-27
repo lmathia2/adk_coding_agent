@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 import subprocess
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from .base import SandboxRequest, SandboxResult
-from .output import bounded_result
+from .output import bounded_result, environment_secret_values
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -26,6 +26,7 @@ class DockerSandbox:
         docker_binary: str = "docker",
         allow_network: bool = False,
         environment: Mapping[str, str] | None = None,
+        known_secrets: Sequence[str] = (),
         cpus: float = 2.0,
         memory: str = "4g",
         pids_limit: int = 256,
@@ -43,6 +44,7 @@ class DockerSandbox:
         self.docker_binary = docker_binary
         self.allow_network = allow_network
         self.environment = dict(environment or {})
+        self.known_secrets = tuple(known_secrets)
         self.cpus = max(cpus, 0.1)
         self.memory = memory
         self.pids_limit = max(pids_limit, 16)
@@ -99,10 +101,23 @@ class DockerSandbox:
         )
         return command
 
+    def _known_secrets(self, request: SandboxRequest) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                {
+                    *self.known_secrets,
+                    *environment_secret_values(
+                        {**self.environment, **dict(request.environment)}
+                    ),
+                }
+            )
+        )
+
     def execute(self, request: SandboxRequest) -> SandboxResult:
         started = time.monotonic()
         timeout = max(1, min(request.timeout_seconds, 3_600))
         command = self.build_command(request)
+        known_secrets = self._known_secrets(request)
         try:
             completed = self.runner(
                 command,
@@ -119,6 +134,7 @@ class DockerSandbox:
                 duration_ms=int((time.monotonic() - started) * 1_000),
                 artifact_root=self.artifact_root,
                 max_bytes=self.max_output_bytes,
+                known_secrets=known_secrets,
             )
         except subprocess.TimeoutExpired as exc:
             stdout = (
@@ -139,6 +155,18 @@ class DockerSandbox:
                 duration_ms=int((time.monotonic() - started) * 1_000),
                 artifact_root=self.artifact_root,
                 max_bytes=self.max_output_bytes,
+                known_secrets=known_secrets,
+            )
+        except (OSError, ValueError) as exc:
+            return bounded_result(
+                status="blocked",
+                exit_code=None,
+                stdout="",
+                stderr=f"Docker command adapter unavailable: {exc}",
+                duration_ms=int((time.monotonic() - started) * 1_000),
+                artifact_root=self.artifact_root,
+                max_bytes=self.max_output_bytes,
+                known_secrets=known_secrets,
             )
 
 

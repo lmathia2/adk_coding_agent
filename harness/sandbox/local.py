@@ -11,11 +11,11 @@ import resource
 import subprocess
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from .base import SandboxRequest, SandboxResult
-from .output import bounded_result
+from .output import bounded_result, environment_secret_values
 
 
 def _limit_resources(
@@ -54,6 +54,7 @@ class LocalSandbox:
         artifact_root: Path,
         *,
         environment: Mapping[str, str] | None = None,
+        known_secrets: Sequence[str] = (),
         max_memory_bytes: int = 4 * 1024 * 1024 * 1024,
         max_processes: int = 256,
         max_file_bytes: int = 1024 * 1024 * 1024,
@@ -62,6 +63,7 @@ class LocalSandbox:
         self.workspace = workspace.resolve()
         self.artifact_root = artifact_root.resolve()
         self.environment = dict(environment or {})
+        self.known_secrets = tuple(known_secrets)
         self.max_memory_bytes = max_memory_bytes
         self.max_processes = max_processes
         self.max_file_bytes = max_file_bytes
@@ -82,6 +84,15 @@ class LocalSandbox:
     def execute(self, request: SandboxRequest) -> SandboxResult:
         started = time.monotonic()
         timeout = max(1, min(request.timeout_seconds, 3_600))
+        environment = self._environment(request)
+        known_secrets = tuple(
+            sorted(
+                {
+                    *self.known_secrets,
+                    *environment_secret_values(environment),
+                }
+            )
+        )
         try:
             completed = subprocess.run(
                 request.command,
@@ -92,7 +103,7 @@ class LocalSandbox:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env=self._environment(request),
+                env=environment,
                 preexec_fn=lambda: _limit_resources(
                     max_memory_bytes=self.max_memory_bytes,
                     max_processes=self.max_processes,
@@ -107,6 +118,7 @@ class LocalSandbox:
                 duration_ms=int((time.monotonic() - started) * 1_000),
                 artifact_root=self.artifact_root,
                 max_bytes=self.max_output_bytes,
+                known_secrets=known_secrets,
             )
         except subprocess.TimeoutExpired as exc:
             stdout = (
@@ -127,6 +139,18 @@ class LocalSandbox:
                 duration_ms=int((time.monotonic() - started) * 1_000),
                 artifact_root=self.artifact_root,
                 max_bytes=self.max_output_bytes,
+                known_secrets=known_secrets,
+            )
+        except (OSError, ValueError) as exc:
+            return bounded_result(
+                status="blocked",
+                exit_code=None,
+                stdout="",
+                stderr=f"local sandbox unavailable: {exc}",
+                duration_ms=int((time.monotonic() - started) * 1_000),
+                artifact_root=self.artifact_root,
+                max_bytes=self.max_output_bytes,
+                known_secrets=known_secrets,
             )
 
 

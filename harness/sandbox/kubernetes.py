@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import subprocess
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 
 from .base import SandboxRequest, SandboxResult
@@ -73,6 +73,7 @@ class KubernetesSandbox:
         kubectl_binary: str = "kubectl",
         timeout_binary: str = "/usr/bin/timeout",
         environment: Mapping[str, str] | None = None,
+        known_secrets: Sequence[str] = (),
         max_output_bytes: int = 16_000,
         runner: Runner = subprocess.run,
     ) -> None:
@@ -95,6 +96,7 @@ class KubernetesSandbox:
         self.kubectl_binary = kubectl_binary
         self.timeout_binary = timeout_binary
         self.environment = _environment(environment or {})
+        self.known_secrets = tuple(known_secrets)
         self.max_output_bytes = max(max_output_bytes, 256)
         self.runner = runner
 
@@ -153,8 +155,15 @@ class KubernetesSandbox:
     def execute(self, request: SandboxRequest) -> SandboxResult:
         started = time.monotonic()
         timeout = self._timeout(request)
-        known_secrets = environment_secret_values(
-            {**self.environment, **dict(request.environment)}
+        known_secrets = tuple(
+            sorted(
+                {
+                    *self.known_secrets,
+                    *environment_secret_values(
+                        {**self.environment, **dict(request.environment)}
+                    ),
+                }
+            )
         )
         try:
             completed = self.runner(

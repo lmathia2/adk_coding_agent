@@ -120,6 +120,37 @@ def test_kubernetes_timeout_never_falls_back_to_local_execution(tmp_path: Path) 
     assert "Kubernetes command timed out" in result.stderr
 
 
+def test_kubernetes_timeout_redacts_before_artifact_spill(tmp_path: Path) -> None:
+    secret = "kubernetes-sensitive-value"
+
+    def timeout_runner(command, **kwargs):
+        raise subprocess.TimeoutExpired(
+            command,
+            kwargs["timeout"],
+            output=secret + ("x" * 3_000),
+            stderr="remote still running",
+        )
+
+    sandbox = KubernetesSandbox(
+        tmp_path,
+        tmp_path / "artifacts",
+        namespace="tasks",
+        pod="task-123",
+        remote_workspace="/workspace",
+        network_isolated=True,
+        known_secrets=[secret],
+        max_output_bytes=512,
+        runner=timeout_runner,
+    )
+
+    result = sandbox.execute(SandboxRequest(command="slow", timeout_seconds=1))
+
+    assert result.artifact_uri
+    artifact = Path(result.artifact_uri.removeprefix("file://"))
+    assert secret not in artifact.read_text(encoding="utf-8")
+    assert "<redacted>" in artifact.read_text(encoding="utf-8")
+
+
 def test_kubernetes_rejects_invalid_request_before_invoking_kubectl(
     tmp_path: Path,
 ) -> None:

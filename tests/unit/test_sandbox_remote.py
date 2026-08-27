@@ -154,6 +154,26 @@ def test_remote_transport_timeout_and_rejection_fail_closed(tmp_path: Path) -> N
     assert "invalid response" in rejected.stderr
 
 
+def test_remote_rejection_redacts_before_artifact_spill(tmp_path: Path) -> None:
+    secret = "remote-sensitive-value"
+    sandbox = RemoteSandbox(
+        tmp_path,
+        tmp_path / "artifacts",
+        remote_workspace="workspace-123",
+        transport=_FakeTransport(error=ValueError(secret + ("x" * 3_000))),
+        known_secrets=[secret],
+        max_output_bytes=512,
+    )
+
+    result = sandbox.execute(SandboxRequest(command="invalid"))
+
+    assert result.status == "blocked"
+    assert result.artifact_uri
+    artifact = Path(result.artifact_uri.removeprefix("file://"))
+    assert secret not in artifact.read_text(encoding="utf-8")
+    assert "<redacted>" in artifact.read_text(encoding="utf-8")
+
+
 def test_remote_rejects_invalid_request_before_calling_transport(
     tmp_path: Path,
 ) -> None:

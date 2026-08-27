@@ -7,7 +7,7 @@ import re
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -175,6 +175,7 @@ class RemoteSandbox:
         remote_workspace: str,
         transport: RemoteTransport,
         environment: Mapping[str, str] | None = None,
+        known_secrets: Sequence[str] = (),
         max_output_bytes: int = 16_000,
     ) -> None:
         if (
@@ -189,6 +190,7 @@ class RemoteSandbox:
         self.remote_workspace = remote_workspace.strip()
         self.transport = transport
         self.environment = dict(environment or {})
+        self.known_secrets = tuple(known_secrets)
         self.max_output_bytes = max(max_output_bytes, 256)
 
     @staticmethod
@@ -222,8 +224,15 @@ class RemoteSandbox:
     def execute(self, request: SandboxRequest) -> SandboxResult:
         started = time.monotonic()
         timeout = self._timeout(request)
-        known_secrets = environment_secret_values(
-            {**self.environment, **dict(request.environment)}
+        known_secrets = tuple(
+            sorted(
+                {
+                    *self.known_secrets,
+                    *environment_secret_values(
+                        {**self.environment, **dict(request.environment)}
+                    ),
+                }
+            )
         )
         try:
             response = self.transport.execute(
