@@ -69,6 +69,30 @@ def _result_artifacts(result: Any) -> list[str]:
     )
 
 
+def _tool_call_identity(context: Any) -> str:
+    """Return a replay-stable call identity without exposing it in event payloads."""
+
+    current = context
+    parts: list[str] = []
+    for _ in range(8):
+        for name in ("function_call_id", "node_path", "run_id"):
+            try:
+                value = getattr(current, name, None)
+            except Exception:  # pragma: no cover - defensive provider boundary
+                value = None
+            if value is not None:
+                normalized = str(value).strip()
+                if normalized:
+                    parts.append(f"{name}:{normalized[:512]}")
+        try:
+            current = current.parent_ctx
+        except Exception:  # pragma: no cover - defensive provider boundary
+            break
+        if current is None:
+            break
+    return "\0".join(parts) or "unscoped-call"
+
+
 class CodingToolArtifactPlugin(BasePlugin):
     """Persist content-addressed tool artifacts without copying tool output."""
 
@@ -104,6 +128,7 @@ class CodingToolArtifactPlugin(BasePlugin):
         name = _tool_name(tool)
         if task_id is None or name is None:
             return None
+        call_identity = _tool_call_identity(tool_context)
         for artifact_uri in _result_artifacts(result):
             payload = {
                 "artifact_uri": artifact_uri,
@@ -111,7 +136,11 @@ class CodingToolArtifactPlugin(BasePlugin):
                 "tool": name,
             }
             fingerprint = hashlib.sha256(
-                json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+                json.dumps(
+                    {"call_identity": call_identity, "payload": payload},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
             ).hexdigest()
             try:
                 self.event_store.append(

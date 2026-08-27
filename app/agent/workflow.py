@@ -246,15 +246,36 @@ def _prepare_compaction(
         event = events[index]
         if event.kind != EventKind.COMPACTION_CREATED:
             continue
-        boundary = index + 1
         snapshot_payload = event.payload.get("snapshot")
         if isinstance(snapshot_payload, dict):
             previous = CompactionSnapshot.model_validate(snapshot_payload)
+            cursor = previous.first_retained_event_id
+            if cursor is not None:
+                for cursor_index, candidate in enumerate(events):
+                    if candidate.event_id == cursor:
+                        boundary = cursor_index
+                        break
+                else:
+                    boundary = index + 1
+            elif previous.last_summarized_event_id is not None:
+                for cursor_index, candidate in enumerate(events):
+                    if candidate.event_id == previous.last_summarized_event_id:
+                        boundary = cursor_index + 1
+                        break
+                else:
+                    boundary = index + 1
+            else:
+                boundary = index + 1
         else:
             previous = str(event.payload.get("summary", ""))
+            boundary = index + 1
         break
 
-    uncompacted = events[boundary:]
+    uncompacted = [
+        event
+        for event in events[boundary:]
+        if event.kind != EventKind.COMPACTION_CREATED
+    ]
     retained_count = min(SETTINGS.recent_event_limit, len(uncompacted))
     if retained_count:
         events_to_summarize = uncompacted[:-retained_count]

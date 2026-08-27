@@ -15,6 +15,7 @@ def _invoke(
     tool: str = "bash",
     task_id: str | None = "task-1",
     parent_task_id: str | None = None,
+    function_call_id: str = "call-1",
 ) -> None:
     state = {"task_id": task_id} if task_id is not None else {}
     parent = (
@@ -28,7 +29,7 @@ def _invoke(
             tool_args={"command": "pytest -q"},
             tool_context=SimpleNamespace(
                 state=state,
-                function_call_id="call-1",
+                function_call_id=function_call_id,
                 parent_ctx=parent,
             ),
             result=result,
@@ -80,6 +81,22 @@ def test_tool_artifact_plugin_filters_and_sorts_references(tmp_path) -> None:
     )
 
     assert [event.payload["artifact_uri"] for event in store.read("task-1")] == sorted(artifacts)
+
+
+def test_tool_artifact_plugin_distinguishes_calls_but_dedupes_call_replay(tmp_path) -> None:
+    store = JsonlEventStore(tmp_path / "events")
+    plugin = CodingToolArtifactPlugin(event_store=store)
+    artifact_uri = f"artifact://tool-output/{'a' * 64}.txt"
+    result = {"artifact_uri": artifact_uri}
+
+    _invoke(plugin, result=result, function_call_id="call-1")
+    _invoke(plugin, result=result, function_call_id="call-1")
+    _invoke(plugin, result=result, function_call_id="call-2")
+
+    events = store.read("task-1")
+    assert len(events) == 2
+    assert events[0].payload == events[1].payload
+    assert events[0].idempotency_key != events[1].idempotency_key
 
 
 def test_tool_artifact_plugin_ignores_untrusted_or_unscoped_results(tmp_path) -> None:

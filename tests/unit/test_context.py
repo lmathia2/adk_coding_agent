@@ -222,3 +222,45 @@ def test_compaction_snapshot_recovers_artifacts_from_legacy_summary_block() -> N
     )
 
     assert snapshot.artifact_uris == [artifact_uri]
+
+
+def test_compaction_snapshot_redacts_event_secrets_without_mutating_raw_event() -> None:
+    secret = "authorization: Bearer top-secret-value-123456789"
+    event = HarnessEvent(
+        task_id="task-1",
+        sequence=7,
+        kind="steering.received",
+        payload={"content": secret, "nested": {"password": "plain-secret-value"}},
+    )
+    original = event.model_dump(mode="json")
+
+    snapshot = build_compaction_snapshot(
+        ledger=_ledger(),
+        events_to_summarize=[event],
+    )
+
+    assert "top-secret-value" not in snapshot.summary_markdown
+    assert "plain-secret-value" not in snapshot.summary_markdown
+    assert snapshot.summary_markdown.count("<redacted>") >= 2
+    assert event.model_dump(mode="json") == original
+
+
+def test_repeated_compaction_summaries_remain_within_the_configured_bound() -> None:
+    policy = CompactionPolicy(
+        max_summary_tokens=512,
+        max_previous_summary_tokens=128,
+        max_summarized_event_tokens=256,
+    )
+    previous = None
+    for index in range(25):
+        previous = build_compaction_snapshot(
+            ledger=_ledger(),
+            previous_summary=previous,
+            events_to_summarize=[f"event-{index}:" + "x" * 4_000],
+            policy=policy,
+        )
+        assert len(previous.summary_markdown) <= policy.max_summary_tokens * 4
+
+    assert previous is not None
+    assert previous.previous_summary_hash is not None
+    assert previous.summary_markdown.endswith("</artifacts>")

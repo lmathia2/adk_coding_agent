@@ -53,7 +53,7 @@ def test_workflow_compaction_uses_safe_suffix_and_chains_snapshot(
         store.append(
             ledger.task_id,
             EventKind.ACTION_RECORDED,
-            {"index": index},
+            {"first": index},
         )
         for index in range(workflow.SETTINGS.recent_event_limit + 2)
     ]
@@ -80,7 +80,7 @@ def test_workflow_compaction_uses_safe_suffix_and_chains_snapshot(
         store.append(
             ledger.task_id,
             EventKind.ACTION_RECORDED,
-            {"index": index},
+            {"second": index},
         )
         for index in range(workflow.SETTINGS.recent_event_limit + 1)
     ]
@@ -95,6 +95,41 @@ def test_workflow_compaction_uses_safe_suffix_and_chains_snapshot(
     assert second.previous_summary_hash == first.content_hash()
     assert second.last_summarized_event_id == second_batch[0].event_id
     assert second.first_retained_event_id == second_batch[1].event_id
+    second_new_events = second.summary_markdown.rsplit("### Newly Summarized Events\n", 1)[1].split(
+        "\n\n<read-files>", 1
+    )[0]
+    assert '"first":2' in second_new_events
+
+    store.append(
+        ledger.task_id,
+        EventKind.COMPACTION_CREATED,
+        {
+            "summary": second.summary_markdown,
+            "snapshot": second.model_dump(mode="json"),
+        },
+    )
+    third_batch = [
+        store.append(
+            ledger.task_id,
+            EventKind.ACTION_RECORDED,
+            {"third": index},
+        )
+        for index in range(workflow.SETTINGS.recent_event_limit + 1)
+    ]
+
+    third = workflow._prepare_compaction(
+        ledger.task_id,
+        ledger=ledger,
+        tokens_before=95_000,
+    )
+    third_new_events = third.summary_markdown.rsplit("### Newly Summarized Events\n", 1)[1].split(
+        "\n\n<read-files>", 1
+    )[0]
+
+    assert '"first":2' not in third_new_events
+    assert '"second":1' in third_new_events
+    assert third.last_summarized_event_id == third_batch[0].event_id
+    assert third.first_retained_event_id == third_batch[1].event_id
 
 
 def test_workflow_compaction_recovers_normal_coding_tool_artifacts(

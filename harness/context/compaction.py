@@ -11,6 +11,7 @@ from urllib.parse import unquote, urlsplit
 from pydantic import BaseModel, ConfigDict, Field
 
 from harness.models import CompactionSnapshot, TaskLedger
+from harness.safety import SecretRedactor
 
 from .compiler import estimate_tokens, truncate_to_tokens
 
@@ -20,6 +21,7 @@ _FILE_ARTIFACT_PATTERN = re.compile(r"command-[0-9a-f]{64}\.log")
 _MAX_ARTIFACT_SCAN_DEPTH = 8
 _MAX_ARTIFACT_SCAN_NODES = 512
 _MAX_ARTIFACT_SUMMARY_CHARS = 64_000
+_MODEL_CONTEXT_REDACTOR = SecretRedactor()
 
 
 class CompactionPolicy(BaseModel):
@@ -32,6 +34,9 @@ class CompactionPolicy(BaseModel):
     trigger_fraction: float = Field(default=0.80, gt=0.1, le=1.0)
     retain_recent_events: int = Field(default=20, ge=1)
     max_event_chars: int = Field(default=2_000, ge=200)
+    max_summary_tokens: int = Field(default=4_000, ge=512, le=32_000)
+    max_previous_summary_tokens: int = Field(default=1_000, ge=128, le=8_000)
+    max_summarized_event_tokens: int = Field(default=1_600, ge=128, le=16_000)
     max_artifact_references: int = Field(default=12, ge=0, le=64)
     max_artifact_uri_chars: int = Field(default=512, ge=64, le=2_048)
 
@@ -51,7 +56,7 @@ def _bullets(items: Sequence[str], *, empty: str = "- None") -> str:
 
 def _event_text(event: Any, *, max_artifact_uri_chars: int) -> str:
     if isinstance(event, str):
-        return event
+        return _MODEL_CONTEXT_REDACTOR.redact_text(event)
     kind = getattr(event, "kind", None)
     payload = getattr(event, "payload", None)
     sequence = getattr(event, "sequence", None)
@@ -61,7 +66,7 @@ def _event_text(event: Any, *, max_artifact_uri_chars: int) -> str:
                 "sequence": int(sequence),
                 "kind": str(kind),
                 "payload": _redact_unsafe_artifact_fields(
-                    payload,
+                    _MODEL_CONTEXT_REDACTOR.redact(payload),
                     max_chars=max_artifact_uri_chars,
                 ),
             },
@@ -71,11 +76,11 @@ def _event_text(event: Any, *, max_artifact_uri_chars: int) -> str:
         )
     canonical_json = getattr(event, "canonical_json", None)
     if callable(canonical_json):
-        return str(canonical_json())
+        return _MODEL_CONTEXT_REDACTOR.redact_text(str(canonical_json()))
     model_dump_json = getattr(event, "model_dump_json", None)
     if callable(model_dump_json):
-        return str(model_dump_json())
-    return str(event)
+        return _MODEL_CONTEXT_REDACTOR.redact_text(str(model_dump_json()))
+    return _MODEL_CONTEXT_REDACTOR.redact_text(str(event))
 
 
 def _event_id(event: Any) -> str | None:
@@ -340,10 +345,14 @@ def build_compaction_snapshot(
     """
 
     active_policy = policy or CompactionPolicy()
-    previous_text = (
+    previous_text_raw = (
         previous_summary.summary_markdown
         if isinstance(previous_summary, CompactionSnapshot)
         else previous_summary or "None"
+    )
+    previous_text, _ = truncate_to_tokens(
+        _MODEL_CONTEXT_REDACTOR.redact_text(previous_text_raw),
+        active_policy.max_previous_summary_tokens,
     )
     latest_validation = (
         ledger.validations[-1].summary if ledger.validations else "No validation run yet."
@@ -360,8 +369,16 @@ def build_compaction_snapshot(
         retained_events=retained_events,
         policy=active_policy,
     )
+    summarized_events, _ = truncate_to_tokens(
+        _render_events(
+            events_to_summarize,
+            max_chars=active_policy.max_event_chars,
+            max_artifact_uri_chars=active_policy.max_artifact_uri_chars,
+        ),
+        active_policy.max_summarized_event_tokens,
+    )
 
-    summary = f"""## Goal
+    summary_unbounded = f"""## Goal
 {ledger.goal}
 
 ## Acceptance Criteria
@@ -404,19 +421,7 @@ def build_compaction_snapshot(
 {previous_text}
 
 ### Newly Summarized Events
-{
-        _render_events(
-            events_to_summarize,
-            max_chars=active_policy.max_event_chars,
-            max_artifact_uri_chars=active_policy.max_artifact_uri_chars,
-        )
-    }
-
-### Recoverable Artifacts
-Complete outputs remain outside the compacted context under these identifiers.
-<artifacts>
-{chr(10).join(artifact_uris) or "(none)"}
-</artifacts>
+{summarized_events}
 
 <read-files>
 {chr(10).join(sorted(set(ledger.files_read))) or "(none)"}
@@ -425,7 +430,17 @@ Complete outputs remain outside the compacted context under these identifiers.
 <modified-files>
 {chr(10).join(sorted(set(ledger.files_modified))) or "(none)"}
 </modified-files>
+
+### Recoverable Artifacts
+Complete outputs remain outside the compacted context under these identifiers.
+<artifacts>
+{chr(10).join(artifact_uris) or "(none)"}
+</artifacts>
 """.strip()
+    summary, _ = truncate_to_tokens(
+        summary_unbounded,
+        active_policy.max_summary_tokens,
+    )
 
     retained_text = _render_events(
         retained_events,
