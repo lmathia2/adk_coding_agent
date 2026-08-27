@@ -157,9 +157,7 @@ def test_plugin_covers_every_adk_callback_and_preserves_provider_objects(
     tool = SimpleNamespace(name="bash")
     request = LlmRequest(
         model="gemini-test",
-        contents=[
-            types.Content(role="user", parts=[types.Part.from_text(text="prompt")])
-        ],
+        contents=[types.Content(role="user", parts=[types.Part.from_text(text="prompt")])],
     )
     response = LlmResponse(
         model_version="gemini-test-001",
@@ -330,6 +328,48 @@ def test_session_identity_keeps_early_and_late_callbacks_together(
     assert plugin.store.query("derived-task") == []
 
 
+def test_nested_callback_context_reuses_early_session_identity(tmp_path: Path) -> None:
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+    invocation_context = _context()
+    invocation_context.session.id = "session-nested"
+    callback_context = SimpleNamespace(
+        _invocation_context=invocation_context,
+        state=State({"task_id": "late-task"}, {}),
+        node_path="root/worker@1",
+        run_id="1",
+    )
+
+    async def invoke() -> None:
+        await plugin.before_run_callback(invocation_context=invocation_context)
+        await plugin.before_model_callback(
+            callback_context=callback_context,
+            llm_request={"model": "gemini-test"},
+        )
+        await plugin.after_model_callback(
+            callback_context=callback_context,
+            llm_response={"modelVersion": "gemini-test-001", "partial": False},
+        )
+        await plugin.after_run_callback(invocation_context=invocation_context)
+
+    asyncio.run(invoke())
+
+    assert len(plugin.store.query("session-nested")) == 4
+    assert plugin.store.query("late-task") == []
+
+
+def test_invocation_identity_is_stable_when_task_id_appears_late(tmp_path: Path) -> None:
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+    context: dict[str, object] = {"invocation_id": "inv-early", "state": {}}
+
+    asyncio.run(plugin.before_run_callback(invocation_context=context))
+    context["state"] = {"task_id": "late-task"}
+    asyncio.run(plugin.after_run_callback(invocation_context=context))
+
+    spans = plugin.store.query("invocation:inv-early")
+    assert [span.phase for span in spans] == ["start", "success"]
+    assert plugin.store.query("late-task") == []
+
+
 def test_partial_models_blocked_tools_and_storage_failures_are_safe(
     tmp_path: Path,
     monkeypatch,
@@ -372,3 +412,116 @@ def test_partial_models_blocked_tools_and_storage_failures_are_safe(
 
     monkeypatch.setattr(plugin.store, "append", fail_append)
     asyncio.run(plugin.before_run_callback(invocation_context=context))
+
+
+def test_streaming_model_records_exactly_one_terminal_span(tmp_path: Path) -> None:
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+    context = _context()
+
+    async def invoke() -> None:
+        await plugin.before_model_callback(
+            callback_context=context,
+            llm_request={"model": "gemini-test"},
+        )
+        for text in ("a", "ab"):
+            await plugin.after_model_callback(
+                callback_context=context,
+                llm_response={"modelVersion": "gemini-test-001", "partial": True, "text": text},
+            )
+        await plugin.after_model_callback(
+            callback_context=context,
+            llm_response={"modelVersion": "gemini-test-001", "partial": False, "text": "abc"},
+        )
+        # Some streaming adapters repeat a differently shaped final response.
+        await plugin.after_model_callback(
+            callback_context=context,
+            llm_response={
+                "modelVersion": "gemini-test-001",
+                "partial": False,
+                "text": "abc",
+                "finish": "stop",
+            },
+        )
+
+    asyncio.run(invoke())
+
+    spans = plugin.store.query("task-1", categories=["model"])
+    assert [span.phase for span in spans] == ["start", "success"]
+    assert spans[1].parent_span_id == spans[0].span_id
+
+
+def test_distinct_runtime_occurrences_are_replay_idempotent(tmp_path: Path) -> None:
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+    agent = SimpleNamespace(name="worker")
+    tool = SimpleNamespace(name="read")
+    first_agent = _context()
+    second_agent = _context()
+    second_agent.node_path = "root/worker@2"
+    second_agent.run_id = "2"
+    first_tool = _context(tool=True)
+    second_tool = _context(tool=True)
+    second_tool.function_call_id = "call-2"
+
+    async def invoke() -> None:
+        for context in (first_agent, second_agent, first_agent):
+            await plugin.before_agent_callback(agent=agent, callback_context=context)
+            await plugin.after_agent_callback(agent=agent, callback_context=context)
+        for context in (first_tool, second_tool, first_tool):
+            await plugin.before_tool_callback(
+                tool=tool,
+                tool_args={"path": "README.md"},
+                tool_context=context,
+            )
+            await plugin.after_tool_callback(
+                tool=tool,
+                tool_args={"path": "README.md"},
+                tool_context=context,
+                result={"status": "success"},
+            )
+
+    asyncio.run(invoke())
+
+    agent_spans = plugin.store.query("task-1", categories=["agent"])
+    tool_spans = plugin.store.query("task-1", categories=["tool"])
+    assert len(agent_spans) == 4
+    assert len(tool_spans) == 4
+    assert len({span.span_id for span in agent_spans if span.phase == "start"}) == 2
+    assert len({span.span_id for span in tool_spans if span.phase == "start"}) == 2
+
+
+def test_terminal_storage_failure_preserves_parent_for_retry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+    context = _context()
+
+    asyncio.run(
+        plugin.before_model_callback(
+            callback_context=context,
+            llm_request={"model": "gemini-test"},
+        )
+    )
+    append = plugin.store.append
+
+    def fail_append(_span):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(plugin.store, "append", fail_append)
+    asyncio.run(
+        plugin.after_model_callback(
+            callback_context=context,
+            llm_response={"modelVersion": "gemini-test-001", "partial": False},
+        )
+    )
+    monkeypatch.setattr(plugin.store, "append", append)
+    asyncio.run(
+        plugin.after_model_callback(
+            callback_context=context,
+            llm_response={"modelVersion": "gemini-test-001", "partial": False},
+        )
+    )
+
+    spans = plugin.store.query("task-1", categories=["model"])
+    assert len(spans) == 2
+    assert spans[1].parent_span_id == spans[0].span_id

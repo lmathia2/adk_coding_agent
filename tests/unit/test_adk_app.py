@@ -28,22 +28,18 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert module.root_agent.name == "coding_harness"
     assert module.app.root_agent is module.root_agent
     assert any(isinstance(plugin, HarnessMetricsPlugin) for plugin in module.app.plugins)
-    assert any(
-        isinstance(plugin, VerifiedProjectMemoryPlugin)
-        for plugin in module.app.plugins
-    )
+    assert any(isinstance(plugin, VerifiedProjectMemoryPlugin) for plugin in module.app.plugins)
     trace_plugin = next(
-        plugin
-        for plugin in module.app.plugins
-        if isinstance(plugin, HarnessTracePlugin)
+        plugin for plugin in module.app.plugins if isinstance(plugin, HarnessTracePlugin)
     )
     assert trace_plugin.content_mode == TraceContentMode.METADATA_ONLY
     learning = importlib.import_module("app.agent.learning")
     assert any(
-        isinstance(plugin, learning.VerifiedTraceLearningPlugin)
-        for plugin in module.app.plugins
+        isinstance(plugin, learning.VerifiedTraceLearningPlugin) for plugin in module.app.plugins
     )
-    tool_names = {getattr(tool, "name", getattr(tool, "__name__", "")) for tool in module.coding_worker.tools}
+    tool_names = {
+        getattr(tool, "name", getattr(tool, "__name__", "")) for tool in module.coding_worker.tools
+    }
     assert {"read", "bash", "edit", "write"}.issubset(tool_names)
 
     reviewer = importlib.import_module("app.agent.reviewer")
@@ -146,6 +142,21 @@ def test_invalid_trace_mode_fails_closed(monkeypatch, tmp_path) -> None:
 
     with pytest.raises(ValueError, match="off, metadata, redacted"):
         config.load_settings()
+
+
+def test_trace_initialization_failure_disables_optional_plugin(
+    monkeypatch,
+    caplog,
+) -> None:
+    application = importlib.import_module("app.agent.application")
+
+    def fail_trace_plugin(**_kwargs):
+        raise OSError("trace volume unavailable")
+
+    monkeypatch.setattr(application, "HarnessTracePlugin", fail_trace_plugin)
+
+    assert application._build_trace_plugin() is None
+    assert "tracing is disabled" in caplog.text
 
 
 def test_skill_root_symlink_is_preserved_for_registry_validation(
@@ -263,9 +274,7 @@ def test_task_lease_guard_fails_closed_when_unavailable_or_lost() -> None:
     )
     assert lost.acquired
     assert not lost.renew()
-    blocked = json.loads(
-        workflow._lease_blocked_result("task-1", "another worker owns it")
-    )
+    blocked = json.loads(workflow._lease_blocked_result("task-1", "another worker owns it"))
     assert blocked == {
         "reason": "another worker owns it",
         "status": "blocked",

@@ -181,24 +181,37 @@ class HarnessTracePlugin(BasePlugin):
         )
         self.clock = clock or (lambda: datetime.now(UTC))
         self._active: dict[tuple[str, str, str, str], deque[str]] = defaultdict(deque)
+        self._closed: set[tuple[str, str, str, str]] = set()
+        self._task_by_correlation: dict[str, str] = {}
         self._lock = threading.RLock()
 
     def _task_id(self, context: Any) -> str:
         if self.default_task_id:
             return self.default_task_id
-        session = _attribute(context, "session")
+        correlation_id = self._correlation_id(context)
+        with self._lock:
+            cached = self._task_by_correlation.get(correlation_id)
+        if cached is not None:
+            return cached
+        invocation = _attribute(context, "invocation_context", "_invocation_context")
+        session = _attribute(context, "session") or _attribute(invocation, "session")
         session_id = _attribute(session, "id")
-        if session_id:
-            return str(session_id)
-        value = _context_value(context, "task_id")
-        return str(value or "unknown")
+        value = str(
+            session_id
+            or _context_value(context, "task_id")
+            or (f"invocation:{correlation_id}" if correlation_id != "unknown" else "unknown")
+        )
+        with self._lock:
+            self._task_by_correlation.setdefault(correlation_id, value)
+            return self._task_by_correlation[correlation_id]
 
     @staticmethod
     def _correlation_id(context: Any) -> str:
         value = _context_value(context, "invocation_id")
         if value:
             return str(value)
-        session = _attribute(context, "session")
+        invocation = _attribute(context, "invocation_context", "_invocation_context")
+        session = _attribute(context, "session") or _attribute(invocation, "session")
         return str(_attribute(session, "id", default="unknown"))
 
     @staticmethod
@@ -212,7 +225,10 @@ class HarnessTracePlugin(BasePlugin):
             value = _context_value(context, field)
             if value:
                 components.append(f"{field}:{value}")
-        return "|".join(components) if components else name
+        # Model providers commonly return a versioned model name that differs
+        # from the requested name. Keep both callbacks in the same operation
+        # when ADK does not provide workflow execution identifiers.
+        return "|".join(components) if components else ("model" if category == "model" else name)
 
     def _active_key(self, context: Any, category: str, name: str) -> tuple[str, str, str, str]:
         return (
@@ -226,10 +242,7 @@ class HarnessTracePlugin(BasePlugin):
         key = self._active_key(context, category, name)
         with self._lock:
             if phase in {"success", "error", "blocked"} and self._active.get(key):
-                parent = self._active[key].popleft()
-                if not self._active[key]:
-                    self._active.pop(key, None)
-                return parent
+                return self._active[key][0]
             task_id, correlation_id, _, _ = key
             parent_categories = {
                 "agent": ("run",),
@@ -250,6 +263,39 @@ class HarnessTracePlugin(BasePlugin):
                 if candidates:
                     return candidates[-1]
         return None
+
+    def _mark_recorded(
+        self,
+        *,
+        key: tuple[str, str, str, str],
+        phase: str,
+        parent_span_id: str | None,
+        candidate_span_id: str,
+        stored_span_id: str,
+    ) -> None:
+        """Advance in-memory pairing only after durable storage succeeds."""
+
+        with self._lock:
+            if phase == "start":
+                if stored_span_id == candidate_span_id:
+                    self._closed.discard(key)
+                    self._active[key].append(stored_span_id)
+                elif key not in self._closed and stored_span_id not in self._active[key]:
+                    # A fresh plugin instance may be replaying a stored start.
+                    self._active[key].append(stored_span_id)
+                return
+            if phase not in {"success", "error", "blocked"}:
+                return
+            queue = self._active.get(key)
+            if queue and queue[0] == parent_span_id:
+                queue.popleft()
+                if not queue:
+                    self._active.pop(key, None)
+            self._closed.add(key)
+
+    def _is_closed(self, context: Any, category: str, name: str) -> bool:
+        with self._lock:
+            return self._active_key(context, category, name) in self._closed
 
     def _record_unchecked(
         self,
@@ -276,6 +322,7 @@ class HarnessTracePlugin(BasePlugin):
         )
         idempotency_key = hashlib.sha256(idempotency_material.encode()).hexdigest()
         parent_span_id = self._parent_for(context, category, name, phase)
+        active_key = self._active_key(context, category, name)
         candidate = TraceSpan(
             span_id=uuid4().hex,
             task_id=task_id,
@@ -292,11 +339,13 @@ class HarnessTracePlugin(BasePlugin):
             idempotency_key=idempotency_key,
         )
         stored = self.store.append(candidate)
-        if phase == "start":
-            with self._lock:
-                self._active[self._active_key(context, category, name)].append(
-                    stored.span_id
-                )
+        self._mark_recorded(
+            key=active_key,
+            phase=phase,
+            parent_span_id=parent_span_id,
+            candidate_span_id=candidate.span_id,
+            stored_span_id=stored.span_id,
+        )
         return stored
 
     def _record(
@@ -327,59 +376,169 @@ class HarnessTracePlugin(BasePlugin):
             return None
 
     async def on_user_message_callback(self, *, invocation_context: Any, user_message: Any) -> None:
-        self._record(context=invocation_context, category="user", phase="success", name="message", content={"message": user_message})
+        self._record(
+            context=invocation_context,
+            category="user",
+            phase="success",
+            name="message",
+            content={"message": user_message},
+        )
 
     async def before_run_callback(self, *, invocation_context: Any) -> None:
-        self._record(context=invocation_context, category="run", phase="start", name="run", content={"context": invocation_context})
+        self._record(
+            context=invocation_context,
+            category="run",
+            phase="start",
+            name="run",
+            content={"context": invocation_context},
+        )
 
     async def on_event_callback(self, *, invocation_context: Any, event: Any) -> None:
-        self._record(context=invocation_context, category="event", phase="success", name=str(_attribute(event, "author", default="event")), content={"event": event})
+        self._record(
+            context=invocation_context,
+            category="event",
+            phase="success",
+            name=str(_attribute(event, "author", default="event")),
+            content={"event": event},
+        )
 
     async def after_run_callback(self, *, invocation_context: Any) -> None:
-        self._record(context=invocation_context, category="run", phase="success", name="run", content={"context": invocation_context})
+        self._record(
+            context=invocation_context,
+            category="run",
+            phase="success",
+            name="run",
+            content={"context": invocation_context},
+        )
 
     async def on_run_error_callback(self, *, invocation_context: Any, error: Exception) -> None:
-        self._record(context=invocation_context, category="run", phase="error", name="run", content={"error_type": type(error).__name__, "error": str(error)})
+        self._record(
+            context=invocation_context,
+            category="run",
+            phase="error",
+            name="run",
+            content={"error_type": type(error).__name__, "error": str(error)},
+        )
 
     async def before_agent_callback(self, *, agent: Any, callback_context: Any) -> None:
         name = str(_attribute(agent, "name", default=type(agent).__name__))
-        self._record(context=callback_context, category="agent", phase="start", name=name, content={"agent": agent})
+        self._record(
+            context=callback_context,
+            category="agent",
+            phase="start",
+            name=name,
+            content={"agent": agent},
+        )
 
     async def after_agent_callback(self, *, agent: Any, callback_context: Any) -> None:
         name = str(_attribute(agent, "name", default=type(agent).__name__))
-        self._record(context=callback_context, category="agent", phase="success", name=name, content={"agent": agent})
+        self._record(
+            context=callback_context,
+            category="agent",
+            phase="success",
+            name=name,
+            content={"agent": agent},
+        )
 
-    async def on_agent_error_callback(self, *, agent: Any, callback_context: Any, error: Exception) -> None:
+    async def on_agent_error_callback(
+        self, *, agent: Any, callback_context: Any, error: Exception
+    ) -> None:
         name = str(_attribute(agent, "name", default=type(agent).__name__))
-        self._record(context=callback_context, category="agent", phase="error", name=name, content={"agent": agent, "error_type": type(error).__name__, "error": str(error)})
+        self._record(
+            context=callback_context,
+            category="agent",
+            phase="error",
+            name=name,
+            content={"agent": agent, "error_type": type(error).__name__, "error": str(error)},
+        )
 
     async def before_model_callback(self, *, callback_context: Any, llm_request: Any) -> None:
         name = str(_attribute(llm_request, "model", "model_name", "modelName", default="model"))
-        self._record(context=callback_context, category="model", phase="start", name=name, content={"request": llm_request})
+        self._record(
+            context=callback_context,
+            category="model",
+            phase="start",
+            name=name,
+            content={"request": llm_request},
+        )
 
     async def after_model_callback(self, *, callback_context: Any, llm_response: Any) -> None:
         if bool(_attribute(llm_response, "partial", default=False)):
             return None
         name = str(_attribute(llm_response, "model_version", "modelVersion", default="model"))
-        self._record(context=callback_context, category="model", phase="success", name=name, content={"response": llm_response})
+        if self._is_closed(callback_context, "model", name):
+            return None
+        self._record(
+            context=callback_context,
+            category="model",
+            phase="success",
+            name=name,
+            content={"response": llm_response},
+        )
 
-    async def on_model_error_callback(self, *, callback_context: Any, llm_request: Any, error: Exception) -> None:
+    async def on_model_error_callback(
+        self, *, callback_context: Any, llm_request: Any, error: Exception
+    ) -> None:
         name = str(_attribute(llm_request, "model", "model_name", "modelName", default="model"))
-        self._record(context=callback_context, category="model", phase="error", name=name, content={"request": llm_request, "error_type": type(error).__name__, "error": str(error)})
+        self._record(
+            context=callback_context,
+            category="model",
+            phase="error",
+            name=name,
+            content={
+                "request": llm_request,
+                "error_type": type(error).__name__,
+                "error": str(error),
+            },
+        )
 
-    async def before_tool_callback(self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any) -> None:
+    async def before_tool_callback(
+        self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any
+    ) -> None:
         name = str(_attribute(tool, "name", default=type(tool).__name__))
-        self._record(context=tool_context, category="tool", phase="start", name=name, content={"arguments": tool_args})
+        self._record(
+            context=tool_context,
+            category="tool",
+            phase="start",
+            name=name,
+            content={"arguments": tool_args},
+        )
 
-    async def after_tool_callback(self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any, result: dict[str, Any]) -> None:
+    async def after_tool_callback(
+        self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any, result: dict[str, Any]
+    ) -> None:
         name = str(_attribute(tool, "name", default=type(tool).__name__))
         status = str(_attribute(result, "status", default="")).lower()
-        phase = "blocked" if status == "blocked" else "error" if status in {"error", "timeout"} else "success"
-        self._record(context=tool_context, category="tool", phase=phase, name=name, content={"arguments": tool_args, "result": result})
+        phase = (
+            "blocked"
+            if status == "blocked"
+            else "error"
+            if status in {"error", "timeout"}
+            else "success"
+        )
+        self._record(
+            context=tool_context,
+            category="tool",
+            phase=phase,
+            name=name,
+            content={"arguments": tool_args, "result": result},
+        )
 
-    async def on_tool_error_callback(self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any, error: Exception) -> None:
+    async def on_tool_error_callback(
+        self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any, error: Exception
+    ) -> None:
         name = str(_attribute(tool, "name", default=type(tool).__name__))
-        self._record(context=tool_context, category="tool", phase="error", name=name, content={"arguments": tool_args, "error_type": type(error).__name__, "error": str(error)})
+        self._record(
+            context=tool_context,
+            category="tool",
+            phase="error",
+            name=name,
+            content={
+                "arguments": tool_args,
+                "error_type": type(error).__name__,
+                "error": str(error),
+            },
+        )
 
 
 __all__ = ["HarnessTracePlugin", "TraceContentMode"]

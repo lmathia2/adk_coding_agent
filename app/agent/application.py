@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 from google.adk.agents.context_cache_config import ContextCacheConfig
@@ -16,6 +17,8 @@ from .config import SETTINGS
 from .learning import VerifiedTraceLearningPlugin
 from .skills import _LEARNING_CONTROLLER
 from .workflow import _EVENT_STORE, root_agent
+
+LOGGER = logging.getLogger(__name__)
 
 _METRICS_PLUGIN = HarnessMetricsPlugin(
     database=SETTINGS.state_root / "metrics.db",
@@ -48,20 +51,29 @@ def _known_trace_secrets() -> list[str]:
     return [os.environ[name] for name in sorted(names) if os.getenv(name)]
 
 
+def _build_trace_plugin() -> HarnessTracePlugin | None:
+    if SETTINGS.trace_mode == "off":
+        return None
+    try:
+        return HarnessTracePlugin(
+            database=SETTINGS.state_root / "traces.db",
+            content_mode=(
+                TraceContentMode.REDACTED_CONTENT
+                if SETTINGS.trace_mode == "redacted"
+                else TraceContentMode.METADATA_ONLY
+            ),
+            max_payload_bytes=SETTINGS.trace_max_content_bytes,
+            known_secrets=_known_trace_secrets(),
+            default_task_id=SETTINGS.task_id_override,
+        )
+    except Exception:
+        LOGGER.exception("trace storage initialization failed; tracing is disabled")
+        return None
+
+
 _PLUGINS = [_METRICS_PLUGIN, _MEMORY_PLUGIN]
-_TRACE_PLUGIN: HarnessTracePlugin | None = None
-if SETTINGS.trace_mode != "off":
-    _TRACE_PLUGIN = HarnessTracePlugin(
-        database=SETTINGS.state_root / "traces.db",
-        content_mode=(
-            TraceContentMode.REDACTED_CONTENT
-            if SETTINGS.trace_mode == "redacted"
-            else TraceContentMode.METADATA_ONLY
-        ),
-        max_payload_bytes=SETTINGS.trace_max_content_bytes,
-        known_secrets=_known_trace_secrets(),
-        default_task_id=SETTINGS.task_id_override,
-    )
+_TRACE_PLUGIN = _build_trace_plugin()
+if _TRACE_PLUGIN is not None:
     _PLUGINS.insert(
         0,
         _TRACE_PLUGIN,
