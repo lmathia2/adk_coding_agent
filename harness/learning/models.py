@@ -81,6 +81,9 @@ class TrialAssignment(BaseModel):
 
     experiment_id: str = Field(min_length=1, max_length=128)
     unit_id: str = Field(min_length=1, max_length=256)
+    skill_name: str = Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")
+    skill_version: int = Field(ge=1)
+    candidate_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     variant: Literal["baseline", "candidate"]
 
 
@@ -90,8 +93,15 @@ class TrialOutcome(BaseModel):
     experiment_id: str = Field(min_length=1, max_length=128)
     unit_id: str = Field(min_length=1, max_length=256)
     skill_name: str = Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")
+    skill_version: int = Field(ge=1)
+    candidate_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     variant: Literal["baseline", "candidate"]
+    status: Literal["passed", "failed", "blocked", "error"]
     quality: EpisodeQuality
+
+    def model_post_init(self, __context: object) -> None:
+        if self.quality.passed != (self.status == "passed"):
+            raise ValueError("trial status and quality.passed must agree")
 
 
 class QualitySummary(BaseModel):

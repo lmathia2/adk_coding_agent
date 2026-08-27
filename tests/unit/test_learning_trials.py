@@ -48,13 +48,34 @@ def _outcome(
     skill_name: str,
     variant: Literal["baseline", "candidate"],
     quality: EpisodeQuality,
+    candidate_hash: str = "a" * 64,
 ) -> TrialOutcome:
     return TrialOutcome(
         experiment_id=experiment_id,
         unit_id=unit_id,
         skill_name=skill_name,
+        skill_version=1,
+        candidate_content_hash=candidate_hash,
         variant=variant,
+        status="passed" if quality.passed else "failed",
         quality=quality,
+    )
+
+
+def _assignment(
+    experiment_id: str,
+    unit_id: str,
+    skill_name: str,
+    variant: Literal["baseline", "candidate"],
+    candidate_hash: str = "a" * 64,
+) -> TrialAssignment:
+    return TrialAssignment(
+        experiment_id=experiment_id,
+        unit_id=unit_id,
+        skill_name=skill_name,
+        skill_version=1,
+        candidate_content_hash=candidate_hash,
+        variant=variant,
     )
 
 
@@ -77,23 +98,70 @@ def test_trial_assignment_is_deterministic_and_persisted(tmp_path: Path) -> None
         store,
         experiment_id="experiment",
         unit_id="task-1",
+        skill_name="skill",
+        skill_version=1,
+        candidate_content_hash="a" * 64,
         candidate_percent=50,
     )
     replay = assign_trial(
         store,
         experiment_id="experiment",
         unit_id="task-1",
+        skill_name="skill",
+        skill_version=1,
+        candidate_content_hash="a" * 64,
         candidate_percent=0,
     )
     same_in_fresh_store = assign_trial(
         LearningStore(tmp_path / "other.db"),
         experiment_id="experiment",
         unit_id="task-1",
+        skill_name="skill",
+        skill_version=1,
+        candidate_content_hash="a" * 64,
         candidate_percent=50,
     )
 
     assert replay == first
     assert same_in_fresh_store == first
+
+    with pytest.raises(ValueError, match="another candidate revision"):
+        assign_trial(
+            store,
+            experiment_id="experiment",
+            unit_id="task-1",
+            skill_name="skill",
+            skill_version=1,
+            candidate_content_hash="b" * 64,
+            candidate_percent=50,
+        )
+
+
+def test_trial_outcome_must_match_pinned_assignment(tmp_path: Path) -> None:
+    store = LearningStore(tmp_path / "learning.db")
+    store.save_assignment(_assignment("experiment", "task-1", "skill", "candidate"))
+    mismatched = _outcome(
+        "experiment",
+        "task-1",
+        "other-skill",
+        "candidate",
+        _quality(),
+    )
+
+    with pytest.raises(ValueError, match="pinned assignment"):
+        store.record_outcome(mismatched)
+
+    with pytest.raises(ValueError, match="experiment is pinned"):
+        store.save_assignment(
+            TrialAssignment(
+                experiment_id="experiment",
+                unit_id="task-2",
+                skill_name="skill",
+                skill_version=2,
+                candidate_content_hash="b" * 64,
+                variant="baseline",
+            )
+        )
 
 
 def test_quality_summary_reports_required_metrics() -> None:
@@ -165,14 +233,17 @@ def test_controller_promotes_then_rolls_back_after_repeated_failures(
         policy=policy,
     )
     experiment = f"skill:{skill_name}:v1"
+    candidate_hash = registry.content_hash(skill_name)
     for variant in ("baseline", "candidate"):
         for index in range(2):
             unit = f"{variant}-{index}"
             store.save_assignment(
-                TrialAssignment(
-                    experiment_id=experiment,
-                    unit_id=unit,
-                    variant=variant,
+                _assignment(
+                    experiment,
+                    unit,
+                    skill_name,
+                    variant,
+                    candidate_hash,
                 )
             )
             controller.record_outcome(
@@ -182,6 +253,7 @@ def test_controller_promotes_then_rolls_back_after_repeated_failures(
                     skill_name,
                     variant,
                     _quality(),
+                    candidate_hash,
                 )
             )
 
@@ -197,13 +269,16 @@ def test_controller_promotes_then_rolls_back_after_repeated_failures(
     assert discovered.get(skill_name).lifecycle == "enabled"  # type: ignore[union-attr]
     assert len(discovered.select(goal=f"${skill_name}").skills) == 1
 
+    active_hash = registry.content_hash(skill_name)
     for index in range(2):
         unit = f"failure-{index}"
         store.save_assignment(
-            TrialAssignment(
-                experiment_id="rollback",
-                unit_id=unit,
-                variant="candidate",
+            _assignment(
+                "rollback",
+                unit,
+                skill_name,
+                "candidate",
+                active_hash,
             )
         )
         failure = _outcome(
@@ -212,6 +287,7 @@ def test_controller_promotes_then_rolls_back_after_repeated_failures(
             skill_name,
             "candidate",
             _quality(passed=False),
+            active_hash,
         )
         assert controller.record_outcome(failure) == failure
         assert controller.record_outcome(failure) == failure
@@ -232,13 +308,16 @@ def test_failed_candidate_trials_disable_before_promotion(tmp_path: Path) -> Non
         registry=registry,
         policy=PromotionPolicy(minimum_support=2, rollback_after_failures=2),
     )
+    candidate_hash = registry.content_hash(skill_name)
 
     for index in range(2):
         unit = f"candidate-failure-{index}"
-        assignment = TrialAssignment(
-            experiment_id="failed-candidate",
-            unit_id=unit,
-            variant="candidate",
+        assignment = _assignment(
+            "failed-candidate",
+            unit,
+            skill_name,
+            "candidate",
+            candidate_hash,
         )
         store.save_assignment(assignment)
         controller.record_outcome(
@@ -248,6 +327,7 @@ def test_failed_candidate_trials_disable_before_promotion(tmp_path: Path) -> Non
                 skill_name,
                 "candidate",
                 _quality(passed=False),
+                candidate_hash,
             )
         )
 
@@ -269,18 +349,28 @@ def test_disabled_skill_cannot_be_repromoted_by_stale_trial_results(
         policy=PromotionPolicy(minimum_support=2),
     )
     experiment = f"skill:{skill_name}:v1"
+    candidate_hash = registry.content_hash(skill_name)
     for variant in ("baseline", "candidate"):
         for index in range(2):
             unit = f"{variant}-{index}"
             store.save_assignment(
-                TrialAssignment(
-                    experiment_id=experiment,
-                    unit_id=unit,
-                    variant=variant,
+                _assignment(
+                    experiment,
+                    unit,
+                    skill_name,
+                    variant,
+                    candidate_hash,
                 )
             )
             controller.record_outcome(
-                _outcome(experiment, unit, skill_name, variant, _quality())
+                _outcome(
+                    experiment,
+                    unit,
+                    skill_name,
+                    variant,
+                    _quality(),
+                    candidate_hash,
+                )
             )
     registry.disable(skill_name)
 

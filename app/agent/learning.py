@@ -6,7 +6,7 @@ import hashlib
 import logging
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from google.adk.plugins.base_plugin import BasePlugin
 
@@ -14,6 +14,7 @@ from harness.learning import (
     EpisodeQuality,
     NormalizedAction,
     TraceSkillLearningController,
+    TrialAssignment,
     TrialOutcome,
     WorkflowEpisode,
 )
@@ -23,6 +24,7 @@ from harness.telemetry import MetricsStore
 from harness.tracing import TraceStore
 
 LOGGER = logging.getLogger(__name__)
+TrialStatus = Literal["passed", "failed", "blocked", "error"]
 _TOOL_CATEGORY = {
     "read": "inspect",
     "bash": "shell",
@@ -87,6 +89,63 @@ def _quality_for_task(
         ),
         wall_time_ms=int(metrics.get("outcome_wall_time_ms") or 0),
     )
+
+
+def _trial_outcome(
+    assignment: TrialAssignment,
+    *,
+    status: TrialStatus,
+    quality: EpisodeQuality,
+) -> TrialOutcome:
+    return TrialOutcome(
+        experiment_id=assignment.experiment_id,
+        unit_id=assignment.unit_id,
+        skill_name=assignment.skill_name,
+        skill_version=assignment.skill_version,
+        candidate_content_hash=assignment.candidate_content_hash,
+        variant=assignment.variant,
+        status=status,
+        quality=quality.model_copy(update={"passed": status == "passed"}),
+    )
+
+
+def _terminal_trial_status(
+    *,
+    events: Sequence[Any],
+    metrics: dict[str, float | int | str | None],
+    trace_store: TraceStore,
+    trace_task_id: str,
+) -> TrialStatus | None:
+    if any(event.kind == EventKind.TASK_BLOCKED for event in events):
+        return "blocked"
+    if any(event.kind == EventKind.TASK_FINISHED for event in events):
+        verification = next(
+            (
+                event
+                for event in reversed(events)
+                if event.kind == EventKind.VERIFICATION_COMPLETED
+            ),
+            None,
+        )
+        if verification is None:
+            return "failed"
+        report = VerificationReport.model_validate(
+            verification.payload.get("report", {})
+        )
+        return "passed" if report.passed else "failed"
+    run_errors = trace_store.query(
+        trace_task_id,
+        categories=["run"],
+        phases=["error"],
+    )
+    if run_errors:
+        return "error"
+    outcome_status = metrics.get("outcome_status")
+    if outcome_status == "blocked":
+        return "blocked"
+    if outcome_status == "failed":
+        return "failed"
+    return None
 
 
 def episode_for_verified_task(
@@ -204,10 +263,18 @@ class VerifiedTraceLearningPlugin(BasePlugin):
                 "learning_skill_name",
             )
             variant = _context_value(invocation_context, "learning_variant")
+            assignment = (
+                self.controller.store.assignment(str(experiment_id), str(task_id))
+                if experiment_id
+                else None
+            )
             assigned = bool(
                 experiment_id
                 and skill_name
                 and variant in {"baseline", "candidate"}
+                and assignment is not None
+                and assignment.skill_name == str(skill_name)
+                and assignment.variant == variant
             )
             session = getattr(invocation_context, "session", None)
             trace_task_id = (
@@ -222,16 +289,20 @@ class VerifiedTraceLearningPlugin(BasePlugin):
                 metrics_store=self.metrics_store,
                 trace_task_id=str(trace_task_id),
             )
+            metrics = self.metrics_store.task_summary(str(task_id))
             if episode is None:
-                if assigned and any(
-                    event.kind == EventKind.TASK_BLOCKED for event in events
-                ):
+                status = _terminal_trial_status(
+                    events=events,
+                    metrics=metrics,
+                    trace_store=self.trace_store,
+                    trace_task_id=str(trace_task_id),
+                )
+                if assigned and status is not None:
+                    assert assignment is not None
                     self.controller.record_outcome(
-                        TrialOutcome(
-                            experiment_id=str(experiment_id),
-                            unit_id=str(task_id),
-                            skill_name=str(skill_name),
-                            variant=variant,
+                        _trial_outcome(
+                            assignment,
+                            status=status,
                             quality=_quality_for_task(
                                 self.metrics_store,
                                 str(task_id),
@@ -239,36 +310,40 @@ class VerifiedTraceLearningPlugin(BasePlugin):
                             ),
                         )
                     )
+                    self.controller.evaluate_and_promote(
+                        skill_name=assignment.skill_name,
+                        experiment_id=assignment.experiment_id,
+                    )
                 return None
             if episode.blocked or episode.security_risks:
                 if assigned:
+                    assert assignment is not None
                     self.controller.record_outcome(
-                        TrialOutcome(
-                            experiment_id=str(experiment_id),
-                            unit_id=str(task_id),
-                            skill_name=str(skill_name),
-                            variant=variant,
-                            quality=episode.quality.model_copy(
-                                update={"passed": False}
-                            ),
+                        _trial_outcome(
+                            assignment,
+                            status="blocked",
+                            quality=episode.quality,
                         )
+                    )
+                    self.controller.evaluate_and_promote(
+                        skill_name=assignment.skill_name,
+                        experiment_id=assignment.experiment_id,
                     )
                 return None
             persisted_episode = self.controller.store.episode(episode.trace_id)
             observation = self.controller.observe(persisted_episode or episode)
             if assigned:
+                assert assignment is not None
                 self.controller.record_outcome(
-                    TrialOutcome(
-                        experiment_id=str(experiment_id),
-                        unit_id=str(task_id),
-                        skill_name=str(skill_name),
-                        variant=variant,
+                    _trial_outcome(
+                        assignment,
+                        status="passed",
                         quality=observation.quality,
                     )
                 )
                 self.controller.evaluate_and_promote(
-                    skill_name=str(skill_name),
-                    experiment_id=str(experiment_id),
+                    skill_name=assignment.skill_name,
+                    experiment_id=assignment.experiment_id,
                 )
             self.controller.propose_candidate(
                 episode.workflow_kind,
@@ -278,6 +353,18 @@ class VerifiedTraceLearningPlugin(BasePlugin):
             # A learning projection must never invalidate an already verified task.
             LOGGER.exception("verified trace learning failed for task %s", task_id)
         return None
+
+    async def on_run_error_callback(
+        self,
+        *,
+        invocation_context: Any,
+        error: Exception,
+    ) -> None:
+        del error
+        # The trace plugin is registered before this plugin and has already
+        # persisted the error classification. Reuse the idempotent projection
+        # so failed invocations count against their assigned trial cohort.
+        await self.after_run_callback(invocation_context=invocation_context)
 
 
 __all__ = [

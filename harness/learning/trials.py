@@ -14,18 +14,36 @@ def assign_trial(
     *,
     experiment_id: str,
     unit_id: str,
+    skill_name: str,
+    skill_version: int,
+    candidate_content_hash: str,
     candidate_percent: int = 50,
 ) -> TrialAssignment:
     if not 0 <= candidate_percent <= 100:
         raise ValueError("candidate_percent must be between 0 and 100")
     existing = store.assignment(experiment_id, unit_id)
     if existing is not None:
+        requested_pin = (
+            skill_name,
+            skill_version,
+            candidate_content_hash,
+        )
+        existing_pin = (
+            existing.skill_name,
+            existing.skill_version,
+            existing.candidate_content_hash,
+        )
+        if requested_pin != existing_pin:
+            raise ValueError("trial unit is already pinned to another candidate revision")
         return existing
     digest = hashlib.sha256(f"{experiment_id}\0{unit_id}".encode()).digest()
     bucket = int.from_bytes(digest[:8], "big") % 100
     assignment = TrialAssignment(
         experiment_id=experiment_id,
         unit_id=unit_id,
+        skill_name=skill_name,
+        skill_version=skill_version,
+        candidate_content_hash=candidate_content_hash,
         variant="candidate" if bucket < candidate_percent else "baseline",
     )
     return store.save_assignment(assignment)

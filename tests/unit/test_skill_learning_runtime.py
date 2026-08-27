@@ -130,6 +130,10 @@ def test_runtime_loads_explicit_skill_and_controlled_candidate(tmp_path: Path) -
     )
     assert tracing_off.candidate_name is None
     assert tracing_off.variant is None
+    assert controller.store.assignment(
+        "skill:learned-python-change-example:v1",
+        "task-off",
+    ) is None
 
 
 def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
@@ -281,6 +285,9 @@ def test_blocked_candidate_task_records_failed_trial(tmp_path: Path) -> None:
     assignment = controller.assign(
         experiment_id=experiment,
         unit_id=task_id,
+        skill_name=lifecycle.name,
+        skill_version=lifecycle.version,
+        candidate_content_hash=learned.content_hash(lifecycle.name),
         candidate_percent=100,
     )
     plugin = VerifiedTraceLearningPlugin(
@@ -304,4 +311,101 @@ def test_blocked_candidate_task_records_failed_trial(tmp_path: Path) -> None:
 
     outcomes = store.outcomes(experiment_id=experiment)
     assert len(outcomes) == 1
+    assert not outcomes[0].quality.passed
+    assert outcomes[0].status == "blocked"
+
+    asyncio.run(plugin.after_run_callback(invocation_context=context))
+    assert store.outcomes(experiment_id=experiment) == outcomes
+
+
+def test_error_candidate_task_records_error_trial(tmp_path: Path) -> None:
+    task_id = "error-task"
+    events = JsonlEventStore(tmp_path / "events")
+    ledger = TaskLedger.from_request(
+        TaskRequest(goal="Fix it", acceptance_criteria=["It works"]),
+        task_id=task_id,
+        workspace_id="workspace",
+        base_revision="abc123",
+    )
+    events.append(
+        task_id,
+        EventKind.TASK_CREATED,
+        {"ledger": ledger.model_dump(mode="json")},
+    )
+    metrics = MetricsStore(tmp_path / "metrics.db")
+    metrics.record_outcome(
+        TaskOutcomeSample(
+            task_id=task_id,
+            status="failed",
+            passed=False,
+            iterations=1,
+        )
+    )
+    traces = TraceStore(tmp_path / "traces.db")
+    traces.append(
+        TraceSpan(
+            span_id="run-error",
+            task_id=task_id,
+            sequence=1,
+            correlation_id="invocation-1",
+            category="run",
+            phase="error",
+            name="coding-agent",
+            timestamp=datetime.now(UTC).isoformat(),
+            content_hash="c" * 64,
+            payload_json='{"error_type":"RuntimeError"}',
+            idempotency_key="run-error",
+        )
+    )
+    learned = LearnedSkillRegistry(tmp_path / "learned")
+    lifecycle = learned.emit_candidate(
+        SkillDraft(
+            name="learned-coding-change-error",
+            description="Candidate coding-change workflow.",
+            instructions="Inspect and verify.",
+            source_trace_ids=("trace-1", "trace-2"),
+        )
+    )
+    store = LearningStore(tmp_path / "learning.db")
+    controller = TraceSkillLearningController(
+        store=store,
+        registry=learned,
+        policy=PromotionPolicy(minimum_support=2),
+    )
+    experiment = f"skill:{lifecycle.name}:v{lifecycle.version}"
+    assignment = controller.assign(
+        experiment_id=experiment,
+        unit_id=task_id,
+        skill_name=lifecycle.name,
+        skill_version=lifecycle.version,
+        candidate_content_hash=learned.content_hash(lifecycle.name),
+        candidate_percent=100,
+    )
+    plugin = VerifiedTraceLearningPlugin(
+        event_store=events,
+        trace_store=traces,
+        metrics_store=metrics,
+        controller=controller,
+        minimum_support=2,
+    )
+    context = SimpleNamespace(
+        state={
+            "task_id": task_id,
+            "learning_experiment_id": experiment,
+            "learning_skill_name": lifecycle.name,
+            "learning_variant": assignment.variant,
+        },
+        session=SimpleNamespace(id=task_id, state={}),
+    )
+
+    asyncio.run(
+        plugin.on_run_error_callback(
+            invocation_context=context,
+            error=RuntimeError("simulated"),
+        )
+    )
+
+    outcomes = store.outcomes(experiment_id=experiment)
+    assert len(outcomes) == 1
+    assert outcomes[0].status == "error"
     assert not outcomes[0].quality.passed

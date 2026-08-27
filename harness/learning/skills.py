@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
 import shutil
 import tempfile
 from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 
@@ -99,6 +101,15 @@ def _atomic_text(path: Path, text: str) -> None:
     with temporary.open("rb") as stream:
         os.fsync(stream.fileno())
     os.replace(temporary, path)
+    _fsync_directory(path.parent)
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 class SkillRegistry:
@@ -114,6 +125,17 @@ class SkillRegistry:
             self.disabled_root,
         ):
             directory.mkdir(parents=True, exist_ok=True)
+        self._lock_path = self.root / ".lifecycle.lock"
+        self._lock_path.touch(exist_ok=True)
+
+    @contextmanager
+    def _lifecycle_lock(self):
+        with self._lock_path.open("rb") as stream:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
     def _validate_name(self, name: str) -> None:
         SkillLifecycle(
@@ -158,6 +180,12 @@ class SkillRegistry:
             lifecycle = lifecycle.model_copy(update={"status": canonical_status})
         return lifecycle
 
+    def content_hash(self, name: str) -> str:
+        directory = self._find_directory(name)
+        if directory is None:
+            raise KeyError(name)
+        return hashlib.sha256((directory / "SKILL.md").read_bytes()).hexdigest()
+
     def emit_candidate(
         self,
         draft: SkillDraft,
@@ -172,49 +200,51 @@ class SkillRegistry:
             source_trace_ids=tuple(sorted(set(draft.source_trace_ids))),
         )
         destination = self.candidate_root / draft.name
-        existing = self.load(draft.name)
-        if existing is not None:
-            if (
-                existing.name != lifecycle.name
-                or existing.description != lifecycle.description
-                or existing.version != lifecycle.version
-                or existing.source_trace_ids != lifecycle.source_trace_ids
-            ):
-                raise ValueError("skill name already exists with different provenance")
-            return existing
-
-        temporary = Path(
-            tempfile.mkdtemp(prefix=f".{draft.name}-", dir=self.root)
-        )
-        try:
-            (temporary / "SKILL.md").write_text(
-                _skill_markdown(draft),
-                encoding="utf-8",
-            )
-            (temporary / "lifecycle.json").write_text(
-                json.dumps(
-                    lifecycle.model_dump(mode="json"),
-                    sort_keys=True,
-                    indent=2,
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-            for path in (temporary / "SKILL.md", temporary / "lifecycle.json"):
-                with path.open("rb") as stream:
-                    os.fsync(stream.fileno())
-            if before_publish is not None:
-                before_publish(temporary)
-            try:
-                os.replace(temporary, destination)
-            except FileExistsError:
-                existing = self.load(draft.name)
-                if existing is None:
-                    raise
+        with self._lifecycle_lock():
+            existing = self.load(draft.name)
+            if existing is not None:
+                if (
+                    existing.name != lifecycle.name
+                    or existing.description != lifecycle.description
+                    or existing.version != lifecycle.version
+                    or existing.source_trace_ids != lifecycle.source_trace_ids
+                ):
+                    raise ValueError(
+                        "skill name already exists with different provenance"
+                    )
                 return existing
-        finally:
-            if temporary.exists():
-                shutil.rmtree(temporary)
+
+            temporary = Path(
+                tempfile.mkdtemp(prefix=f".{draft.name}-", dir=self.root)
+            )
+            try:
+                (temporary / "SKILL.md").write_text(
+                    _skill_markdown(draft),
+                    encoding="utf-8",
+                )
+                (temporary / "lifecycle.json").write_text(
+                    json.dumps(
+                        lifecycle.model_dump(mode="json"),
+                        sort_keys=True,
+                        indent=2,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                for path in (
+                    temporary / "SKILL.md",
+                    temporary / "lifecycle.json",
+                ):
+                    with path.open("rb") as stream:
+                        os.fsync(stream.fileno())
+                _fsync_directory(temporary)
+                if before_publish is not None:
+                    before_publish(temporary)
+                os.replace(temporary, destination)
+                _fsync_directory(self.candidate_root)
+            finally:
+                if temporary.exists():
+                    shutil.rmtree(temporary)
         return lifecycle
 
     @staticmethod
@@ -233,30 +263,37 @@ class SkillRegistry:
         name: str,
         status: str,
     ) -> SkillLifecycle:
-        current = self.load(name)
-        if current is None:
-            raise KeyError(name)
-        updated = SkillLifecycle.model_validate(
-            {**current.model_dump(mode="python"), "status": status}
-        )
-        source = self._find_directory(name)
-        assert source is not None
-        destination = self._root_for_status(status) / name
-        if source != destination:
-            try:
-                os.replace(source, destination)
-            except FileNotFoundError:
-                raced = self.load(name)
-                if raced is not None and raced.status == status:
-                    return raced
-                raise
-        self._update_manifest_status(destination, status)
-        _atomic_text(
-            destination / "lifecycle.json",
-            json.dumps(updated.model_dump(mode="json"), sort_keys=True, indent=2)
-            + "\n",
-        )
-        return updated
+        with self._lifecycle_lock():
+            current = self.load(name)
+            if current is None:
+                raise KeyError(name)
+            if current.status == status:
+                return current
+            updated = SkillLifecycle.model_validate(
+                {**current.model_dump(mode="python"), "status": status}
+            )
+            source = self._find_directory(name)
+            assert source is not None
+            destination = self._root_for_status(status) / name
+
+            # Prepare the complete destination contents before the atomic rename.
+            # Lifecycle behavior is derived from the parent directory, so a crash
+            # before the rename leaves the old lifecycle safely authoritative.
+            self._update_manifest_status(source, status)
+            _atomic_text(
+                source / "lifecycle.json",
+                json.dumps(
+                    updated.model_dump(mode="json"),
+                    sort_keys=True,
+                    indent=2,
+                )
+                + "\n",
+            )
+            os.replace(source, destination)
+            _fsync_directory(source.parent)
+            if destination.parent != source.parent:
+                _fsync_directory(destination.parent)
+            return updated
 
     def promote(
         self,

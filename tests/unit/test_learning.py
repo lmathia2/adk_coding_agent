@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -185,3 +186,30 @@ def test_controller_requires_repeated_support_before_candidate(tmp_path: Path) -
     )
     assert candidate is not None
     assert candidate.status == "candidate"
+
+
+def test_lifecycle_transition_is_concurrency_safe_and_idempotent(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "skills"
+    first = SkillRegistry(root)
+    sequence = repeated_action_sequences(
+        [_episode("trace-1"), _episode("trace-2")],
+        minimum_support=2,
+    )[0]
+    draft = HeuristicSkillSynthesizer().synthesize(
+        workflow_kind="python_bugfix",
+        sequence=sequence,
+    )
+    first.emit_candidate(draft)
+    second = SkillRegistry(root)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = tuple(
+            pool.map(lambda registry: registry.disable(draft.name), (first, second))
+        )
+
+    assert {result.status for result in results} == {"disabled"}
+    assert first.load(draft.name) == second.load(draft.name)
+    assert not (root / "candidates" / draft.name).exists()
+    assert (root / "disabled" / draft.name / "SKILL.md").exists()

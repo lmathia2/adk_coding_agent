@@ -127,6 +127,31 @@ class LearningStore:
         serialized = _canonical_json(assignment.model_dump(mode="json"))
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            experiment_row = connection.execute(
+                """
+                SELECT assignment_json FROM learning_trial_assignments
+                WHERE experiment_id=? ORDER BY unit_id LIMIT 1
+                """,
+                (assignment.experiment_id,),
+            ).fetchone()
+            if experiment_row is not None:
+                experiment_assignment = TrialAssignment.model_validate_json(
+                    str(experiment_row["assignment_json"])
+                )
+                experiment_pin = (
+                    experiment_assignment.skill_name,
+                    experiment_assignment.skill_version,
+                    experiment_assignment.candidate_content_hash,
+                )
+                requested_pin = (
+                    assignment.skill_name,
+                    assignment.skill_version,
+                    assignment.candidate_content_hash,
+                )
+                if experiment_pin != requested_pin:
+                    raise ValueError(
+                        "trial experiment is pinned to another candidate revision"
+                    )
             existing = connection.execute(
                 """
                 SELECT assignment_json FROM learning_trial_assignments
@@ -179,8 +204,20 @@ class LearningStore:
         assignment = self.assignment(outcome.experiment_id, outcome.unit_id)
         if assignment is None:
             raise ValueError("trial outcome requires a persisted assignment")
-        if assignment.variant != outcome.variant:
-            raise ValueError("trial outcome variant does not match its assignment")
+        pinned_assignment = (
+            assignment.skill_name,
+            assignment.skill_version,
+            assignment.candidate_content_hash,
+            assignment.variant,
+        )
+        pinned_outcome = (
+            outcome.skill_name,
+            outcome.skill_version,
+            outcome.candidate_content_hash,
+            outcome.variant,
+        )
+        if pinned_assignment != pinned_outcome:
+            raise ValueError("trial outcome does not match its pinned assignment")
         serialized = _canonical_json(outcome.model_dump(mode="json"))
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -245,8 +282,22 @@ class LearningStore:
             for row in rows
         ]
 
-    def consecutive_candidate_failures(self, skill_name: str) -> int:
-        outcomes = self.outcomes(skill_name=skill_name, variant="candidate")
+    def consecutive_candidate_failures(
+        self,
+        skill_name: str,
+        *,
+        skill_version: int,
+        candidate_content_hash: str,
+    ) -> int:
+        outcomes = [
+            outcome
+            for outcome in self.outcomes(
+                skill_name=skill_name,
+                variant="candidate",
+            )
+            if outcome.skill_version == skill_version
+            and outcome.candidate_content_hash == candidate_content_hash
+        ]
         failures = 0
         for outcome in reversed(outcomes):
             if outcome.quality.passed:

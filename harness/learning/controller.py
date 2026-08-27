@@ -62,12 +62,25 @@ class TraceSkillLearningController:
         *,
         experiment_id: str,
         unit_id: str,
+        skill_name: str,
+        skill_version: int,
+        candidate_content_hash: str,
         candidate_percent: int = 50,
     ) -> TrialAssignment:
+        lifecycle = self.registry.load(skill_name)
+        if lifecycle is None or lifecycle.status != "candidate":
+            raise ValueError("trial assignment requires a candidate skill")
+        if lifecycle.version != skill_version:
+            raise ValueError("trial assignment skill version is stale")
+        if self.registry.content_hash(skill_name) != candidate_content_hash:
+            raise ValueError("trial assignment candidate content hash is stale")
         return assign_trial(
             self.store,
             experiment_id=experiment_id,
             unit_id=unit_id,
+            skill_name=skill_name,
+            skill_version=skill_version,
+            candidate_content_hash=candidate_content_hash,
             candidate_percent=candidate_percent,
         )
 
@@ -77,8 +90,15 @@ class TraceSkillLearningController:
         if (
             lifecycle is not None
             and lifecycle.status in {"candidate", "enabled"}
+            and lifecycle.version == outcome.skill_version
+            and self.registry.content_hash(outcome.skill_name)
+            == outcome.candidate_content_hash
             and outcome.variant == "candidate"
-            and self.store.consecutive_candidate_failures(outcome.skill_name)
+            and self.store.consecutive_candidate_failures(
+                outcome.skill_name,
+                skill_version=outcome.skill_version,
+                candidate_content_hash=outcome.candidate_content_hash,
+            )
             >= self.policy.rollback_after_failures
         ):
             self.registry.rollback(outcome.skill_name)
