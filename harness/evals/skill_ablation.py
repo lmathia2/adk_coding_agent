@@ -32,11 +32,18 @@ REQUIRED_SKILL_ABLATION_METRICS: tuple[SkillAblationMetric, ...] = (
 )
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 _HARNESS_PIN_PATHS = (
+    "app/agent/config.py",
     "app/agent/skills.py",
+    "app/agent/worker.py",
     "app/agent/workflow.py",
     "harness/context/prompt.py",
     "harness/policy/commands.py",
+    "harness/repo/fff_search.py",
+    "harness/tools/adk_adapter/__init__.py",
     "harness/tools/coding.py",
+    "harness/tools/search_command.py",
+    "pyproject.toml",
+    "uv.lock",
 )
 
 

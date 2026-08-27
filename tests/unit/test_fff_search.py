@@ -98,6 +98,25 @@ def test_fff_rejects_scope_escape_and_cross_operation_cursor(tmp_path: Path) -> 
     service.close()
 
 
+def test_fff_rejects_cursor_from_another_workspace(tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    first_workspace = tmp_path / "first"
+    second_workspace = tmp_path / "second"
+    first_workspace.mkdir()
+    second_workspace.mkdir()
+    (first_workspace / "a.py").write_text("MARK\nMARK\n", encoding="utf-8")
+    (second_workspace / "a.py").write_text("MARK\nMARK\n", encoding="utf-8")
+    first_service = FffSearchService(first_workspace, state)
+    first = first_service.grep(pattern="MARK", limit=1)
+    first_service.close()
+    assert first.cursor is not None
+
+    second_service = FffSearchService(second_workspace, state)
+    with pytest.raises(SearchCursorError, match="different workspace"):
+        second_service.grep(cursor=first.cursor)
+    second_service.close()
+
+
 def test_fff_health_is_sanitized_and_lazy(tmp_path: Path) -> None:
     service = _service(tmp_path)
     cold = service.health()

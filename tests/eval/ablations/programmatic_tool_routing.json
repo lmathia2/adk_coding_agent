@@ -15,11 +15,11 @@
   ],
   "execution": {
     "skill_name": "programmatic-tool-routing",
-    "skill_content_hash": "84063156d5ecbd49b30dd9604b64ef8d23bf1d6714b72f4d5b0ddc7973cecbca",
+    "skill_content_hash": "cb49da1a57fe8f823c0c18c449db1e4020d9f60f2fe859d1801a437cd5dba80c",
     "model": "gemini-3.7-flash",
     "reasoning": "default",
-    "harness_content_hash": "e6352439ea315f5c844d0c46f7d363a26b800b192d61996c6f3f68020fd302b8",
-    "static_prefix_hash": "2d1f942c6f623038bc0520a67e6a10fe4215f7fa9336a93939ee1cdf69d0e05c",
+    "harness_content_hash": "6b3c298442b148bec5cbdcc9fb8a5b68473345e2cf8c9ed5cc5bddaf3c7af632",
+    "static_prefix_hash": "1a5749e89117a8408693b0030f515575e65ef960f79895da06809e19a0217348",
     "settings": {
       "max_iterations": 8,
       "skill_context_bytes": 24000,

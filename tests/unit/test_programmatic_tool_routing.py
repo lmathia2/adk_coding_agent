@@ -7,6 +7,7 @@ from typing import Literal
 import pytest
 from pydantic import ValidationError
 
+from harness.context import prefix_hash
 from harness.context.prompt import DEFAULT_TOOL_NAMES
 from harness.evals import (
     REQUIRED_SKILL_ABLATION_METRICS,
@@ -60,6 +61,21 @@ def test_committed_ablation_changes_only_skill_disclosure() -> None:
     tags = {case.case_id: set(case.tags) for case in suite.cases}
     assert all("routing-positive" in tags[case_id] for case_id in plan.positive_case_ids)
     assert all("routing-negative" in tags[case_id] for case_id in plan.negative_case_ids)
+
+
+def test_ablation_pins_the_live_prefix_for_instruction_free_fixtures(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from app.agent.config import load_settings
+
+    workspace = tmp_path / "fixture"
+    workspace.mkdir()
+    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(workspace))
+    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    plan = load_skill_ablation_plan(PLAN_PATH)
+
+    assert prefix_hash(load_settings().static_prefix) == plan.execution.static_prefix_hash
 
 
 def definition_hash() -> str:

@@ -1,0 +1,25 @@
+{
+  "ablation_id": "fff-search-v1",
+  "fixture_root": "tests/fixtures/search_fanout",
+  "query": "TODO fix",
+  "page_size": 20,
+  "relevant_paths": [
+    "src/app.ts",
+    "src/utils.ts",
+    "zzz_README.md"
+  ],
+  "expected_total_matches": 33,
+  "fixture_content_hash": "2b17f4b0054bf4c1c438f4001d7701c184b2e335a68d932d1d0b9927a3a069fe",
+  "harness_content_hash": "6b3c298442b148bec5cbdcc9fb8a5b68473345e2cf8c9ed5cc5bddaf3c7af632",
+  "fff_version": "0.10.5",
+  "backends": [
+    "rg",
+    "fff"
+  ],
+  "model_visible_tools": [
+    "read",
+    "bash",
+    "edit",
+    "write"
+  ]
+}

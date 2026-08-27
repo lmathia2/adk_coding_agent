@@ -28,7 +28,7 @@ is relevant:
 ```bash
 search grep --pattern TODO --path src --limit 20
 search find --pattern "app service" --limit 20
-search grep --cursor fff_<snapshot>_<page>
+search grep --cursor CURSOR_FROM_THE_PRIOR_RESULT
 ```
 
 Use `search health` to inspect sanitized index readiness. The reserved command is

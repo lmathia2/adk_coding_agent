@@ -17,6 +17,17 @@ from .real_repositories import (
     RealRepositoryEvaluationSuite,
     load_real_repository_suite,
 )
+from .search_ablation import (
+    SearchAblationBackend,
+    SearchAblationMetrics,
+    SearchAblationObservation,
+    SearchAblationPlan,
+    SearchAblationReport,
+    load_search_ablation_plan,
+    run_search_ablation,
+    score_search_observation,
+    search_fixture_content_hash,
+)
 from .skill_ablation import (
     REQUIRED_SKILL_ABLATION_METRICS,
     SkillAblationExecutionPin,
@@ -45,6 +56,11 @@ __all__ = [
     "HumanPullRequestSource",
     "RealRepositoryEvaluationCase",
     "RealRepositoryEvaluationSuite",
+    "SearchAblationBackend",
+    "SearchAblationMetrics",
+    "SearchAblationObservation",
+    "SearchAblationPlan",
+    "SearchAblationReport",
     "SkillAblationExecutionPin",
     "SkillAblationMetric",
     "SkillAblationPlan",
@@ -58,6 +74,10 @@ __all__ = [
     "grade_case",
     "load_evaluation_suite",
     "load_real_repository_suite",
+    "load_search_ablation_plan",
     "load_skill_ablation_plan",
+    "run_search_ablation",
+    "score_search_observation",
+    "search_fixture_content_hash",
     "write_evaluation_suite",
 ]

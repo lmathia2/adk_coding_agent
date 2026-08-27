@@ -31,12 +31,16 @@ class _RecordingSearchBackend:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.refreshes = 0
+        self.text = (
+            'FFF grep page 1\nsrc/app.py\n  1: TODO\n\n'
+            '[Continue with cursor="fff_next"]'
+        )
 
     def grep(self, **kwargs) -> SearchPage:
         self.calls.append(("grep", kwargs))
         return SearchPage(
             operation="grep",
-            text='FFF grep page 1\nsrc/app.py\n  1: TODO\n\n[Continue with cursor="fff_next"]',
+            text=self.text,
             cursor="fff_next",
             returned_matches=1,
             collected_matches=2,
@@ -188,6 +192,29 @@ def test_virtual_search_is_unavailable_for_non_authoritative_sandbox(
     assert result["status"] == "error"
     assert "non-authoritative remote workspace" in result["model_text"]
     assert sandbox.requests == []
+
+
+def test_virtual_search_redacts_bounded_page_and_spill_artifact(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    secret = "search-result-sensitive-value"
+    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SEARCH_API_KEY", secret)
+    monkeypatch.setenv("ADK_CODING_REDACT_ENV_VARS", "SEARCH_API_KEY")
+    backend = _RecordingSearchBackend()
+    backend.text = "\n".join(f"  {line}: {secret}" for line in range(1, 260))
+    tools = create_adk_tools(tmp_path, search_backend=backend)
+
+    result = tools.bash("search grep --pattern token")
+
+    assert result["status"] == "ok"
+    assert result["truncated"] is True
+    assert secret not in result["model_text"]
+    assert result["artifact_uri"].startswith("artifact://tool-output/")
+    artifact = tools.read(result["artifact_uri"], limit=400)
+    assert secret not in artifact["model_text"]
+    assert "<redacted>" in artifact["model_text"]
 
 
 def test_malformed_reserved_search_never_reaches_policy_or_shell(
