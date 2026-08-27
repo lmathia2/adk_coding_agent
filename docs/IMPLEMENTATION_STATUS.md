@@ -1,6 +1,9 @@
 # Implementation Status
 
-This file is the commit-driven status view for the implementation. Each checked item was implemented with deterministic tests before or alongside its repository commit. `docs/TODO.md` remains the original planning baseline.
+This file is the commit-driven status view for the implementation. Each checked item
+was implemented with deterministic tests before or alongside its repository commit.
+`docs/TODO.md` tracks the original MVP plan, whose local implementation items are now
+complete.
 
 ## Complete
 
@@ -17,6 +20,8 @@ This file is the commit-driven status view for the implementation. Each checked 
 - [x] Token-bounded repository map and recent-event tail.
 - [x] Structured coding-aware compaction checkpoints.
 - [x] ADK context caching and event-compaction configuration.
+- [x] Recoverable, bounded artifact identifiers carried across compaction snapshots.
+- [x] Replay-safe coding-tool artifact events bridged into the compaction stream.
 
 ### Coding tools and safety
 
@@ -37,6 +42,7 @@ This file is the commit-driven status view for the implementation. Each checked 
 - [x] Incremental Python and TypeScript/JavaScript structural symbol index.
 - [x] Import/call relationships and task-ranked repository map.
 - [x] Adjacent-test inference.
+- [x] Disabled-by-default read-only contracts for operator-managed LSP/Moderne-style semantic providers.
 
 ### Durable long-running execution
 
@@ -70,10 +76,12 @@ This file is the commit-driven status view for the implementation. Each checked 
 - [x] Verified-only workflow episodes, repeated-pattern discovery, and privacy-safe heuristic synthesis.
 - [x] Candidate/baseline assignment, multi-metric promotion gates, provenance, and automatic rollback.
 - [x] Runtime integration that cannot broaden the four-tool surface or override deterministic verification.
+- [x] Programmatic high-fanout routing skill with a controlled paired-ablation definition.
 
 ## Remaining hardening
 
 - [ ] Exercise the live Gemini/ADK workflow in a credentialed environment.
+- [ ] Run the programmatic-routing and optional semantic-provider ablations with live model credentials.
 - [x] Pin the unit- and import-tested Google ADK 2.7 minor and commit the resolved lockfile.
 - [x] Add large, real-repository evaluation tasks derived from human pull requests.
 - [x] Add container runtime adapters for Docker, Kubernetes, and enterprise remote sandboxes.

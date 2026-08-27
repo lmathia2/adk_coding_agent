@@ -213,6 +213,10 @@ New capabilities should normally be implemented as one of:
 
 A new model-visible tool is justified only when an ablation improves pass rate, cost per passed task, recovery, safety, or cross-model reliability.
 
+The decisions for Pi-style compaction, programmatic routing, and optional
+LSP/Moderne-style repository intelligence are recorded in
+[`design/pi-extension-adoption.md`](design/pi-extension-adoption.md).
+
 ## Trace-driven improvement
 
 Tracing observes user messages, runs, agents, models, tools, events, successes, and

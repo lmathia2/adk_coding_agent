@@ -7,9 +7,9 @@ Each checked item is committed independently.
 - [x] Implement typed task, ledger, tool, context, checkpoint, and verification models.
 - [x] Implement deterministic context compilation, prefix hashing, and coding-aware compaction.
 - [x] Implement the environment abstraction, command policy, bounded output, and four coding tools.
-- [ ] Implement repository discovery, lexical/structural indexing, and compact repository maps.
-- [ ] Implement event reduction, SQLite persistence, tool receipts, steering, and checkpoints.
-- [ ] Implement deterministic verification and acceptance-criterion evidence.
-- [ ] Wire the ADK 2.x coding agent, dynamic workflow, caching, compaction backstop, and resumability.
-- [ ] Add unit, integration, resume, security, and Agents CLI evaluation fixtures.
-- [ ] Add CI and operational documentation after the MVP contracts are stable.
+- [x] Implement repository discovery, lexical/structural indexing, and compact repository maps.
+- [x] Implement event reduction, SQLite persistence, tool receipts, steering, and checkpoints.
+- [x] Implement deterministic verification and acceptance-criterion evidence.
+- [x] Wire the ADK 2.x coding agent, dynamic workflow, caching, compaction backstop, and resumability.
+- [x] Add unit, integration, resume, security, and Agents CLI evaluation fixtures.
+- [x] Add CI and operational documentation after the MVP contracts are stable.
