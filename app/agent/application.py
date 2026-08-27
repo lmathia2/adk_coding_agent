@@ -71,6 +71,16 @@ def _build_trace_plugin() -> HarnessTracePlugin | None:
         return None
 
 
+def _optional_int_env(name: str, *, minimum: int) -> int | None:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return None
+    value = int(raw)
+    if value < minimum:
+        raise ValueError(f"{name} must be at least {minimum} when configured")
+    return value
+
+
 _PLUGINS = [_METRICS_PLUGIN, _MEMORY_PLUGIN]
 _TRACE_PLUGIN = _build_trace_plugin()
 if _TRACE_PLUGIN is not None:
@@ -100,16 +110,16 @@ app = App(
         cache_intervals=int(os.getenv("ADK_CODING_CACHE_INTERVALS", "10")),
     ),
     events_compaction_config=EventsCompactionConfig(
-        compaction_interval=int(
-            os.getenv("ADK_CODING_COMPACTION_INTERVAL", "8")
+        compaction_interval=_optional_int_env(
+            "ADK_CODING_COMPACTION_INTERVAL",
+            minimum=1,
         ),
-        overlap_size=int(os.getenv("ADK_CODING_COMPACTION_OVERLAP", "2")),
-        token_threshold=int(
-            os.getenv("ADK_CODING_ADK_COMPACT_TOKENS", "96000")
+        overlap_size=_optional_int_env(
+            "ADK_CODING_COMPACTION_OVERLAP",
+            minimum=0,
         ),
-        event_retention_size=int(
-            os.getenv("ADK_CODING_EVENT_RETENTION", "20")
-        ),
+        token_threshold=int(os.getenv("ADK_CODING_ADK_COMPACT_TOKENS", "96000")),
+        event_retention_size=int(os.getenv("ADK_CODING_EVENT_RETENTION", "20")),
     ),
     resumability_config=ResumabilityConfig(is_resumable=True),
 )

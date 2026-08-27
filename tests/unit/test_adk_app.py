@@ -27,6 +27,10 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert module.app.name == "pi_inspired_adk_coding_agent"
     assert module.root_agent.name == "coding_harness"
     assert module.app.root_agent is module.root_agent
+    assert module.app.events_compaction_config.compaction_interval is None
+    assert module.app.events_compaction_config.overlap_size is None
+    assert module.app.events_compaction_config.token_threshold == 96_000
+    assert module.app.events_compaction_config.event_retention_size == 20
     assert any(isinstance(plugin, HarnessMetricsPlugin) for plugin in module.app.plugins)
     assert any(isinstance(plugin, VerifiedProjectMemoryPlugin) for plugin in module.app.plugins)
     trace_plugin = next(
@@ -157,6 +161,53 @@ def test_trace_initialization_failure_disables_optional_plugin(
 
     assert application._build_trace_plugin() is None
     assert "tracing is disabled" in caplog.text
+
+
+def test_interval_compaction_requires_explicit_positive_configuration(
+    monkeypatch,
+) -> None:
+    application = importlib.import_module("app.agent.application")
+    monkeypatch.delenv("ADK_CODING_COMPACTION_INTERVAL", raising=False)
+    monkeypatch.delenv("ADK_CODING_COMPACTION_OVERLAP", raising=False)
+
+    assert (
+        application._optional_int_env(
+            "ADK_CODING_COMPACTION_INTERVAL",
+            minimum=1,
+        )
+        is None
+    )
+    assert (
+        application._optional_int_env(
+            "ADK_CODING_COMPACTION_OVERLAP",
+            minimum=0,
+        )
+        is None
+    )
+
+    monkeypatch.setenv("ADK_CODING_COMPACTION_INTERVAL", "12")
+    monkeypatch.setenv("ADK_CODING_COMPACTION_OVERLAP", "3")
+    assert (
+        application._optional_int_env(
+            "ADK_CODING_COMPACTION_INTERVAL",
+            minimum=1,
+        )
+        == 12
+    )
+    assert (
+        application._optional_int_env(
+            "ADK_CODING_COMPACTION_OVERLAP",
+            minimum=0,
+        )
+        == 3
+    )
+
+    monkeypatch.setenv("ADK_CODING_COMPACTION_INTERVAL", "0")
+    with pytest.raises(ValueError, match="must be at least 1"):
+        application._optional_int_env(
+            "ADK_CODING_COMPACTION_INTERVAL",
+            minimum=1,
+        )
 
 
 def test_skill_root_symlink_is_preserved_for_registry_validation(
