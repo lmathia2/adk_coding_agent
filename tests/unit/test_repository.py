@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import FrozenInstanceError
 from pathlib import Path
+
+import pytest
 
 from harness.repo.discovery import (
     build_repository_manifest,
     collect_project_instructions,
     discover_instruction_files,
 )
-from harness.repo.index import StructuralIndex
+from harness.repo.index import ParseResult, StructuralIndex, SymbolRecord
 
 
 def _git(root: Path, *args: str) -> None:
@@ -142,3 +145,140 @@ def test_python_edges_are_resolved_after_all_files_are_indexed(tmp_path: Path) -
     )
     assert use.edges.get("calls")
     assert use.edges.get("imports") == ["provider.py"]
+
+
+def test_typescript_fallback_masks_comments_and_literals_and_records_provenance(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "service.ts"
+    source.write_text(
+        "// export class FalseComment {}\n"
+        "const example = 'function falseString() {}';\n"
+        "/* import { fake } from 'not-real'; */\n"
+        "import { normalize } from './normalize';\n"
+        "export interface Request { value: string }\n"
+        "export type Result = { ok: boolean };\n"
+        "export const enum Status { Ready }\n"
+        "export async function execute(value: string): Promise<Result> {\n"
+        "  return { ok: Boolean(value) };\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    index = StructuralIndex(tmp_path)
+
+    assert index.index_repository() == 1
+
+    record = index.files["service.ts"]
+    assert record.parser_name == "typescript-outline-v2"
+    assert record.parser_mode == "fallback"
+    assert record.imports == ["./normalize"]
+    assert {symbol.name for symbol in record.symbols} == {
+        "Request",
+        "Result",
+        "Status",
+        "execute",
+    }
+
+
+def test_custom_syntax_parser_is_incremental_and_atomically_published(tmp_path: Path) -> None:
+    class CountingParser:
+        name = "test-syntax-v1"
+        mode = "syntax"
+        languages = frozenset({"typescript"})
+
+        def __init__(self) -> None:
+            self.calls = 0
+            self.fail = False
+
+        def parse(self, path: str, text: str) -> ParseResult:
+            self.calls += 1
+            if self.fail:
+                raise RuntimeError("parser provider failed")
+            name = text.split()[1]
+            return ParseResult(
+                [
+                    SymbolRecord(
+                        symbol_id=f"symbol-{name}",
+                        path=path,
+                        qualified_name=name,
+                        name=name,
+                        kind="function",
+                        signature=f"function {name}()",
+                        start_line=1,
+                        end_line=1,
+                    )
+                ],
+                [],
+            )
+
+    parser = CountingParser()
+    source = tmp_path / "worker.ts"
+    source.write_text("function first() {}\n", encoding="utf-8")
+    index = StructuralIndex(tmp_path, parsers=(parser,))
+
+    assert index.index_repository() == 1
+    assert index.index_repository() == 0
+    assert parser.calls == 1
+    assert index.files["worker.ts"].parser_name == "test-syntax-v1"
+    published = index.snapshot
+
+    parser.fail = True
+    source.write_text("function second() {}\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="parser provider failed"):
+        index.index_repository()
+
+    assert index.snapshot == published
+    assert index.files["worker.ts"].symbols[0].name == "first()"
+
+
+def test_large_files_get_bounded_head_and_tail_outlines(tmp_path: Path) -> None:
+    source = tmp_path / "generated.py"
+    source.write_text(
+        "def first_entry() -> None:\n    pass\n"
+        + ("# generated padding\n" * 70_000)
+        + "def last_entry() -> None:\n    pass\n",
+        encoding="utf-8",
+    )
+    index = StructuralIndex(tmp_path)
+
+    assert index.index_repository() == 1
+
+    record = index.files["generated.py"]
+    assert record.size_bytes > 1_000_000
+    assert record.parse_status == "outline"
+    assert record.parser_name == "bounded-outline-v1"
+    assert {symbol.name for symbol in record.symbols} == {"first_entry", "last_entry"}
+    assert next(symbol for symbol in record.symbols if symbol.name == "last_entry").start_line > 70_000
+
+
+def test_snapshot_readiness_staleness_and_persistence_are_explicit(tmp_path: Path) -> None:
+    source = tmp_path / "module.py"
+    source.write_text("def initial():\n    pass\n", encoding="utf-8")
+    storage = tmp_path / ".index" / "symbols.json"
+    index = StructuralIndex(tmp_path, storage)
+
+    assert not index.ready
+    assert index.snapshot.stale_paths == ("*",)
+    assert index.index_repository() == 1
+    ready = index.snapshot
+    assert ready.ready
+    assert ready.generation == 1
+    with pytest.raises(FrozenInstanceError):
+        ready.ready = False  # type: ignore[misc]
+
+    index.mark_stale([source])
+    assert not index.ready
+    assert index.snapshot.stale_paths == ("module.py",)
+    source.write_text("def changed():\n    pass\n", encoding="utf-8")
+    assert index.update_file(source)
+    assert index.ready
+    assert index.snapshot.generation == 2
+
+    index.save()
+    assert not list(storage.parent.glob("*.tmp"))
+    restored = StructuralIndex(tmp_path, storage)
+    assert not restored.ready
+    assert restored.snapshot.stale_paths == ("*",)
+    assert restored.index_repository() == 0
+    assert restored.ready
+    assert restored.snapshot.generation == 2

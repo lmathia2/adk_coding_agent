@@ -7,14 +7,25 @@ from .discovery import (
     collect_project_instructions,
     discover_instruction_files,
 )
-from .index import FileRecord, SearchHit, StructuralIndex, SymbolRecord
+from .index import (
+    FileRecord,
+    IndexSnapshot,
+    ParseResult,
+    SearchHit,
+    StructuralIndex,
+    StructuralParser,
+    SymbolRecord,
+)
 
 __all__ = [
     "BuildCommand",
     "FileRecord",
+    "IndexSnapshot",
+    "ParseResult",
     "RepositoryManifest",
     "SearchHit",
     "StructuralIndex",
+    "StructuralParser",
     "SymbolRecord",
     "build_repository_manifest",
     "collect_project_instructions",
