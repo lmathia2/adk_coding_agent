@@ -121,9 +121,7 @@ def test_compaction_snapshot_accepts_state_events_without_volatile_metadata() ->
         kind="action.recorded",
         payload={"path": "src/parser.py"},
     )
-    retained = summarized.model_copy(
-        update={"event_id": "another-random-id", "sequence": 4}
-    )
+    retained = summarized.model_copy(update={"event_id": "another-random-id", "sequence": 4})
 
     snapshot = build_compaction_snapshot(
         ledger=_ledger(),
@@ -136,3 +134,91 @@ def test_compaction_snapshot_accepts_state_events_without_volatile_metadata() ->
     assert snapshot.first_retained_event_id == "another-random-id"
     assert '"sequence":3' in snapshot.summary_markdown
     assert "random-event-id" not in snapshot.summary_markdown
+
+
+def test_compaction_snapshot_preserves_only_safe_structured_artifact_references() -> None:
+    digest_a = "a" * 64
+    digest_b = "b" * 64
+    summarized = HarnessEvent(
+        task_id="task-1",
+        sequence=3,
+        kind="tool.completed",
+        payload={
+            "nested": {
+                "artifact_uri": f"artifact://tool-output/{digest_a}.txt",
+                "model_text": f"artifact://tool-output/{'c' * 64}.txt",
+            },
+            "unsafe": {
+                "artifact_uri": "https://user:token@example.test/private.log",
+            },
+        },
+    )
+    retained = HarnessEvent(
+        task_id="task-1",
+        sequence=4,
+        kind="verification.completed",
+        payload={
+            "commands": [
+                {"artifact_uri": f"file:///tmp/artifacts/command-{digest_b}.log"},
+                {"artifact_uri": f"artifact://../{digest_b}.txt"},
+            ]
+        },
+    )
+
+    snapshot = build_compaction_snapshot(
+        ledger=_ledger(),
+        events_to_summarize=[summarized],
+        retained_events=[retained],
+    )
+
+    assert snapshot.artifact_uris == [
+        f"artifact://tool-output/{digest_a}.txt",
+        f"file:///tmp/artifacts/command-{digest_b}.log",
+    ]
+    assert snapshot.summary_markdown.count(f"artifact://tool-output/{digest_a}.txt") == 2
+    assert all(not uri.startswith("https://") for uri in snapshot.artifact_uris)
+    assert "user:token" not in snapshot.summary_markdown
+    assert "<unsafe-artifact-reference-omitted>" in snapshot.summary_markdown
+    assert f"artifact://tool-output/{'c' * 64}.txt" not in snapshot.artifact_uris
+
+
+def test_compaction_snapshot_carries_forward_artifacts_with_a_deterministic_cap() -> None:
+    previous_uris = [f"artifact://tool-output/{character * 64}.txt" for character in ("a", "b")]
+    previous = build_compaction_snapshot(
+        ledger=_ledger(),
+        events_to_summarize=[
+            {"artifact_uri": previous_uris[0]},
+            {"artifact_uri": previous_uris[1]},
+        ],
+    )
+    newest = f"artifact://tool-output/{'c' * 64}.txt"
+    duplicate = {"result": {"artifact_uri": previous_uris[1]}}
+
+    snapshot = build_compaction_snapshot(
+        ledger=_ledger(),
+        previous_summary=previous,
+        events_to_summarize=[duplicate],
+        retained_events=[{"artifact_uri": newest}],
+        policy=CompactionPolicy(max_artifact_references=2),
+    )
+    repeated = build_compaction_snapshot(
+        ledger=_ledger(),
+        previous_summary=previous,
+        events_to_summarize=[duplicate],
+        retained_events=[{"artifact_uri": newest}],
+        policy=CompactionPolicy(max_artifact_references=2),
+    )
+
+    assert snapshot.artifact_uris == sorted([previous_uris[1], newest])
+    assert snapshot.model_dump() == repeated.model_dump()
+    assert snapshot.previous_summary_hash == previous.content_hash()
+
+
+def test_compaction_snapshot_recovers_artifacts_from_legacy_summary_block() -> None:
+    artifact_uri = f"artifact://tool-output/{'d' * 64}.txt"
+    snapshot = build_compaction_snapshot(
+        ledger=_ledger(),
+        previous_summary=f"legacy handoff\n<artifacts>\n{artifact_uri}\n</artifacts>",
+    )
+
+    assert snapshot.artifact_uris == [artifact_uri]

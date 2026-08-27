@@ -48,3 +48,4 @@ class CompactionSnapshot(StrictModel):
     estimated_tokens_after: int = Field(default=0, ge=0)
     files_read: list[str] = Field(default_factory=list)
     files_modified: list[str] = Field(default_factory=list)
+    artifact_uris: list[str] = Field(default_factory=list)
