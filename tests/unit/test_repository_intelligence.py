@@ -7,16 +7,34 @@ import pytest
 from pydantic import ValidationError
 
 from harness.repo import (
+    AllowlistedCliExecutable,
     CliOperationCommand,
     EvidenceCompleteness,
+    IntelligenceBackendStatus,
     IntelligenceOperation,
+    IntelligenceProvenance,
     IntelligenceReadiness,
     ReadOnlyCliBackendConfig,
     ReadOnlySemanticCliAdapter,
     RepositoryIntelligenceQuery,
+    RepositoryIntelligenceResult,
     SemanticBackendDisabledError,
+    SemanticCliCommandPlan,
+    SemanticExecutionReceipt,
+    SemanticFileDigest,
     UnsupportedSemanticOperationError,
 )
+
+_EXECUTABLE_SHA256 = "e" * 64
+_CONTENT_SHA256 = "c" * 64
+
+
+def _executable(identity: str = "repository-intelligence") -> AllowlistedCliExecutable:
+    return AllowlistedCliExecutable(
+        identity=identity,
+        path=f"/opt/operator/bin/{identity}",
+        sha256=_EXECUTABLE_SHA256,
+    )
 
 
 def _config(
@@ -27,7 +45,7 @@ def _config(
 ) -> ReadOnlyCliBackendConfig:
     return ReadOnlyCliBackendConfig(
         backend="moderne-wrapper",
-        executable="/opt/operator/bin/repository-intelligence",
+        executable=_executable(),
         commands=(
             CliOperationCommand(
                 operation=IntelligenceOperation.SEARCH,
@@ -60,18 +78,47 @@ def _response(
     completeness: str = "complete",
     omitted_count: int = 0,
 ) -> str:
+    normalized_evidence = []
+    for item in evidence or []:
+        normalized = dict(item)
+        normalized.setdefault("content_sha256", _CONTENT_SHA256)
+        normalized_evidence.append(normalized)
     return json.dumps(
         {
             "backend_version": "2026.8",
             "completeness": completeness,
             "contract_version": 1,
-            "evidence": evidence or [],
+            "evidence": normalized_evidence,
             "omitted_count": omitted_count,
             "query_sha256": plan_query_sha256,
             "readiness": "ready",
             "repository_fingerprint": fingerprint,
         },
         sort_keys=True,
+    )
+
+
+def _receipt(
+    plan: SemanticCliCommandPlan,
+    *,
+    paths: tuple[str, ...] = (),
+    executable_sha256: str = _EXECUTABLE_SHA256,
+    fingerprint_before: str = "tree:abc123",
+    fingerprint_after: str = "tree:abc123",
+    content_sha256: str = _CONTENT_SHA256,
+) -> SemanticExecutionReceipt:
+    return SemanticExecutionReceipt(
+        plan_sha256=plan.sha256,
+        executable_sha256=executable_sha256,
+        repository_fingerprint_before=fingerprint_before,
+        repository_fingerprint_after=fingerprint_after,
+        file_digests=tuple(
+            SemanticFileDigest(path=path, content_sha256=content_sha256)
+            for path in paths
+        ),
+        filesystem_read_only=True,
+        network_isolated=True,
+        environment_isolated=True,
     )
 
 
@@ -121,6 +168,12 @@ def test_plan_is_deterministic_argv_only_and_keeps_query_out_of_argv(tmp_path: P
     assert first.shell is False
     assert first.network_allowed is False
     assert first.inherit_environment is False
+    assert first.executable.identity == "repository-intelligence"
+    assert first.executable.sha256 == _EXECUTABLE_SHA256
+    assert first.require_read_only_filesystem is True
+    assert first.require_executable_hash_verification is True
+    assert first.require_repository_fingerprint_before_and_after is True
+    assert first.require_evidence_content_hash_verification is True
     assert first.environment == (("LANG", "C"), ("LC_ALL", "C"))
     assert json.loads(first.stdin_json) == {
         "contract_version": 1,
@@ -132,6 +185,35 @@ def test_plan_is_deterministic_argv_only_and_keeps_query_out_of_argv(tmp_path: P
         },
         "repository_fingerprint": "tree:abc123",
     }
+
+
+def test_parser_requires_enabled_adapter_and_operator_approved_fixed_argv(
+    tmp_path: Path,
+) -> None:
+    query = _query()
+    adapter = ReadOnlySemanticCliAdapter(_config())
+    plan = adapter.plan(
+        query,
+        repository_root=tmp_path,
+        repository_fingerprint="tree:abc123",
+    )
+    stdout = _response(query.sha256)
+
+    disabled = ReadOnlySemanticCliAdapter(_config(enabled=False))
+    with pytest.raises(SemanticBackendDisabledError):
+        disabled.parse_result(plan, stdout, receipt=_receipt(plan))
+
+    forged = plan.model_copy(
+        update={
+            "argv": (
+                plan.executable.path,
+                "references",
+                "--stdin-json",
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="operator-approved fixed argv"):
+        adapter.parse_result(forged, stdout, receipt=_receipt(forged))
 
 
 def test_plan_rejects_unapproved_operations_and_relative_roots(tmp_path: Path) -> None:
@@ -165,7 +247,7 @@ def test_config_rejects_mutating_cli_arguments(arguments: tuple[str, ...]) -> No
     with pytest.raises(ValidationError, match="mutating CLI argument"):
         ReadOnlyCliBackendConfig(
             backend="unsafe-wrapper",
-            executable="/opt/operator/bin/unsafe",
+            executable=_executable("unsafe"),
             commands=(
                 CliOperationCommand(
                     operation=IntelligenceOperation.SEARCH,
@@ -181,16 +263,32 @@ def test_config_requires_absolute_executable_and_unique_operations() -> None:
         arguments=("search",),
     )
     with pytest.raises(ValidationError, match="absolute path"):
-        ReadOnlyCliBackendConfig(
-            backend="lsp-wrapper",
-            executable="bin/lsp-wrapper",
-            commands=(command,),
+        ReadOnlyCliBackendConfig.model_validate(
+            {
+                "backend": "lsp-wrapper",
+                "commands": (command,),
+                "executable": {
+                "identity": "lsp-wrapper",
+                "path": "bin/lsp-wrapper",
+                "sha256": _EXECUTABLE_SHA256,
+                },
+            },
         )
     with pytest.raises(ValidationError, match="only once"):
         ReadOnlyCliBackendConfig(
             backend="lsp-wrapper",
-            executable="/opt/operator/bin/lsp-wrapper",
+            executable=_executable("lsp-wrapper"),
             commands=(command, command),
+        )
+
+
+@pytest.mark.parametrize("identity", ["rm", "python3", "curl", "bash"])
+def test_config_rejects_generic_or_mutating_executables(identity: str) -> None:
+    with pytest.raises(ValidationError, match="dedicated operator wrapper"):
+        AllowlistedCliExecutable(
+            identity=identity,
+            path=f"/usr/bin/{identity}",
+            sha256=_EXECUTABLE_SHA256,
         )
 
 
@@ -226,7 +324,11 @@ def test_parse_result_orders_evidence_and_records_provenance(tmp_path: Path) -> 
         ],
     )
 
-    result = adapter.parse_result(plan, stdout)
+    result = adapter.parse_result(
+        plan,
+        stdout,
+        receipt=_receipt(plan, paths=("src/a.py", "src/z.py")),
+    )
 
     assert result.status.current is True
     assert result.completeness is EvidenceCompleteness.COMPLETE
@@ -261,13 +363,76 @@ def test_parse_result_enforces_count_and_total_snippet_budgets(tmp_path: Path) -
         for index, score in [(1, 0.9), (2, 0.8), (3, 0.7)]
     ]
 
-    result = adapter.parse_result(plan, _response(query.sha256, evidence=evidence))
+    stdout = _response(query.sha256, evidence=evidence)
+    result = adapter.parse_result(
+        plan,
+        stdout,
+        receipt=_receipt(plan, paths=("src/1.py", "src/2.py", "src/3.py")),
+    )
 
     assert result.completeness is EvidenceCompleteness.PARTIAL
     assert result.truncated is True
     assert result.omitted_count == 1
     assert len(result.evidence) == 2
     assert [item.snippet for item in result.evidence] == ["abcde", ""]
+
+
+def test_parse_result_requires_executor_and_file_digest_attestation(tmp_path: Path) -> None:
+    adapter = ReadOnlySemanticCliAdapter(_config())
+    query = _query()
+    plan = adapter.plan(
+        query,
+        repository_root=tmp_path,
+        repository_fingerprint="tree:abc123",
+    )
+    stdout = _response(
+        query.sha256,
+        evidence=[
+            {
+                "end_line": 1,
+                "kind": "function",
+                "path": "src/current.py",
+                "score": 1.0,
+                "start_line": 1,
+            }
+        ],
+    )
+
+    wrong_plan_receipt = _receipt(plan).model_copy(update={"plan_sha256": "a" * 64})
+    with pytest.raises(ValueError, match="does not match the semantic command plan"):
+        adapter.parse_result(plan, stdout, receipt=wrong_plan_receipt)
+    with pytest.raises(ValueError, match="allowlisted digest"):
+        adapter.parse_result(
+            plan,
+            stdout,
+            receipt=_receipt(
+                plan,
+                paths=("src/current.py",),
+                executable_sha256="f" * 64,
+            ),
+        )
+    with pytest.raises(ValueError, match="changed before or during"):
+        adapter.parse_result(
+            plan,
+            stdout,
+            receipt=_receipt(
+                plan,
+                paths=("src/current.py",),
+                fingerprint_after="tree:changed",
+            ),
+        )
+    with pytest.raises(ValueError, match="not independently hashed"):
+        adapter.parse_result(plan, stdout, receipt=_receipt(plan))
+    with pytest.raises(ValueError, match="does not match the workspace"):
+        adapter.parse_result(
+            plan,
+            stdout,
+            receipt=_receipt(
+                plan,
+                paths=("src/current.py",),
+                content_sha256="d" * 64,
+            ),
+        )
 
 
 def test_stale_response_never_publishes_evidence(tmp_path: Path) -> None:
@@ -294,7 +459,15 @@ def test_stale_response_never_publishes_evidence(tmp_path: Path) -> None:
         ],
     )
 
-    result = adapter.parse_result(plan, stdout)
+    result = adapter.parse_result(
+        plan,
+        stdout,
+        receipt=_receipt(
+            plan,
+            fingerprint_before="tree:new",
+            fingerprint_after="tree:new",
+        ),
+    )
 
     assert result.status.readiness is IntelligenceReadiness.STALE
     assert result.evidence == ()
@@ -313,7 +486,7 @@ def test_parser_rejects_wrong_query_invalid_paths_and_oversize_output(tmp_path: 
     )
     wrong_query = _response("0" * 64)
     with pytest.raises(ValueError, match="does not match"):
-        adapter.parse_result(plan, wrong_query)
+        adapter.parse_result(plan, wrong_query, receipt=_receipt(plan))
 
     invalid_path = _response(
         query.sha256,
@@ -328,13 +501,51 @@ def test_parser_rejects_wrong_query_invalid_paths_and_oversize_output(tmp_path: 
         ],
     )
     with pytest.raises(ValidationError, match="normalized relative paths"):
-        adapter.parse_result(plan, invalid_path)
+        adapter.parse_result(plan, invalid_path, receipt=_receipt(plan))
 
     with pytest.raises(ValueError, match="exceeds"):
-        adapter.parse_result(plan, b"{" + b" " * plan.max_stdout_bytes + b"}")
+        adapter.parse_result(
+            plan,
+            b"{" + b" " * plan.max_stdout_bytes + b"}",
+            receipt=_receipt(plan),
+        )
 
 
 def test_contracts_are_frozen() -> None:
     query = _query()
     with pytest.raises(ValidationError, match="frozen"):
         query.limit = 99  # type: ignore[misc]
+
+
+def test_result_rejects_confounded_status_and_provenance() -> None:
+    query = _query()
+    status = IntelligenceBackendStatus(
+        backend="moderne-wrapper",
+        enabled=True,
+        readiness=IntelligenceReadiness.READY,
+        requested_repository_fingerprint="tree:abc123",
+        indexed_repository_fingerprint="tree:abc123",
+    )
+    base = {
+        "repository_fingerprint": "tree:abc123",
+        "query_sha256": query.sha256,
+        "response_sha256": "a" * 64,
+    }
+
+    with pytest.raises(ValidationError, match="same backend"):
+        RepositoryIntelligenceResult(
+            query=query,
+            status=status,
+            completeness=EvidenceCompleteness.UNKNOWN,
+            provenance=IntelligenceProvenance(backend="other", **base),
+        )
+    with pytest.raises(ValidationError, match="same index state"):
+        RepositoryIntelligenceResult(
+            query=query,
+            status=status,
+            completeness=EvidenceCompleteness.UNKNOWN,
+            provenance=IntelligenceProvenance(
+                backend="moderne-wrapper",
+                **{**base, "repository_fingerprint": "tree:old"},
+            ),
+        )

@@ -45,6 +45,24 @@ _READ_ONLY_DENIED_PREFIXES = (
     "--upload",
     "--write",
 )
+_GENERIC_EXECUTABLES = {
+    "bash",
+    "cp",
+    "curl",
+    "dd",
+    "git",
+    "mv",
+    "node",
+    "perl",
+    "python",
+    "python3",
+    "rm",
+    "ruby",
+    "sh",
+    "tee",
+    "wget",
+    "zsh",
+}
 
 
 class _ImmutableModel(BaseModel):
@@ -243,6 +261,7 @@ class RepositoryEvidence(_ImmutableModel):
     kind: str = Field(min_length=1, max_length=64)
     snippet: str = Field(default="", max_length=2_048)
     score: float = Field(ge=0.0, le=1.0)
+    content_sha256: str
     provenance: IntelligenceProvenance
 
     @field_validator("path")
@@ -255,6 +274,13 @@ class RepositoryEvidence(_ImmutableModel):
     def validate_score(cls, value: float) -> float:
         if not math.isfinite(value):
             raise ValueError("evidence score must be finite")
+        return value
+
+    @field_validator("content_sha256")
+    @classmethod
+    def validate_content_sha256(cls, value: str) -> str:
+        if not _HEX_SHA256.fullmatch(value):
+            raise ValueError("evidence content_sha256 must be a lowercase SHA-256 value")
         return value
 
     @model_validator(mode="after")
@@ -285,6 +311,20 @@ class RepositoryIntelligenceResult(_ImmutableModel):
             raise ValueError("omitted evidence must be reported as truncated")
         if self.provenance.query_sha256 != self.query.sha256:
             raise ValueError("result provenance does not match its query")
+        if self.status.backend != self.provenance.backend:
+            raise ValueError("result status and provenance must name the same backend")
+        if (
+            self.status.indexed_repository_fingerprint is not None
+            and self.status.indexed_repository_fingerprint
+            != self.provenance.repository_fingerprint
+        ):
+            raise ValueError("result status and provenance must identify the same index state")
+        if (
+            self.status.current
+            and self.status.requested_repository_fingerprint
+            != self.provenance.repository_fingerprint
+        ):
+            raise ValueError("current result provenance must match the requested repository state")
         if any(item.provenance != self.provenance for item in self.evidence):
             raise ValueError("all evidence must share the result provenance")
         return self
@@ -315,11 +355,47 @@ class CliOperationCommand(_ImmutableModel):
         return values
 
 
+class AllowlistedCliExecutable(_ImmutableModel):
+    """Operator-approved dedicated wrapper identity and expected file digest."""
+
+    identity: str
+    path: str
+    sha256: str
+
+    @field_validator("identity")
+    @classmethod
+    def validate_identity(cls, value: str) -> str:
+        if not _BACKEND_NAME.fullmatch(value):
+            raise ValueError("executable identity must be a normalized identifier")
+        return value
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        validated = _absolute_path(value, field="CLI executable")
+        if Path(validated).name.casefold() in _GENERIC_EXECUTABLES:
+            raise ValueError("semantic backends require a dedicated operator wrapper executable")
+        return validated
+
+    @field_validator("sha256")
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if not _HEX_SHA256.fullmatch(value):
+            raise ValueError("executable sha256 must be a lowercase SHA-256 value")
+        return value
+
+    @model_validator(mode="after")
+    def validate_identity_matches_path(self) -> Self:
+        if Path(self.path).name != self.identity:
+            raise ValueError("executable identity must match the executable basename")
+        return self
+
+
 class ReadOnlyCliBackendConfig(_ImmutableModel):
     """Disabled-by-default configuration for an operator-managed CLI wrapper."""
 
     backend: str
-    executable: str
+    executable: AllowlistedCliExecutable
     commands: tuple[CliOperationCommand, ...]
     enabled: bool = False
     timeout_seconds: int = Field(default=30, ge=1, le=120)
@@ -333,11 +409,6 @@ class ReadOnlyCliBackendConfig(_ImmutableModel):
         if not _BACKEND_NAME.fullmatch(value):
             raise ValueError("backend must be a normalized identifier")
         return value
-
-    @field_validator("executable")
-    @classmethod
-    def validate_executable(cls, value: str) -> str:
-        return _absolute_path(value, field="CLI executable")
 
     @model_validator(mode="after")
     def validate_commands(self) -> Self:
@@ -353,6 +424,7 @@ class SemanticCliCommandPlan(_ImmutableModel):
     """An inert execution recipe suitable for the existing managed command boundary."""
 
     backend: str
+    executable: AllowlistedCliExecutable
     argv: tuple[str, ...]
     working_directory: str
     stdin_json: str
@@ -364,6 +436,10 @@ class SemanticCliCommandPlan(_ImmutableModel):
     shell: Literal[False] = False
     network_allowed: Literal[False] = False
     inherit_environment: Literal[False] = False
+    require_read_only_filesystem: Literal[True] = True
+    require_executable_hash_verification: Literal[True] = True
+    require_repository_fingerprint_before_and_after: Literal[True] = True
+    require_evidence_content_hash_verification: Literal[True] = True
 
     @field_validator("working_directory")
     @classmethod
@@ -392,6 +468,21 @@ class SemanticCliCommandPlan(_ImmutableModel):
                 raise ValueError(f"mutating CLI argument is not allowed: {item}")
         return values
 
+    @model_validator(mode="after")
+    def validate_fixed_executable(self) -> Self:
+        if self.argv[0] != self.executable.path:
+            raise ValueError("semantic CLI argv must use the allowlisted executable")
+        expected_stdin = _canonical_json(
+            {
+                "contract_version": _CONTRACT_VERSION,
+                "query": self.query.model_dump(mode="json", exclude_none=True),
+                "repository_fingerprint": self.repository_fingerprint,
+            }
+        )
+        if self.stdin_json != expected_stdin:
+            raise ValueError("semantic CLI stdin must match the command-plan query and repository")
+        return self
+
     @field_validator("repository_fingerprint")
     @classmethod
     def validate_repository_fingerprint(cls, value: str) -> str:
@@ -409,6 +500,62 @@ class SemanticCliCommandPlan(_ImmutableModel):
     def sha256(self) -> str:
         payload = self.model_dump(mode="json")
         return hashlib.sha256(_canonical_json(payload).encode()).hexdigest()
+
+
+class SemanticFileDigest(_ImmutableModel):
+    """Digest independently observed by the managed executor after CLI completion."""
+
+    path: str
+    content_sha256: str
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        return _relative_path(value)
+
+    @field_validator("content_sha256")
+    @classmethod
+    def validate_content_sha256(cls, value: str) -> str:
+        if not _HEX_SHA256.fullmatch(value):
+            raise ValueError("file content_sha256 must be a lowercase SHA-256 value")
+        return value
+
+
+class SemanticExecutionReceipt(_ImmutableModel):
+    """Execution-time checks required before semantic evidence can be published.
+
+    The adapter never creates this receipt. The managed executor must hash the exact
+    executable, fingerprint the workspace before and after execution, enforce a
+    read-only/network-isolated process, and hash every evidence file after execution.
+    """
+
+    plan_sha256: str
+    executable_sha256: str
+    repository_fingerprint_before: str = Field(min_length=1, max_length=256)
+    repository_fingerprint_after: str = Field(min_length=1, max_length=256)
+    file_digests: tuple[SemanticFileDigest, ...] = ()
+    filesystem_read_only: Literal[True]
+    network_isolated: Literal[True]
+    environment_isolated: Literal[True]
+
+    @field_validator("plan_sha256", "executable_sha256")
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        if not _HEX_SHA256.fullmatch(value):
+            raise ValueError("execution receipt hashes must be lowercase SHA-256 values")
+        return value
+
+    @field_validator("repository_fingerprint_before", "repository_fingerprint_after")
+    @classmethod
+    def validate_repository_fingerprint(cls, value: str) -> str:
+        return _bounded_text(value, field="repository fingerprint", max_chars=256)
+
+    @model_validator(mode="after")
+    def validate_unique_files(self) -> Self:
+        paths = [item.path for item in self.file_digests]
+        if len(paths) != len(set(paths)):
+            raise ValueError("execution receipt file digests must have unique paths")
+        return self
 
 
 class SemanticBackendDisabledError(RuntimeError):
@@ -442,6 +589,8 @@ class RepositoryIntelligence(Protocol):
         self,
         plan: SemanticCliCommandPlan,
         stdout: bytes | str,
+        *,
+        receipt: SemanticExecutionReceipt,
     ) -> RepositoryIntelligenceResult:
         """Parse bounded provider output without performing I/O."""
 
@@ -509,7 +658,8 @@ class ReadOnlySemanticCliAdapter:
         )
         return SemanticCliCommandPlan(
             backend=self.config.backend,
-            argv=(self.config.executable, *arguments),
+            executable=self.config.executable,
+            argv=(self.config.executable.path, *arguments),
             working_directory=str(repository_root),
             stdin_json=stdin,
             timeout_seconds=self.config.timeout_seconds,
@@ -522,11 +672,25 @@ class ReadOnlySemanticCliAdapter:
         self,
         plan: SemanticCliCommandPlan,
         stdout: bytes | str,
+        *,
+        receipt: SemanticExecutionReceipt,
     ) -> RepositoryIntelligenceResult:
-        """Parse a bounded backend JSON response into deterministic evidence."""
+        """Parse output only after required executor checks have been attested."""
 
+        if not self.config.enabled:
+            raise SemanticBackendDisabledError(
+                f"semantic backend {self.config.backend!r} is disabled"
+            )
         if plan.backend != self.config.backend:
             raise ValueError("command plan belongs to a different semantic backend")
+        expected_arguments = self._commands.get(plan.query.operation)
+        if (
+            plan.executable != self.config.executable
+            or expected_arguments is None
+            or plan.argv != (self.config.executable.path, *expected_arguments)
+        ):
+            raise ValueError("command plan does not match the operator-approved fixed argv")
+        self._validate_execution_receipt(plan, receipt)
         raw = stdout if isinstance(stdout, bytes) else stdout.encode("utf-8")
         response_limit = min(plan.max_stdout_bytes, self.config.max_response_bytes)
         if len(raw) > response_limit:
@@ -541,13 +705,34 @@ class ReadOnlySemanticCliAdapter:
             raise ValueError("semantic backend response has an unsupported contract_version")
         if document.get("query_sha256") != plan.query.sha256:
             raise ValueError("semantic backend response does not match the command-plan query")
-        return self._parse_document(plan, document, response_sha256=hashlib.sha256(raw).hexdigest())
+        return self._parse_document(
+            plan,
+            document,
+            receipt=receipt,
+            response_sha256=hashlib.sha256(raw).hexdigest(),
+        )
+
+    def _validate_execution_receipt(
+        self,
+        plan: SemanticCliCommandPlan,
+        receipt: SemanticExecutionReceipt,
+    ) -> None:
+        if receipt.plan_sha256 != plan.sha256:
+            raise ValueError("execution receipt does not match the semantic command plan")
+        if receipt.executable_sha256 != plan.executable.sha256:
+            raise ValueError("executed semantic wrapper does not match its allowlisted digest")
+        if (
+            receipt.repository_fingerprint_before != plan.repository_fingerprint
+            or receipt.repository_fingerprint_after != plan.repository_fingerprint
+        ):
+            raise ValueError("repository changed before or during semantic CLI execution")
 
     def _parse_document(
         self,
         plan: SemanticCliCommandPlan,
         document: Mapping[str, Any],
         *,
+        receipt: SemanticExecutionReceipt,
         response_sha256: str,
     ) -> RepositoryIntelligenceResult:
         indexed_fingerprint = document.get("repository_fingerprint")
@@ -595,6 +780,9 @@ class ReadOnlySemanticCliAdapter:
             )
 
         candidates: dict[tuple[str, int, int, str | None, str], RepositoryEvidence] = {}
+        observed_digests = {
+            item.path: item.content_sha256 for item in receipt.file_digests
+        }
         locally_truncated = False
         for raw_item in raw_items:
             if not isinstance(raw_item, Mapping):
@@ -609,6 +797,15 @@ class ReadOnlySemanticCliAdapter:
             item["snippet"] = snippet
             item["provenance"] = provenance
             evidence = RepositoryEvidence.model_validate(item)
+            observed_digest = observed_digests.get(evidence.path)
+            if observed_digest is None:
+                raise ValueError(
+                    f"semantic evidence file was not independently hashed: {evidence.path}"
+                )
+            if observed_digest != evidence.content_sha256:
+                raise ValueError(
+                    f"semantic evidence content hash does not match the workspace: {evidence.path}"
+                )
             key = (
                 evidence.path,
                 evidence.start_line,
@@ -657,6 +854,7 @@ class ReadOnlySemanticCliAdapter:
 
 
 __all__ = [
+    "AllowlistedCliExecutable",
     "CliOperationCommand",
     "EvidenceCompleteness",
     "IntelligenceBackendStatus",
@@ -671,5 +869,7 @@ __all__ = [
     "RepositoryIntelligenceResult",
     "SemanticBackendDisabledError",
     "SemanticCliCommandPlan",
+    "SemanticExecutionReceipt",
+    "SemanticFileDigest",
     "UnsupportedSemanticOperationError",
 ]

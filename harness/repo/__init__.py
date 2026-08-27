@@ -17,6 +17,7 @@ from .index import (
     SymbolRecord,
 )
 from .intelligence import (
+    AllowlistedCliExecutable,
     CliOperationCommand,
     EvidenceCompleteness,
     IntelligenceBackendStatus,
@@ -31,10 +32,13 @@ from .intelligence import (
     RepositoryIntelligenceResult,
     SemanticBackendDisabledError,
     SemanticCliCommandPlan,
+    SemanticExecutionReceipt,
+    SemanticFileDigest,
     UnsupportedSemanticOperationError,
 )
 
 __all__ = [
+    "AllowlistedCliExecutable",
     "BuildCommand",
     "CliOperationCommand",
     "EvidenceCompleteness",
@@ -55,6 +59,8 @@ __all__ = [
     "SearchHit",
     "SemanticBackendDisabledError",
     "SemanticCliCommandPlan",
+    "SemanticExecutionReceipt",
+    "SemanticFileDigest",
     "StructuralIndex",
     "StructuralParser",
     "SymbolRecord",
