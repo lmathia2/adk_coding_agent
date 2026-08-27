@@ -17,8 +17,16 @@ from .real_repositories import (
     RealRepositoryEvaluationSuite,
     load_real_repository_suite,
 )
+from .skill_ablation import (
+    REQUIRED_SKILL_ABLATION_METRICS,
+    SkillAblationMetric,
+    SkillAblationPlan,
+    SkillAblationVariant,
+    load_skill_ablation_plan,
+)
 
 __all__ = [
+    "REQUIRED_SKILL_ABLATION_METRICS",
     "EvaluationBudgets",
     "EvaluationCase",
     "EvaluationCheck",
@@ -30,8 +38,12 @@ __all__ = [
     "HumanPullRequestSource",
     "RealRepositoryEvaluationCase",
     "RealRepositoryEvaluationSuite",
+    "SkillAblationMetric",
+    "SkillAblationPlan",
+    "SkillAblationVariant",
     "grade_case",
     "load_evaluation_suite",
     "load_real_repository_suite",
+    "load_skill_ablation_plan",
     "write_evaluation_suite",
 ]

@@ -1,0 +1,40 @@
+{
+  "ablation_id": "programmatic-tool-routing-v1",
+  "description": "Paired comparison of the unchanged four-tool harness with and without explicit programmatic-routing skill disclosure.",
+  "suite_path": "tests/eval/suites/real_repositories.json",
+  "case_ids": [
+    "django-asgi-script-prefix-boundary",
+    "ruff-sim105-preserve-except-semantics"
+  ],
+  "required_metrics": [
+    "pass_rate",
+    "cost_per_passed_task",
+    "uncached_input_tokens",
+    "cache_read_ratio",
+    "prefix_versions",
+    "tool_calls",
+    "wall_time_ms"
+  ],
+  "baseline": {
+    "variant": "baseline",
+    "selected_skills": [],
+    "model_visible_tools": [
+      "read",
+      "bash",
+      "edit",
+      "write"
+    ]
+  },
+  "candidate": {
+    "variant": "routing-skill",
+    "selected_skills": [
+      "programmatic-tool-routing"
+    ],
+    "model_visible_tools": [
+      "read",
+      "bash",
+      "edit",
+      "write"
+    ]
+  }
+}
