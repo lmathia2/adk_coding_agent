@@ -145,6 +145,21 @@ for cost per passed task, uncached input, cache ratio, tool calls, and wall time
 Disabled or rolled-back revisions remain in the audit history and must not be counted
 as active treatment.
 
+### Indexed-search micro-ablation
+
+`tests/eval/ablations/fff_search.json` defines a deterministic, no-credential comparison
+between raw `rg --json` output and FFF's harness-owned pages over the same 33-match
+fanout fixture. It pins the fixture tree, FFF dependency, search execution surface,
+query, page size, relevance judgments, and four-tool interface. The report records the
+observed ripgrep version rather than requiring one machine-specific release.
+
+Report exact and duplicate/missing match identities, unsafe paths, incompleteness,
+first-window relevant-path recall, noise ratio, reciprocal rank, nDCG@20, first/all-page
+visible bytes, visible bytes per relevant path, page count, deterministic ordered-match
+hashes, and backend duration. Duration is observational only: deterministic CI must
+not assert that one native/process implementation is faster on every machine. The
+fixture includes ignored/internal, binary, and external-symlink decoys.
+
 ## Run deterministic tests
 
 ```bash
@@ -219,6 +234,7 @@ The structural map should remain disabled for small repositories and evaluated s
 
 ```text
 shell search only
+FFF indexed lexical discovery
 shell + static map
 shell + task-ranked structural map
 structural map + semantic fallback

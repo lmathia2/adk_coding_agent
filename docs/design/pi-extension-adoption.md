@@ -11,6 +11,7 @@ interface.
 | Structured compaction | Adopt | Deterministic ledger snapshot, chained prior summary, recent raw tail, cumulative file state, and recoverable artifact identifiers |
 | Generic token compaction | Retain as backstop | ADK event compaction is opt-in for interval/overlap and otherwise protects only the context ceiling |
 | Structural code indexing | Adopt as the local default | Immutable, bounded repository snapshots with syntax-aware Python parsing and explicitly labeled fallbacks |
+| FFF lexical/path index | Adopt behind `bash` | Locked native Python binding, lazy workspace index, strict virtual grammar, harness-owned grouped pagination and cursors |
 | LSP or Moderne/LST enrichment | Support as an optional provider | Disabled-by-default, fingerprint-scoped, read-only operator CLI contract; never a new model-visible tool |
 | Programmatic tool calling | Adopt routing guidance first | Progressive `programmatic-tool-routing` skill composes deterministic high-fanout work through `bash` |
 | Sandboxed `code_execution` meta-tool | Defer behind an ablation | Add only if paired evaluation improves system-level outcomes without weakening safety or traceability |
@@ -35,6 +36,20 @@ The in-process structural index remains the default because it is local, increme
 portable, and cheap enough to refresh after edits. It is a navigation aid and never a
 license to inject repository contents wholesale.
 
+FFF complements that structural map with fast lexical grep and fuzzy filename search.
+The pinned Python binding is installed by the project lockfile, so cloning developers
+do not install a Pi extension, npm package, or separate search binary. A reserved
+`search grep|find|health` grammar is routed inside the managed `bash` adapter. It is
+lazy, workspace-rooted, symlink-disabled, post-confined, redacted, and unavailable for
+remote workspaces that are not authoritative on the host.
+
+FFF's native grep cursor advances by file and its page limit may return a whole file
+group beyond the requested count. The harness therefore drains a bounded snapshot and
+owns exact model-facing pages. Per-page scheduling admits only a bounded number of
+matches from each file before considering the next, preventing a common token flood
+from burying relevant paths. Content-addressed cursors bind the workspace, operation,
+query hash, options, and matched-file hashes; changed files make a cursor stale.
+
 Language servers and Moderne Lossless Semantic Trees can materially improve
 cross-language definitions, references, implementations, and multi-repository
 architecture discovery. They also introduce installation, build, licensing,
@@ -58,7 +73,8 @@ index paths can consume the committed result.
 Programmatic tool calling is most attractive for high-fanout mechanical work where
 many intermediate results would otherwise consume model turns and context. The first
 increment uses the existing, policy-controlled `bash` tool with a progressively loaded
-skill. It favors `rg`, `jq`, and short Python standard-library programs, requires
+skill. It favors FFF for bounded discovery and `rg --json`, `jq`, or short Python
+standard-library programs for complete mechanical transforms, requires
 deterministic bounded summaries, and keeps mutations behind `edit` and `write`.
 
 The committed paired ablation changes only disclosure of that skill. Both variants
@@ -73,7 +89,7 @@ existing atomic tool adapters. Until then, a fifth model-facing tool is not just
 
 ## Rollout order
 
-1. Use the local structural index and structured compaction on every task.
+1. Use FFF lexical discovery, the local structural index, and structured compaction on every task.
 2. Run the routing-skill ablation on the fixed real-repository suite when model
    credentials are available.
 3. Enable a semantic provider only for repositories whose scale or language tooling

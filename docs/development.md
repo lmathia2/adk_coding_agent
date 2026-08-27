@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Git
-- Python 3.12 or newer
+- Python 3.11 or newer
 - `uv`
 - Google Agents CLI
 - Google ADK credentials for live Gemini runs
@@ -23,7 +23,9 @@ cd adk_coding_agent
 uv sync --all-groups
 ```
 
-The lockfile resolves the tested Google ADK 2.7 minor. Install production-only
+The lockfile resolves the tested Google ADK 2.7 minor and `fff-search==0.10.5`.
+The normal `uv sync` therefore provides indexed search without a separate Pi/npm
+extension or separately installed `rg`/`fd` binary. Install production-only
 PostgreSQL support when a worker uses the distributed control-state backend:
 
 ```bash
@@ -106,6 +108,7 @@ agents-cli run "Fix the failing authentication tests"
 | `ADK_CODING_CACHE_INTERVALS` | `10` | ADK cache interval setting |
 | `ADK_CODING_ADK_COMPACT_TOKENS` | `96000` | ADK overflow compaction threshold |
 | `ADK_CODING_SANDBOX` | `local` | Command backend: `local`, `docker`, `kubernetes`, or `remote` |
+| `ADK_CODING_SEARCH_BACKEND` | `auto` | Indexed search: `auto`, `fff`, or `disabled`; host-side FFF is limited to authoritative local/bind-mounted workspaces |
 | `ADK_CODING_CONTROL_DATABASE_URL` | unset | PostgreSQL control events and distributed task leases |
 | `ADK_CODING_WORKER_ID` | process-derived | Stable owner identity for distributed task leases |
 | `ADK_CODING_TASK_LEASE_SECONDS` | `900` | Distributed task-lease duration, renewed around long operations |
@@ -120,6 +123,48 @@ agents-cli run "Fix the failing authentication tests"
 | `ADK_CODING_LEARNING_ENABLED` | `1` | Learn candidates from verified traces and run guarded trials |
 | `ADK_CODING_LEARNING_MIN_SUPPORT` | `3` | Minimum observations per arm before promotion is possible |
 | `ADK_CODING_LEARNING_TRIAL_PERCENT` | `20` | Deterministic percentage of matching tasks assigned the candidate |
+
+## Indexed repository search
+
+FFF is exposed as a reserved virtual command through the existing `bash` tool; it is
+never passed to a shell and does not add a fifth model-visible tool:
+
+```text
+search grep --pattern TEXT [--path REL] [--mode literal|regex]
+            [--case-sensitive] [--context 0..2] [--limit 1..50]
+search grep --cursor TOKEN
+search find --pattern TEXT [--path REL] [--limit 1..50]
+search find --cursor TOKEN
+search health
+```
+
+The default page limit is 20. Results are grouped and scheduled across files so one
+high-frequency file cannot consume the first page. Continue only with the returned
+opaque cursor; cursor requests cannot change the original query. Use bounded
+`rg --json` through ordinary `bash` when a deterministic program must enumerate and
+transform an entire result set.
+
+The harness lazily starts FFF, disables filesystem-root/home scanning and symlink
+following, and post-confines every result to the workspace. Cursor snapshots contain
+paths, positions, hashes, and query hashes—not source bodies or raw queries—and live
+under `ADK_CODING_STATE_DIR/fff`. Model-visible pages and any spill artifact are
+redacted and byte-bounded. Normal `bash` tracing policy still applies to the command
+arguments.
+
+Successful, non-replayed `edit` and `write` operations synchronously refresh the
+index. Changes produced by ordinary shell commands are observed by FFF's watcher and
+can briefly lag. Health output is sanitized and does not expose the absolute workspace.
+
+Host-side FFF is enabled only for the local backend and Docker's authoritative
+bind-mounted workspace. Kubernetes and remote sandboxes return a typed unavailable
+result rather than searching a potentially different host tree. Set
+`ADK_CODING_SEARCH_BACKEND=disabled` to turn the virtual backend off explicitly.
+
+Version 0.10.5 publishes wheels for macOS arm64/x86_64, Windows x86_64, and Linux
+arm64/x86_64 with glibc 2.38 or newer. Other architectures, musl distributions, or
+older Linux systems may require a working Rust toolchain to build the locked source
+distribution. That is the only case where the normal clone-and-`uv sync` path needs
+additional native build tooling.
 
 ## Approval policy
 

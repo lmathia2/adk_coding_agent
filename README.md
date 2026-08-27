@@ -4,13 +4,15 @@ A Pi-inspired, token-efficient coding harness built on Google ADK 2.x.
 
 The model-facing surface is intentionally small: a stable instruction prefix and four coding tools (`read`, `bash`, `edit`, and `write`). ADK owns durable workflow execution, resumability, state, compaction, caching, and verification gates.
 
-> Status: active MVP implementation. See [`docs/TODO.md`](docs/TODO.md) and the [design brief](docs/design/pi-inspired-adk-coding-harness.md).
+> Status: local implementation complete; live credentialed validation remains. See
+> [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) and the
+> [design brief](docs/design/pi-inspired-adk-coding-harness.md).
 
 ## Design goals
 
 - Keep the stable prompt and tool declarations small enough to cache effectively.
 - Keep volatile task state in a deterministic context packet, not the system prefix.
-- Use shell-first repository exploration and targeted file reads.
+- Use bounded, indexed repository discovery and targeted file reads.
 - Maintain a durable Task Ledger rather than relying on the raw transcript.
 - Bound tool output and spill full logs to artifacts.
 - Require deterministic verification before accepting a completion claim.
@@ -26,6 +28,11 @@ uv sync --all-groups
 cp .env.example .env
 uv run pytest
 ```
+
+`uv sync` installs the pinned native `fff-search==0.10.5` wheel with the rest of the
+project. No separate Pi extension, npm package, `rg`, or `fd` installation is needed
+for indexed discovery. This is a project dependency rather than copied third-party
+source, so a first sync still needs access to the configured Python package source.
 
 Install the Google Agents CLI for the intended development workflow:
 
@@ -95,6 +102,11 @@ ADK Workflow
 ```
 
 Large logs, repository indexes, checkpoints, and receipts stay outside the model transcript. The model sees bounded summaries and artifact references.
+
+Indexed `grep`, fuzzy path discovery, and health checks are virtual commands behind
+`bash`, so the model-visible surface remains exactly four tools. See the
+[development guide](docs/development.md#indexed-repository-search) for the grammar and
+platform notes.
 
 ## License
 

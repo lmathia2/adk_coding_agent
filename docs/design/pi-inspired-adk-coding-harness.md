@@ -278,8 +278,9 @@ The manifest should normally fit within 300-600 tokens.
 
 #### Tier 1: Lexical and version-control search
 
-Use mature command-line tools:
+Use bounded indexed discovery and mature command-line tools:
 
+- in-process FFF grep and fuzzy filename search through the existing `bash` surface
 - `rg`
 - `git grep`
 - `git log`
@@ -297,6 +298,12 @@ repository manifest
   -> surrounding function/class
   -> complete file only when needed
 ```
+
+FFF result pages should be grouped, strictly bounded, and cursor-paginated by the
+harness rather than injected wholesale. The native dependency remains outside the
+sandbox process, so it is enabled only when the host workspace is the authoritative
+local or bind-mounted tree. Every result is post-confined and refreshed after a
+successful managed edit or write.
 
 #### Tier 2: Structural repository map
 
@@ -761,7 +768,7 @@ Recommended initial model-facing output limits:
 | Output | Limit |
 |---|---:|
 | File read | 400 lines or 32 KB |
-| Search output | 100 matches or 16 KB |
+| Indexed search output | 20 matches by default, 50 maximum, then 12,000 characters or 200 lines |
 | Generic shell output | 16 KB |
 | Test output | Aggregate plus first 10 failures |
 | Compiler output | First actionable diagnostics plus summary |

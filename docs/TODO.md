@@ -8,6 +8,7 @@ Each checked item is committed independently.
 - [x] Implement deterministic context compilation, prefix hashing, and coding-aware compaction.
 - [x] Implement the environment abstraction, command policy, bounded output, and four coding tools.
 - [x] Implement repository discovery, lexical/structural indexing, and compact repository maps.
+- [x] Pin native FFF search and expose bounded, cursor-paginated discovery through the existing `bash` tool.
 - [x] Implement event reduction, SQLite persistence, tool receipts, steering, and checkpoints.
 - [x] Implement deterministic verification and acceptance-criterion evidence.
 - [x] Wire the ADK 2.x coding agent, dynamic workflow, caching, compaction backstop, and resumability.

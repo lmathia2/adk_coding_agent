@@ -39,6 +39,7 @@ complete.
 
 - [x] Git revision, branch, dirty-state, language, and build-manifest discovery.
 - [x] Layered `AGENTS.md`, `CLAUDE.md`, and `AGENTS.override.md` loading.
+- [x] Locked in-process FFF grep/fuzzy-find with strict workspace confinement, grouped harness-owned pagination, durable opaque cursors, and post-mutation refresh.
 - [x] Incremental Python and TypeScript/JavaScript structural symbol index.
 - [x] Import/call relationships and task-ranked repository map.
 - [x] Adjacent-test inference.
@@ -77,11 +78,13 @@ complete.
 - [x] Candidate/baseline assignment, multi-metric promotion gates, provenance, and automatic rollback.
 - [x] Runtime integration that cannot broaden the four-tool surface or override deterministic verification.
 - [x] Programmatic high-fanout routing skill with a controlled paired-ablation definition.
+- [x] Deterministic FFF-versus-rg search ablation for ranking, context bytes, pagination completeness, and safety.
 
 ## Remaining hardening
 
 - [ ] Exercise the live Gemini/ADK workflow in a credentialed environment.
 - [ ] Run the programmatic-routing and optional semantic-provider ablations with live model credentials.
+- [ ] Run the FFF-versus-rg performance sample on representative developer machines; latency is reported, not a deterministic CI gate.
 - [x] Pin the unit- and import-tested Google ADK 2.7 minor and commit the resolved lockfile.
 - [x] Add large, real-repository evaluation tasks derived from human pull requests.
 - [x] Add container runtime adapters for Docker, Kubernetes, and enterprise remote sandboxes.

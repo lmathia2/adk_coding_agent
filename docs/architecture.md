@@ -85,7 +85,7 @@ Observational events do not mutate state implicitly. State changes are explicit 
 Repository discovery has four layers:
 
 1. **Manifest:** Git state, languages, build systems, commands, instructions, and top-level layout.
-2. **Lexical evidence:** `rg`, `git grep`, history, compiler, and test-runner commands through `bash`.
+2. **Lexical evidence:** in-process FFF indexed grep/fuzzy path discovery plus bounded `rg`, Git history, compiler, and test-runner commands through `bash`.
 3. **Structural map:** content-hash incremental signatures and relationships for Python and TypeScript/JavaScript.
 4. **Semantic fallback:** intentionally not part of the default implementation; it should be added only after an ablation demonstrates value.
 
@@ -100,7 +100,12 @@ The model-visible surface is fixed:
 - `edit(path, old_text, new_text, expected_sha256)`
 - `write(path, content, expected_sha256, expected_absent)`
 
-Search, Git, compilers, formatters, linters, and test runners are composed through `bash`. Rich operational details, full logs, and artifacts stay outside the model transcript.
+Search, Git, compilers, formatters, linters, and test runners are composed through
+`bash`. The strict `search grep|find|health` grammar is intercepted in-process before
+shell policy and execution; malformed reserved commands fail closed. FFF owns lazy
+workspace indexing while the harness owns exact limits, grouped pagination,
+content-addressed cursors, confinement, redaction, and output artifacts. Rich
+operational details, full logs, and artifacts stay outside the model transcript.
 
 ## Safety boundary
 
@@ -108,7 +113,8 @@ Tool calls pass through a managed adapter:
 
 ```text
 model call
-  → command classification
+  → reserved search parser ── valid search → confined FFF index
+  → ordinary command classification
   → approval decision
   → confined execution
   → bounded output
@@ -165,6 +171,7 @@ A task passes only when required commands succeed, no scope violation exists, an
 | Harness control events | append-only JSONL or transactional database adapter |
 | Current task state | replayed Task Ledger / ADK session state |
 | Tool idempotency | SQLite receipt store |
+| FFF cursor snapshots and optional frecency | SQLite/FFF state beneath the harness state root |
 | Workspace checkpoints | SQLite checkpoint store + Git worktree |
 | User steering | SQLite lease/ack queue |
 | Large outputs | artifact service |
@@ -186,7 +193,7 @@ app/agent/                 ADK App, coding worker, workflow nodes
 harness/context/           stable-prefix and bounded-context compiler
 harness/models/            typed contracts
 harness/orchestration/     pure reducers and route decisions
-harness/repo/              discovery and structural index
+harness/repo/              discovery, FFF lexical search, and structural index
 harness/tools/             four tools and managed ADK adapter
 harness/safety/            approval and redaction policy
 harness/state/             events, receipts, checkpoints, steering

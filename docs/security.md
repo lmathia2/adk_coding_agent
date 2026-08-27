@@ -68,6 +68,26 @@ Commands are split at shell control operators and pipelines. The highest-risk se
 
 Approval is represented by a fingerprint over the normalized operation. This allows the control plane to approve one exact command rather than enabling a broad category for the process.
 
+### Indexed-search branch
+
+Commands whose first token is the reserved word `search` are parsed before shell
+classification. Only the documented `grep`, `find`, and `health` grammar is accepted;
+unknown options, duplicate options, newlines, shell operators, and mixed cursor/query
+requests fail closed and never reach a shell. Every returned path is independently
+resolved beneath the workspace, `.git` and `.artifacts` are excluded, filesystem-root
+and home scans are refused, and symlink following is disabled.
+
+Opaque cursors are bound to a workspace and operation and to content hashes for
+matched files. Missing, tampered, cross-workspace, cross-operation, and stale cursors
+are rejected. Snapshot rows retain relative positions and hashes, not raw patterns or
+source bodies. Redacted spill artifacts can contain source snippets and therefore need
+the same retention and access controls as other tool artifacts.
+
+The native FFF library runs in the trusted host control plane for local and Docker
+bind-mounted workspaces. Its compromise blast radius is consequently larger than a
+sandboxed `rg` subprocess. Kubernetes and remote command backends do not enable
+host-side FFF because their host tree is not authoritative.
+
 The following should never be implemented as prompt-only rules:
 
 - filesystem confinement
@@ -160,3 +180,6 @@ Before production release, exercise:
 - held-out test modification
 - forced Git push and destructive reset
 - artifact retrieval across task boundaries
+- malformed virtual-search commands and cross-workspace/cross-operation/stale cursors
+- binary, ignored, internal-artifact, and external-symlink search decoys
+- secret-bearing and oversized search pages before and after artifact spill

@@ -8,3 +8,8 @@ by Google LLC. Synchronized copies retain their upstream notices and metadata.
 The implementation also studies transferable patterns from the
 [`long-horizon-harness`](https://github.com/google/adk-samples/tree/main/core/python/long-horizon-harness)
 recipe in `google/adk-samples`, also Apache-2.0.
+
+The locked runtime depends on
+[`fff-search`](https://github.com/dmtrKovalenko/fff) version 0.10.5 for native indexed
+file and content search. FFF is distributed under the MIT License; its wheel/source
+distribution retains the upstream license and copyright notice.
