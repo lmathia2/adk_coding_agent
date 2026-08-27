@@ -15,7 +15,8 @@ from google.adk import Context, Event, Workflow
 from google.adk.events import EventActions
 from google.adk.workflow import node
 
-from harness.context import prefix_hash
+from harness.context import build_compaction_snapshot, prefix_hash
+from harness.models import CompactionSnapshot
 from harness.models.agent_step import AgentStep
 from harness.models.checkpoint import Checkpoint
 from harness.models.ledger import TaskLedger
@@ -228,6 +229,46 @@ def _latest_compaction(task_id: str) -> tuple[str, str | None]:
         if event.kind == EventKind.COMPACTION_CREATED:
             return str(event.payload.get("summary", "")), event.event_id
     return "", None
+
+
+def _prepare_compaction(
+    task_id: str,
+    *,
+    ledger: TaskLedger,
+    tokens_before: int,
+) -> CompactionSnapshot:
+    """Build one deterministic snapshot from the uncompacted event suffix."""
+
+    events = _EVENT_STORE.read(task_id)
+    previous: CompactionSnapshot | str | None = None
+    boundary = 0
+    for index in range(len(events) - 1, -1, -1):
+        event = events[index]
+        if event.kind != EventKind.COMPACTION_CREATED:
+            continue
+        boundary = index + 1
+        snapshot_payload = event.payload.get("snapshot")
+        if isinstance(snapshot_payload, dict):
+            previous = CompactionSnapshot.model_validate(snapshot_payload)
+        else:
+            previous = str(event.payload.get("summary", ""))
+        break
+
+    uncompacted = events[boundary:]
+    retained_count = min(SETTINGS.recent_event_limit, len(uncompacted))
+    if retained_count:
+        events_to_summarize = uncompacted[:-retained_count]
+        retained_events = uncompacted[-retained_count:]
+    else:
+        events_to_summarize = uncompacted
+        retained_events = []
+    return build_compaction_snapshot(
+        ledger=ledger,
+        previous_summary=previous,
+        events_to_summarize=events_to_summarize,
+        retained_events=retained_events,
+        tokens_before=tokens_before,
+    )
 
 
 def _ledger_patch(before: TaskLedger, after: TaskLedger) -> dict[str, Any]:
@@ -766,17 +807,19 @@ async def _orchestrate_owned(
             continue
 
         if route == HarnessRoute.COMPACT:
-            compaction_summary = json.dumps(
-                ledger.compact_projection(),
-                sort_keys=True,
-                indent=2,
+            snapshot = _prepare_compaction(
+                task_id,
+                ledger=ledger,
+                tokens_before=total_context_estimate,
             )
+            compaction_summary = snapshot.summary_markdown
             event = _EVENT_STORE.append(
                 task_id,
                 EventKind.COMPACTION_CREATED,
                 {
                     "summary": compaction_summary,
                     "tokens_before_estimate": total_context_estimate,
+                    "snapshot": snapshot.model_dump(mode="json"),
                 },
                 idempotency_key=f"compact:{ledger.iteration}",
             )

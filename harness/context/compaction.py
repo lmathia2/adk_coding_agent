@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from harness.models import CompactionSnapshot, HarnessEvent, TaskLedger
+from harness.models import CompactionSnapshot, TaskLedger
 
 from .compiler import estimate_tokens, truncate_to_tokens
 
@@ -36,10 +38,41 @@ def _bullets(items: Sequence[str], *, empty: str = "- None") -> str:
     return "\n".join(f"- {item}" for item in values) if values else empty
 
 
-def _render_events(events: Sequence[HarnessEvent | str], *, max_chars: int) -> str:
+def _event_text(event: Any) -> str:
+    if isinstance(event, str):
+        return event
+    kind = getattr(event, "kind", None)
+    payload = getattr(event, "payload", None)
+    sequence = getattr(event, "sequence", None)
+    if kind is not None and isinstance(payload, dict) and sequence is not None:
+        return json.dumps(
+            {
+                "sequence": int(sequence),
+                "kind": str(kind),
+                "payload": payload,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+    canonical_json = getattr(event, "canonical_json", None)
+    if callable(canonical_json):
+        return str(canonical_json())
+    model_dump_json = getattr(event, "model_dump_json", None)
+    if callable(model_dump_json):
+        return str(model_dump_json())
+    return str(event)
+
+
+def _event_id(event: Any) -> str | None:
+    value = getattr(event, "event_id", None)
+    return str(value) if value else None
+
+
+def _render_events(events: Sequence[Any], *, max_chars: int) -> str:
     blocks: list[str] = []
     for event in events:
-        text = event if isinstance(event, str) else event.canonical_json()
+        text = _event_text(event)
         bounded, truncated = truncate_to_tokens(text, max(1, max_chars // 4))
         suffix = " [truncated]" if truncated else ""
         blocks.append(f"- {bounded}{suffix}")
@@ -50,8 +83,8 @@ def build_compaction_snapshot(
     *,
     ledger: TaskLedger,
     previous_summary: CompactionSnapshot | str | None = None,
-    events_to_summarize: Sequence[HarnessEvent | str] = (),
-    retained_events: Sequence[HarnessEvent | str] = (),
+    events_to_summarize: Sequence[Any] = (),
+    retained_events: Sequence[Any] = (),
     tokens_before: int = 0,
     policy: CompactionPolicy | None = None,
 ) -> CompactionSnapshot:
@@ -135,12 +168,10 @@ def build_compaction_snapshot(
         summary_markdown=summary,
         previous_summary_hash=previous_hash,
         first_retained_event_id=(
-            retained_events[0].event_id if retained_events and isinstance(retained_events[0], HarnessEvent) else None
+            _event_id(retained_events[0]) if retained_events else None
         ),
         last_summarized_event_id=(
-            events_to_summarize[-1].event_id
-            if events_to_summarize and isinstance(events_to_summarize[-1], HarnessEvent)
-            else None
+            _event_id(events_to_summarize[-1]) if events_to_summarize else None
         ),
         tokens_before=tokens_before,
         estimated_tokens_after=estimated_after,

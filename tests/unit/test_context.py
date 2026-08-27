@@ -14,6 +14,7 @@ from harness.models import (
     TaskRequest,
     ValidationResult,
 )
+from harness.state.events import HarnessEvent
 
 
 def _ledger() -> TaskLedger:
@@ -110,3 +111,28 @@ def test_compaction_policy_uses_reserved_window() -> None:
     assert policy.trigger_tokens == 6_000
     assert policy.should_compact(5_999) is False
     assert policy.should_compact(6_000) is True
+
+
+def test_compaction_snapshot_accepts_state_events_without_volatile_metadata() -> None:
+    summarized = HarnessEvent(
+        event_id="random-event-id",
+        task_id="task-1",
+        sequence=3,
+        kind="action.recorded",
+        payload={"path": "src/parser.py"},
+    )
+    retained = summarized.model_copy(
+        update={"event_id": "another-random-id", "sequence": 4}
+    )
+
+    snapshot = build_compaction_snapshot(
+        ledger=_ledger(),
+        events_to_summarize=[summarized],
+        retained_events=[retained],
+        tokens_before=20_000,
+    )
+
+    assert snapshot.last_summarized_event_id == "random-event-id"
+    assert snapshot.first_retained_event_id == "another-random-id"
+    assert '"sequence":3' in snapshot.summary_markdown
+    assert "random-event-id" not in snapshot.summary_markdown
