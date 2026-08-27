@@ -1,0 +1,3 @@
+{"agent":"reviewer","status":"ok","tool":"read"}
+{"agent":"reviewer","status":"error","tool":"bash"}
+{"agent":"reviewer","status":"ok","tool":"read"}

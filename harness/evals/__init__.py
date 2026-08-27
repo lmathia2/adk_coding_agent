@@ -19,9 +19,16 @@ from .real_repositories import (
 )
 from .skill_ablation import (
     REQUIRED_SKILL_ABLATION_METRICS,
+    SkillAblationExecutionPin,
     SkillAblationMetric,
     SkillAblationPlan,
+    SkillAblationReport,
+    SkillAblationSample,
+    SkillAblationSettings,
+    SkillAblationSummary,
     SkillAblationVariant,
+    ablation_harness_content_hash,
+    compare_skill_ablation,
     load_skill_ablation_plan,
 )
 
@@ -38,9 +45,16 @@ __all__ = [
     "HumanPullRequestSource",
     "RealRepositoryEvaluationCase",
     "RealRepositoryEvaluationSuite",
+    "SkillAblationExecutionPin",
     "SkillAblationMetric",
     "SkillAblationPlan",
+    "SkillAblationReport",
+    "SkillAblationSample",
+    "SkillAblationSettings",
+    "SkillAblationSummary",
     "SkillAblationVariant",
+    "ablation_harness_content_hash",
+    "compare_skill_ablation",
     "grade_case",
     "load_evaluation_suite",
     "load_real_repository_suite",

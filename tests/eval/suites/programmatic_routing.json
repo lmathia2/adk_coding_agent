@@ -1,0 +1,62 @@
+{
+  "suite_id": "programmatic-routing-v1",
+  "description": "Positive high-fanout routing workloads plus a localized negative control.",
+  "cases": [
+    {
+      "case_id": "trace-jsonl-high-fanout",
+      "description": "Aggregate structured trace records spread across multiple files.",
+      "fixture": "tests/fixtures/routing_trace_fanout",
+      "request": {
+        "goal": "Read every traces/*.jsonl record and create summary.json with total_events plus deterministically sorted by_agent, by_tool, and by_status counts.",
+        "acceptance_criteria": [
+          "All trace files and all records contribute exactly once",
+          "summary.json contains total_events, by_agent, by_tool, and by_status",
+          "All object keys are lexicographically sorted"
+        ],
+        "forbidden_paths": ["test_summary.py"],
+        "verification_requirements": ["pytest -q"]
+      },
+      "expected_changed_globs": ["summary.json"],
+      "forbidden_changed_globs": ["traces/**", "test_summary.py"],
+      "required_command_fragments": ["pytest", "git diff --check"],
+      "budgets": {"max_iterations": 8, "max_cost_usd": 0.25, "max_uncached_input_tokens": 20000, "max_wall_time_ms": 180000},
+      "tags": ["routing-positive", "high-fanout", "jsonl", "aggregation"]
+    },
+    {
+      "case_id": "source-marker-high-fanout",
+      "description": "Inventory repeated markers across a multi-file source tree.",
+      "fixture": "tests/fixtures/routing_source_fanout",
+      "request": {
+        "goal": "Find every LEGACY_API marker under src and create inventory.json containing total_matches and a lexicographically sorted by_path count map.",
+        "acceptance_criteria": [
+          "Every source file is searched",
+          "Every marker occurrence is counted exactly once",
+          "by_path includes only files containing a marker and is sorted"
+        ],
+        "forbidden_paths": ["test_inventory.py"],
+        "verification_requirements": ["pytest -q"]
+      },
+      "expected_changed_globs": ["inventory.json"],
+      "forbidden_changed_globs": ["src/**", "test_inventory.py"],
+      "required_command_fragments": ["pytest", "git diff --check"],
+      "budgets": {"max_iterations": 8, "max_cost_usd": 0.25, "max_uncached_input_tokens": 20000, "max_wall_time_ms": 180000},
+      "tags": ["routing-positive", "high-fanout", "multi-file-search"]
+    },
+    {
+      "case_id": "localized-calculator-negative-control",
+      "description": "Localized one-file bug fix where programmatic routing should not be used.",
+      "fixture": "tests/fixtures/buggy_calculator",
+      "request": {
+        "goal": "Fix calculator.multiply so it returns the product of its two integer arguments.",
+        "acceptance_criteria": ["multiply(6, 7) returns 42", "The public signature is unchanged"],
+        "forbidden_paths": ["test_calculator.py"],
+        "verification_requirements": ["pytest -q"]
+      },
+      "expected_changed_globs": ["calculator.py"],
+      "forbidden_changed_globs": ["test_calculator.py"],
+      "required_command_fragments": ["pytest", "git diff --check"],
+      "budgets": {"max_iterations": 8, "max_cost_usd": 0.25, "max_uncached_input_tokens": 20000, "max_wall_time_ms": 180000},
+      "tags": ["routing-negative", "localized", "one-file"]
+    }
+  ]
+}

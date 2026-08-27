@@ -1,11 +1,9 @@
 {
-  "ablation_id": "programmatic-tool-routing-v1",
-  "description": "Paired comparison of the unchanged four-tool harness with and without explicit programmatic-routing skill disclosure.",
-  "suite_path": "tests/eval/suites/real_repositories.json",
-  "case_ids": [
-    "django-asgi-script-prefix-boundary",
-    "ruff-sim105-preserve-except-semantics"
-  ],
+  "ablation_id": "programmatic-tool-routing-v2",
+  "description": "Paired comparison with exact skill, harness, model, prefix, settings, and disclosure evidence pins.",
+  "suite_path": "tests/eval/suites/programmatic_routing.json",
+  "positive_case_ids": ["trace-jsonl-high-fanout", "source-marker-high-fanout"],
+  "negative_case_ids": ["localized-calculator-negative-control"],
   "required_metrics": [
     "pass_rate",
     "cost_per_passed_task",
@@ -15,26 +13,30 @@
     "tool_calls",
     "wall_time_ms"
   ],
+  "execution": {
+    "skill_name": "programmatic-tool-routing",
+    "skill_content_hash": "2e92b0829e76ea13fa7575ee29f78078abc7df9ef37962e9f518ab3cddf3f5fe",
+    "model": "gemini-3.7-flash",
+    "reasoning": "default",
+    "harness_content_hash": "cb8d7d4ae2dbd3766b6133caed7fb9e0159b07e9bee707a3cc8194e50d694c94",
+    "static_prefix_hash": "b0755e04a87e523a23345c6608e0abf7267b0965a97baf0373503518364730fe",
+    "settings": {
+      "max_iterations": 8,
+      "skill_context_bytes": 24000,
+      "skill_max_selected": 3,
+      "tool_timeout_seconds": 120,
+      "network_mode": "deny",
+      "trace_mode": "metadata"
+    }
+  },
   "baseline": {
     "variant": "baseline",
     "selected_skills": [],
-    "model_visible_tools": [
-      "read",
-      "bash",
-      "edit",
-      "write"
-    ]
+    "model_visible_tools": ["read", "bash", "edit", "write"]
   },
   "candidate": {
     "variant": "routing-skill",
-    "selected_skills": [
-      "programmatic-tool-routing"
-    ],
-    "model_visible_tools": [
-      "read",
-      "bash",
-      "edit",
-      "write"
-    ]
+    "selected_skills": ["programmatic-tool-routing"],
+    "model_visible_tools": ["read", "bash", "edit", "write"]
   }
 }
