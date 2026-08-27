@@ -18,6 +18,7 @@ class EventKind(StrEnum):
     LEDGER_PATCHED = "ledger.patched"
     WORKSPACE_INITIALIZED = "workspace.initialized"
     ACTION_RECORDED = "action.recorded"
+    TOOL_ARTIFACT_RECORDED = "tool.artifact_recorded"
     STEERING_RECEIVED = "steering.received"
     COMPACTION_CREATED = "compaction.created"
     CHECKPOINT_CREATED = "checkpoint.created"

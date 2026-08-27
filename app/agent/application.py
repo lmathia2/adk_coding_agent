@@ -11,7 +11,7 @@ from google.adk.apps.app import App, EventsCompactionConfig, ResumabilityConfig
 from harness.context import prefix_hash
 from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin, pricing_from_env
-from harness.tracing import HarnessTracePlugin, TraceContentMode
+from harness.tracing import CodingToolArtifactPlugin, HarnessTracePlugin, TraceContentMode
 
 from .config import SETTINGS
 from .learning import VerifiedTraceLearningPlugin
@@ -81,7 +81,11 @@ def _optional_int_env(name: str, *, minimum: int) -> int | None:
     return value
 
 
-_PLUGINS = [_METRICS_PLUGIN, _MEMORY_PLUGIN]
+_TOOL_ARTIFACT_PLUGIN = CodingToolArtifactPlugin(
+    event_store=_EVENT_STORE,
+    default_task_id=SETTINGS.task_id_override,
+)
+_PLUGINS = [_METRICS_PLUGIN, _MEMORY_PLUGIN, _TOOL_ARTIFACT_PLUGIN]
 _TRACE_PLUGIN = _build_trace_plugin()
 if _TRACE_PLUGIN is not None:
     _PLUGINS.insert(

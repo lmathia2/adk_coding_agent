@@ -83,7 +83,7 @@ def _event_id(event: Any) -> str | None:
     return str(value) if value else None
 
 
-def _safe_artifact_uri(value: Any, *, max_chars: int) -> str | None:
+def safe_artifact_uri(value: Any, *, max_chars: int = 512) -> str | None:
     """Accept only opaque, content-addressed artifact references emitted by the harness."""
 
     if not isinstance(value, str) or not value or len(value) > max_chars:
@@ -131,7 +131,7 @@ def _redact_unsafe_artifact_fields(
         for key, nested in value.items():
             if key == "artifact_uri":
                 sanitized[key] = (
-                    _safe_artifact_uri(nested, max_chars=max_chars)
+                    safe_artifact_uri(nested, max_chars=max_chars)
                     or "<unsafe-artifact-reference-omitted>"
                 )
             elif (
@@ -142,7 +142,7 @@ def _redact_unsafe_artifact_fields(
                 sanitized[key] = [
                     artifact
                     for item in nested
-                    if (artifact := _safe_artifact_uri(item, max_chars=max_chars)) is not None
+                    if (artifact := safe_artifact_uri(item, max_chars=max_chars)) is not None
                 ]
             else:
                 sanitized[key] = _redact_unsafe_artifact_fields(
@@ -183,7 +183,7 @@ def _structured_artifact_values(
             nested = value[key]
             if key == "artifact_uri":
                 remaining_nodes[0] -= 1
-                artifact = _safe_artifact_uri(nested, max_chars=max_chars)
+                artifact = safe_artifact_uri(nested, max_chars=max_chars)
                 if artifact is not None:
                     found.append(artifact)
                 continue
@@ -196,7 +196,7 @@ def _structured_artifact_values(
                     if remaining_nodes[0] <= 0:
                         break
                     remaining_nodes[0] -= 1
-                    artifact = _safe_artifact_uri(item, max_chars=max_chars)
+                    artifact = safe_artifact_uri(item, max_chars=max_chars)
                     if artifact is not None:
                         found.append(artifact)
                 continue
@@ -241,7 +241,7 @@ def _summary_artifacts(summary: str, *, max_chars: int) -> list[str]:
     found: list[str] = []
     for block in _ARTIFACT_BLOCK_PATTERN.findall(summary[:_MAX_ARTIFACT_SUMMARY_CHARS]):
         for line in block.splitlines():
-            artifact = _safe_artifact_uri(line.strip(), max_chars=max_chars)
+            artifact = safe_artifact_uri(line.strip(), max_chars=max_chars)
             if artifact is not None:
                 found.append(artifact)
     return found
@@ -296,7 +296,7 @@ def _collect_artifacts(
     selected: list[str] = []
     seen: set[str] = set()
     for candidate in candidates:
-        safe_candidate = _safe_artifact_uri(
+        safe_candidate = safe_artifact_uri(
             candidate,
             max_chars=policy.max_artifact_uri_chars,
         )

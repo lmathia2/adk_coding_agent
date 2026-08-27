@@ -13,7 +13,11 @@ import pytest
 from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.state.postgres import TaskLease
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin
-from harness.tracing import HarnessTracePlugin, TraceContentMode
+from harness.tracing import (
+    CodingToolArtifactPlugin,
+    HarnessTracePlugin,
+    TraceContentMode,
+)
 
 
 def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> None:
@@ -33,6 +37,7 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert module.app.events_compaction_config.event_retention_size == 20
     assert any(isinstance(plugin, HarnessMetricsPlugin) for plugin in module.app.plugins)
     assert any(isinstance(plugin, VerifiedProjectMemoryPlugin) for plugin in module.app.plugins)
+    assert any(isinstance(plugin, CodingToolArtifactPlugin) for plugin in module.app.plugins)
     trace_plugin = next(
         plugin for plugin in module.app.plugins if isinstance(plugin, HarnessTracePlugin)
     )
