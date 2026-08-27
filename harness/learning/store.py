@@ -200,6 +200,23 @@ class LearningStore:
             else None
         )
 
+    def experiment_assignment(self, experiment_id: str) -> TrialAssignment | None:
+        """Return the canonical revision pin shared by an experiment's units."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT assignment_json FROM learning_trial_assignments
+                WHERE experiment_id=? ORDER BY unit_id LIMIT 1
+                """,
+                (experiment_id,),
+            ).fetchone()
+        return (
+            TrialAssignment.model_validate_json(str(row["assignment_json"]))
+            if row
+            else None
+        )
+
     def record_outcome(self, outcome: TrialOutcome) -> TrialOutcome:
         assignment = self.assignment(outcome.experiment_id, outcome.unit_id)
         if assignment is None:

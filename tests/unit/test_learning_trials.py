@@ -382,3 +382,57 @@ def test_disabled_skill_cannot_be_repromoted_by_stale_trial_results(
     assert not decision.promote
     assert "only candidates may promote" in decision.reasons[0]
     assert registry.load(skill_name).status == "disabled"  # type: ignore[union-attr]
+
+
+def test_controller_refuses_to_promote_modified_candidate_content(
+    tmp_path: Path,
+) -> None:
+    store = LearningStore(tmp_path / "learning.db")
+    registry = SkillRegistry(tmp_path / "skills")
+    skill_name = _candidate(registry)
+    controller = TraceSkillLearningController(
+        store=store,
+        registry=registry,
+        policy=PromotionPolicy(minimum_support=2),
+    )
+    experiment = f"skill:{skill_name}:v1"
+    candidate_hash = registry.content_hash(skill_name)
+    for variant in ("baseline", "candidate"):
+        for index in range(2):
+            unit = f"{variant}-{index}"
+            store.save_assignment(
+                _assignment(
+                    experiment,
+                    unit,
+                    skill_name,
+                    variant,
+                    candidate_hash,
+                )
+            )
+            controller.record_outcome(
+                _outcome(
+                    experiment,
+                    unit,
+                    skill_name,
+                    variant,
+                    _quality(),
+                    candidate_hash,
+                )
+            )
+
+    manifest = tmp_path / "skills" / "candidates" / skill_name / "SKILL.md"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + "\nUnevaluated instruction.\n",
+        encoding="utf-8",
+    )
+
+    decision = controller.evaluate_and_promote(
+        skill_name=skill_name,
+        experiment_id=experiment,
+    )
+
+    assert not decision.promote
+    assert decision.reasons == ("skill content changed before transition",)
+    lifecycle = registry.load(skill_name)
+    assert lifecycle is not None
+    assert lifecycle.status == "candidate"

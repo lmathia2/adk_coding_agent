@@ -127,7 +127,35 @@ class TraceSkillLearningController:
             policy=self.policy,
         )
         if decision.promote and lifecycle.status == "candidate":
-            self.registry.promote(skill_name, decision)
+            assignment = self.store.experiment_assignment(experiment_id)
+            if assignment is None:
+                return PromotionDecision(
+                    promote=False,
+                    reasons=("skill experiment has no persisted revision pin",),
+                    baseline=decision.baseline,
+                    candidate=decision.candidate,
+                )
+            if assignment.skill_name != skill_name:
+                return PromotionDecision(
+                    promote=False,
+                    reasons=("skill experiment is pinned to another skill",),
+                    baseline=decision.baseline,
+                    candidate=decision.candidate,
+                )
+            try:
+                self.registry.promote(
+                    skill_name,
+                    decision,
+                    expected_version=assignment.skill_version,
+                    expected_content_hash=assignment.candidate_content_hash,
+                )
+            except ValueError as error:
+                return PromotionDecision(
+                    promote=False,
+                    reasons=(str(error),),
+                    baseline=decision.baseline,
+                    candidate=decision.candidate,
+                )
         elif decision.promote:
             return PromotionDecision(
                 promote=False,

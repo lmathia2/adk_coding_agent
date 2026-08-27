@@ -262,11 +262,21 @@ class SkillRegistry:
         self,
         name: str,
         status: str,
+        *,
+        expected_version: int | None = None,
+        expected_content_hash: str | None = None,
     ) -> SkillLifecycle:
         with self._lifecycle_lock():
             current = self.load(name)
             if current is None:
                 raise KeyError(name)
+            if expected_version is not None and current.version != expected_version:
+                raise ValueError("skill lifecycle version changed before transition")
+            if (
+                expected_content_hash is not None
+                and self.content_hash(name) != expected_content_hash
+            ):
+                raise ValueError("skill content changed before transition")
             if current.status == status:
                 return current
             updated = SkillLifecycle.model_validate(
@@ -299,10 +309,18 @@ class SkillRegistry:
         self,
         name: str,
         decision: PromotionDecision,
+        *,
+        expected_version: int | None = None,
+        expected_content_hash: str | None = None,
     ) -> SkillLifecycle:
         if not decision.promote:
             raise ValueError("candidate did not pass promotion gates")
-        return self._set_status(name, "enabled")
+        return self._set_status(
+            name,
+            "enabled",
+            expected_version=expected_version,
+            expected_content_hash=expected_content_hash,
+        )
 
     def disable(self, name: str) -> SkillLifecycle:
         return self._set_status(name, "disabled")
