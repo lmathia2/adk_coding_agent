@@ -7,6 +7,18 @@ from .discovery import (
     collect_project_instructions,
     discover_instruction_files,
 )
+from .fff_search import (
+    DEFAULT_SEARCH_LIMIT,
+    MAX_SEARCH_CONTEXT,
+    MAX_SEARCH_LIMIT,
+    FffSearchService,
+    SearchBackend,
+    SearchCursorError,
+    SearchError,
+    SearchMode,
+    SearchPage,
+    SearchUnavailableError,
+)
 from .index import (
     FileRecord,
     IndexSnapshot,
@@ -38,10 +50,14 @@ from .intelligence import (
 )
 
 __all__ = [
+    "DEFAULT_SEARCH_LIMIT",
+    "MAX_SEARCH_CONTEXT",
+    "MAX_SEARCH_LIMIT",
     "AllowlistedCliExecutable",
     "BuildCommand",
     "CliOperationCommand",
     "EvidenceCompleteness",
+    "FffSearchService",
     "FileRecord",
     "IndexSnapshot",
     "IntelligenceBackendStatus",
@@ -56,7 +72,13 @@ __all__ = [
     "RepositoryIntelligenceQuery",
     "RepositoryIntelligenceResult",
     "RepositoryManifest",
+    "SearchBackend",
+    "SearchCursorError",
+    "SearchError",
     "SearchHit",
+    "SearchMode",
+    "SearchPage",
+    "SearchUnavailableError",
     "SemanticBackendDisabledError",
     "SemanticCliCommandPlan",
     "SemanticExecutionReceipt",
