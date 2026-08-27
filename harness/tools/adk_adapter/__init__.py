@@ -11,16 +11,24 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from harness.approvals import ApprovalStore
 from harness.safety import ApprovalAction, ApprovalPolicy, SecretRedactor
 from harness.sandbox import CommandSandbox, SandboxRequest, create_command_sandbox
 from harness.state import ToolReceiptStore
+from harness.tools.output import bound_output
+
+_CONTENT_ARTIFACT_NAME = re.compile(r"^(?P<digest>[0-9a-f]{64})\.[A-Za-z0-9]{1,12}$")
+_COMMAND_ARTIFACT_NAME = re.compile(r"^command-(?P<digest>[0-9a-f]{64})\.log$")
+_MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+_MAX_ARTIFACT_OUTPUT_CHARS = 31_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +108,116 @@ def _normalize_result(value: Any) -> dict[str, Any]:
     return {"status": "ok", "model_text": str(value)}
 
 
+class _ArtifactResolver:
+    """Resolve only harness-owned content-addressed artifacts for managed read."""
+
+    def __init__(self, *, workspace: Path, state_root: Path) -> None:
+        self.workspace_artifact_root = (
+            workspace / ".artifacts" / "tool-output"
+        ).resolve()
+        self.command_artifact_root = (
+            state_root / "artifacts" / "commands"
+        ).resolve()
+
+    @staticmethod
+    def _confined_file(root: Path, candidate: Path) -> Path:
+        try:
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(root)
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            raise ValueError("artifact URI is outside managed artifact roots") from exc
+        if not resolved.is_file():
+            raise ValueError("artifact URI does not identify a regular file")
+        return resolved
+
+    def _target(self, uri: str) -> tuple[Path, str]:
+        try:
+            parsed = urlsplit(uri)
+        except ValueError as exc:
+            raise ValueError("invalid artifact URI") from exc
+        if parsed.query or parsed.fragment or parsed.username or parsed.password:
+            raise ValueError("artifact URI cannot contain credentials, query, or fragment")
+
+        if parsed.scheme == "artifact":
+            if parsed.netloc != "tool-output":
+                raise ValueError("unsupported artifact collection")
+            match = _CONTENT_ARTIFACT_NAME.fullmatch(parsed.path.removeprefix("/"))
+            if match is None or parsed.path.count("/") != 1:
+                raise ValueError("artifact URI must use a content-addressed filename")
+            target = self._confined_file(
+                self.workspace_artifact_root,
+                self.workspace_artifact_root / parsed.path.removeprefix("/"),
+            )
+            return target, match.group("digest")
+
+        if parsed.scheme == "file":
+            if parsed.netloc not in {"", "localhost"}:
+                raise ValueError("file artifact URI must be local")
+            decoded = unquote(parsed.path)
+            if not decoded.startswith("/") or any(ord(char) < 32 for char in decoded):
+                raise ValueError("file artifact URI must contain a safe absolute path")
+            candidate = Path(decoded)
+            match = _COMMAND_ARTIFACT_NAME.fullmatch(candidate.name)
+            if match is None:
+                raise ValueError("file artifact URI must use a command content hash")
+            target = self._confined_file(self.command_artifact_root, candidate)
+            return target, match.group("digest")
+
+        raise ValueError("unsupported artifact URI scheme")
+
+    def read(self, uri: str, *, offset: int, limit: int) -> dict[str, Any]:
+        if offset < 1:
+            raise ValueError("offset must be at least 1")
+        if limit < 1 or limit > 400:
+            raise ValueError("limit must be between 1 and 400 lines")
+        target, expected_digest = self._target(uri)
+        with target.open("rb") as stream:
+            content = stream.read(_MAX_ARTIFACT_BYTES + 1)
+        if len(content) > _MAX_ARTIFACT_BYTES:
+            raise ValueError("artifact exceeds the managed read byte limit")
+        size = len(content)
+        actual_digest = hashlib.sha256(content).hexdigest()
+        if actual_digest != expected_digest:
+            raise ValueError("artifact content hash does not match its URI")
+        if b"\x00" in content[:8_192]:
+            raise ValueError("binary artifacts cannot be read as text")
+
+        text = content.decode("utf-8", errors="replace")
+        lines = text.splitlines()
+        start = min(offset - 1, len(lines))
+        selected = lines[start : start + limit]
+        rendered = "\n".join(
+            f"{start + index + 1:>6} | {line}"
+            for index, line in enumerate(selected)
+        )
+        bounded = bound_output(
+            rendered,
+            max_chars=_MAX_ARTIFACT_OUTPUT_CHARS,
+            max_lines=400,
+        )
+        has_more = start + len(selected) < len(lines)
+        header = (
+            f"{uri}\nsha256: {actual_digest}\n"
+            f"lines: {start + 1}-{start + len(selected)} of {len(lines)}"
+        )
+        if has_more:
+            header += f"\n[more available: read offset={start + len(selected) + 1}]"
+        selected_bytes = len("\n".join(selected).encode("utf-8", errors="replace"))
+        omitted_bytes = max(0, size - selected_bytes) + min(
+            selected_bytes,
+            bounded.omitted_bytes,
+        )
+        return {
+            "status": "ok",
+            "model_text": f"{header}\n\n{bounded.text}",
+            "truncated": has_more or bounded.truncated,
+            "omitted_bytes": omitted_bytes,
+            "artifact_uri": uri,
+            "content_hashes": {uri: actual_digest},
+            "ui_details": {"artifact": True, "total_lines": len(lines)},
+        }
+
+
 class _ManagedTools:
     def __init__(
         self,
@@ -111,10 +229,19 @@ class _ManagedTools:
         legacy = _legacy_module()
         self.base = legacy.create_adk_tools(self.workspace)
         state_root = _state_root(self.workspace)
-        self.sandbox = sandbox or create_command_sandbox(self.workspace, state_root)
+        known_secrets = _known_secrets()
+        self.sandbox = sandbox or create_command_sandbox(
+            self.workspace,
+            state_root,
+            known_secrets=known_secrets,
+        )
         self.receipts = ToolReceiptStore(state_root / "managed-tools.db")
         self.approvals = ApprovalStore(state_root / "approvals.db")
-        self.redactor = SecretRedactor(known_secrets=_known_secrets())
+        self.redactor = SecretRedactor(known_secrets=known_secrets)
+        self.artifacts = _ArtifactResolver(
+            workspace=self.workspace,
+            state_root=state_root,
+        )
         approved = {
             item.strip()
             for item in os.getenv("ADK_CODING_APPROVED_COMMAND_FINGERPRINTS", "").split(",")
@@ -136,6 +263,10 @@ class _ManagedTools:
         return self.redactor.redact(normalized)
 
     def read(self, path: str, offset: int = 1, limit: int = 400) -> dict[str, Any]:
+        if path.startswith(("artifact://", "file://")):
+            return self._redact(self.artifacts.read(path, offset=offset, limit=limit))
+        if "://" in path:
+            raise ValueError("unsupported read URI scheme")
         return self._redact(self.base.read(path=path, offset=offset, limit=limit))
 
     def bash(self, command: str, timeout_seconds: int = 120) -> dict[str, Any]:

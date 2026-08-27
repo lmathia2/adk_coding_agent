@@ -16,7 +16,7 @@ _TOOLS = create_adk_tools(SETTINGS.workspace)
 
 
 def read(path: str, offset: int = 1, limit: int = 400) -> dict[str, Any]:
-    """Read a bounded, line-numbered range from a workspace file."""
+    """Read a bounded range from a workspace file or recoverable artifact URI."""
 
     return _TOOLS.read(path=path, offset=offset, limit=limit)
 
