@@ -1,6 +1,7 @@
 """Transport contracts for reusable agent clients."""
 
 from .adk_mapper import AdkAgUiNormalizer, map_adk_event
+from .bootstrap import ServerAssembly, build_server_assembly, require_loopback_host
 from .protocol import (
     PROTOCOL_VERSION,
     AckMessage,
@@ -84,6 +85,7 @@ __all__ = [
     "RunExecutionFactory",
     "RunRecord",
     "RunStatus",
+    "ServerAssembly",
     "ServerEnvelope",
     "ServerErrorMessage",
     "ServerHello",
@@ -95,8 +97,10 @@ __all__ = [
     "TaskAcceptedMessage",
     "WebSocketServerSettings",
     "authenticate_local_connection",
+    "build_server_assembly",
     "create_websocket_app",
     "map_adk_event",
     "parse_client_message",
     "parse_server_message",
+    "require_loopback_host",
 ]

@@ -185,11 +185,73 @@ def _parser() -> argparse.ArgumentParser:
     add_steering_target(steering_status)
     steering_status.add_argument("--include-content", action="store_true")
     steering_status.add_argument("--limit", type=int, default=100)
+
+    serve = subparsers.add_parser(
+        "serve",
+        help="Serve the configured harness over the bidirectional WebSocket protocol",
+    )
+    serve.add_argument("--workspace", type=Path, default=Path.cwd())
+    serve.add_argument("--state-root", type=Path)
+    serve.add_argument("--config", type=Path)
+    serve.add_argument(
+        "--print-config",
+        action="store_true",
+        help="Resolve and print server settings without starting the network listener",
+    )
     return parser
+
+
+def _serve(args: argparse.Namespace) -> int:
+    from harness.config import DEFAULT_COMPOSITION_PATH
+    from harness.server.bootstrap import build_server_assembly
+
+    workspace = args.workspace.expanduser().resolve()
+    state_root = (
+        args.state_root.expanduser().resolve()
+        if args.state_root is not None
+        else _default_state_root(workspace)
+    )
+    assembly = build_server_assembly(
+        workspace=workspace,
+        state_root=state_root,
+        config_path=args.config or DEFAULT_COMPOSITION_PATH,
+    )
+    server = assembly.composition.server
+    if args.print_config:
+        print(
+            json.dumps(
+                {
+                    "config_sha256": assembly.composition.composition_sha256,
+                    "harness": assembly.coordinator.descriptor.implementation,
+                    "host": server.host,
+                    "port": server.port,
+                    "state_root": assembly.state_root.as_posix(),
+                    "websocket_url": (
+                        f"ws://{server.host}:{server.port}{server.websocket_path}"
+                    ),
+                    "workspace": assembly.workspace.as_posix(),
+                },
+                sort_keys=True,
+                indent=2,
+            )
+        )
+        return 0
+
+    import uvicorn
+
+    uvicorn.run(
+        assembly.app,
+        host=server.host,
+        port=server.port,
+        ws_max_size=64 * 1024,
+    )
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command == "serve":
+        return _serve(args)
     if args.command in {"steer", "steering-status"}:
         state_root = _steering_state_root(
             repository=args.repository,
