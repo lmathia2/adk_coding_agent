@@ -19,7 +19,8 @@ complete.
   credential-free tested Magnitude configuration example with environment-only secrets.
 - [x] Repeatable lockfile-based checkout installer with full macOS prerequisite
   bootstrap, fresh uv environment creation, Bubble Tea TUI build, Magnitude
-  service/model discovery, and generated local-model composition.
+  service/model discovery, generated local-model composition, and an installed
+  two-command server/TUI launcher with shared state and secret-safe token handoff.
 - [x] Registered Pi harness factory with implementation-owned strict configuration,
   explicit runtime bindings, isolated builds, and a swappable test harness behind the
   same public contract.

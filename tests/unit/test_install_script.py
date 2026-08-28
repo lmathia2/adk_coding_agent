@@ -38,6 +38,7 @@ def test_install_script_reports_platform_aware_plan_without_installing() -> None
     assert "Installation plan:" in completed.stdout
     assert f"Python environment: {root}/.venv" in completed.stdout
     assert "remove and recreate on every installation" in completed.stdout
+    assert "Runtime launcher:" in completed.stdout
     assert "Launch workspace: selected at runtime" in completed.stdout
 
 

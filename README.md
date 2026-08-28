@@ -27,7 +27,7 @@ The model-facing surface is intentionally small: a stable instruction prefix and
 On macOS, install [Homebrew](https://brew.sh) once. The installer detects macOS and,
 in one run, installs any missing uv, Git, Node.js/npm, and Go prerequisites through
 Homebrew; installs the compatible Magnitude CLI; creates the locked Python environment;
-builds the Bubble Tea TUI; and exposes both commands on your user PATH:
+builds the Bubble Tea TUI; and exposes the CLI, TUI, and launcher on your user PATH:
 
 ```bash
 ./install.sh
@@ -39,16 +39,25 @@ If this is the first Magnitude installation, select and install a local model on
 magnitude setup
 ```
 
+At Magnitude's **Select harness** step, choose **Magnitude** to complete setup. The
+model selection is stored in Magnitude's shared state and this coding harness discovers
+it from there. Magnitude 0.0.8 exposes a closed list of built-in harness connectors, so
+`ADK Coding Agent` does not yet appear as its own row; that requires an upstream
+Magnitude connector and does not affect local-model compatibility here.
+
+If setup prints an error, check whether it completed before rerunning it:
+
+```bash
+magnitude models list
+```
+
+A selected primary model means the setup state was saved. An empty result means setup
+did not finish; rerun `magnitude setup` in an interactive terminal.
+
 ### 2. Start the coding-agent server in Terminal 1
 
 ```bash
-cd "$HOME/src/coding_tools"
-STATE_ROOT="$HOME/.local/state/adk-coding-agent"
-
-mkdir -p "$STATE_ROOT"
-adk-coding-agent serve-magnitude \
-  --workspace "$(pwd)" \
-  --state-root "$STATE_ROOT"
+adk-agent-start server --workspace "$HOME/src/coding_tools"
 ```
 
 Leave Terminal 1 running. The server listens locally and exposes the agent at
@@ -58,21 +67,40 @@ the TUI and may return `404 Not Found`.
 ### 3. Start the TUI in Terminal 2
 
 ```bash
-STATE_ROOT="$HOME/.local/state/adk-coding-agent"
-export ADK_CODING_AGENT_TOKEN="$(cat "$STATE_ROOT/server/auth-token")"
-
-adk-agent-tui --server ws://127.0.0.1:8765/v1/agent
+adk-agent-start tui
 ```
 
 Type a request in the TUI and press Enter. You can send additional guidance while
 the agent is running; the server delivers it at the next safe steering point.
 
+Both commands announce the resolved configuration before starting. By default the
+shared state is saved under `~/.local/state/adk-coding-agent`; the server writes the
+secret to `server/auth-token` beneath that directory, and the TUI launcher reads it
+from there. The launcher exports `ADK_CODING_AGENT_TOKEN` only to the TUI child
+process and never prints it or puts it on the command line. It reads the optional
+`ADK_CODING_AGENT_STATE_ROOT` override in both terminals and reads
+`ADK_CODING_AGENT_SERVER_URL` when starting the TUI. Equivalent flag overrides are
+`--state-root` for either command and `--server` for the TUI.
+
+The server workspace defaults to the current directory, so this also works:
+
+```bash
+# Terminal 1, from the repository to edit
+adk-agent-start server
+
+# Terminal 2, from any directory
+adk-agent-start tui
+```
+
+Use `--` to forward additional arguments to the underlying command, for example
+`adk-agent-start tui -- --input "Inspect this repository and run its tests"`.
+
 ### Installation behavior and options
 
 The installer is safe to rerun. It removes only this checkout's `.venv`, recreates it
 with uv, syncs every selected Python dependency from `uv.lock`, verifies
-the required imports and commands, and links the CLI into `~/.local/bin` (or
-`UV_TOOL_BIN_DIR`). It never replaces an existing non-symlink. On other operating
+the required imports and commands, and links the CLI and launcher into `~/.local/bin`
+(or `UV_TOOL_BIN_DIR`). It never replaces an existing non-symlink. On other operating
 systems, install Python 3.11+, uv, Git, npm, and Go 1.24+ before requesting their
 corresponding features. Options:
 
@@ -150,10 +178,7 @@ server:
 ./install.sh
 magnitude setup
 
-mkdir -p "$HOME/.local/state/adk-coding-agent"
-adk-coding-agent serve-magnitude \
-  --workspace /absolute/path/to/repository \
-  --state-root "$HOME/.local/state/adk-coding-agent"
+adk-agent-start server --workspace /absolute/path/to/repository
 ```
 
 `serve-magnitude` runs `magnitude server start` when the endpoint is not already
@@ -169,10 +194,7 @@ The installer prints the complete launch sequence. Keep the harness in the first
 terminal and connect the TUI from a second terminal:
 
 ```bash
-STATE_ROOT="$HOME/.local/state/adk-coding-agent"
-export ADK_CODING_AGENT_TOKEN="$(cat "$STATE_ROOT/server/auth-token")"
-adk-agent-tui --server ws://127.0.0.1:8765/v1/agent \
-  --input "Inspect this repository and run its tests"
+adk-agent-start tui -- --input "Inspect this repository and run its tests"
 ```
 
 The generated YAML stores only an environment-variable reference, never the token.

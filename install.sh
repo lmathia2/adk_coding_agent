@@ -170,6 +170,7 @@ if [ "$print_plan" -eq 1 ]; then
     "  Bubble Tea TUI: $include_tui" \
     "  Development tools: $include_dev" \
     "  Command directory: $bin_dir" \
+    "  Runtime launcher: $bin_dir/adk-agent-start" \
     '  Launch workspace: selected at runtime from the server terminal'
   if [ "$platform" = "Darwin" ]; then
     printf '%s\n' '  Missing uv, Git, Node.js/npm, and Go are installed with Homebrew.'
@@ -255,8 +256,13 @@ fi
 
 mkdir -p "$bin_dir"
 cli_target="$bin_dir/adk-coding-agent"
+launcher_target="$bin_dir/adk-agent-start"
 if [ -e "$cli_target" ] && [ ! -L "$cli_target" ]; then
   printf 'error: refusing to replace non-symlink: %s\n' "$cli_target" >&2
+  exit 1
+fi
+if [ -e "$launcher_target" ] && [ ! -L "$launcher_target" ]; then
+  printf 'error: refusing to replace non-symlink: %s\n' "$launcher_target" >&2
   exit 1
 fi
 if [ "$include_tui" -eq 1 ]; then
@@ -314,6 +320,17 @@ ln -s "$cli_source" "$temporary_link"
 mv -f "$temporary_link" "$cli_target"
 trap - EXIT HUP INT TERM
 
+launcher_source="$project_root/start.sh"
+if [ ! -x "$launcher_source" ]; then
+  printf 'error: missing executable launcher: %s\n' "$launcher_source" >&2
+  exit 1
+fi
+temporary_link="$launcher_target.tmp.$$"
+trap 'rm -f "$temporary_link"' EXIT HUP INT TERM
+ln -s "$launcher_source" "$temporary_link"
+mv -f "$temporary_link" "$launcher_target"
+trap - EXIT HUP INT TERM
+
 if [ "$include_tui" -eq 1 ]; then
   temporary_tui=$(mktemp "${TMPDIR:-/tmp}/adk-agent-tui.XXXXXX")
   trap 'rm -f "$temporary_tui"' EXIT HUP INT TERM
@@ -330,7 +347,8 @@ if [ "$include_tui" -eq 1 ]; then
   trap - EXIT HUP INT TERM
 fi
 
-printf '\nInstalled:\n  Python environment: %s/.venv\n  CLI: %s\n' "$project_root" "$cli_target"
+printf '\nInstalled:\n  Python environment: %s/.venv\n  CLI: %s\n  Launcher: %s\n' \
+  "$project_root" "$cli_target" "$launcher_target"
 if [ "$include_tui" -eq 1 ]; then
   printf '  TUI: %s\n' "$tui_target"
 fi
@@ -343,18 +361,17 @@ if [ "$include_magnitude" -eq 1 ] && [ "$include_tui" -eq 1 ]; then
     '' \
     'Installation is complete. If Magnitude has not selected and installed a model yet, run:' \
     '  magnitude setup' \
+    'A completed setup can be checked with: magnitude models list' \
     '' \
     'After Magnitude setup, run the coding agent in two terminals:' \
     '' \
-    'Terminal 1 — from the repository the coding agent should edit:' \
-    '  STATE_ROOT="$HOME/.local/state/adk-coding-agent"' \
-    '  mkdir -p "$STATE_ROOT"' \
-    '  adk-coding-agent serve-magnitude --workspace "$(pwd)" --state-root "$STATE_ROOT"' \
+    'Terminal 1 — start the server for the repository the agent should edit:' \
+    '  adk-agent-start server --workspace /absolute/path/to/repository' \
     '' \
     'Terminal 2 — connect the Bubble Tea TUI:' \
-    '  STATE_ROOT="$HOME/.local/state/adk-coding-agent"' \
-    '  export ADK_CODING_AGENT_TOKEN="$(cat "$STATE_ROOT/server/auth-token")"' \
-    '  adk-agent-tui --server ws://127.0.0.1:8765/v1/agent' \
+    '  adk-agent-start tui' \
     '' \
+    'The launcher announces the resolved workspace, state root, token file, URL,' \
+    'and environment handoff without printing the secret token.' \
     'The server terminal must remain running while the TUI is connected.'
 fi
