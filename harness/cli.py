@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -198,6 +199,30 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resolve and print server settings without starting the network listener",
     )
+
+    magnitude = subparsers.add_parser(
+        "serve-magnitude",
+        help="Discover Magnitude's selected local model and serve the harness",
+    )
+    magnitude.add_argument("--workspace", type=Path, default=Path.cwd())
+    magnitude.add_argument("--state-root", type=Path)
+    magnitude.add_argument("--model", help="Use this installed Magnitude model id")
+    magnitude.add_argument(
+        "--endpoint",
+        default="http://127.0.0.1:10100/inference/v1",
+        help="Magnitude's OpenAI-compatible base URL",
+    )
+    magnitude.add_argument("--magnitude-state", type=Path)
+    magnitude.add_argument(
+        "--no-start-magnitude",
+        action="store_true",
+        help="Fail instead of running `magnitude server start` when unavailable",
+    )
+    magnitude.add_argument(
+        "--print-config",
+        action="store_true",
+        help="Resolve and print server settings without starting the harness listener",
+    )
     return parser
 
 
@@ -259,10 +284,51 @@ def _serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _serve_magnitude(args: argparse.Namespace) -> int:
+    from harness.magnitude import (
+        MAGNITUDE_API_KEY,
+        MagnitudeConnectionError,
+        prepare_magnitude_connection,
+    )
+
+    workspace = args.workspace.expanduser().resolve()
+    state_root = (
+        args.state_root.expanduser().resolve()
+        if args.state_root is not None
+        else _default_state_root(workspace)
+    )
+    try:
+        connection = prepare_magnitude_connection(
+            state_root=state_root,
+            endpoint=args.endpoint,
+            requested_model=args.model,
+            magnitude_state_path=args.magnitude_state,
+            start_service=not args.no_start_magnitude,
+        )
+    except MagnitudeConnectionError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+    previous_token = os.environ.get("MAGNITUDE_API_KEY")
+    os.environ["MAGNITUDE_API_KEY"] = MAGNITUDE_API_KEY
+    try:
+        args.config = connection.config_path
+        args.workspace = workspace
+        args.state_root = state_root
+        return _serve(args)
+    finally:
+        if previous_token is None:
+            os.environ.pop("MAGNITUDE_API_KEY", None)
+        else:
+            os.environ["MAGNITUDE_API_KEY"] = previous_token
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "serve":
         return _serve(args)
+    if args.command == "serve-magnitude":
+        return _serve_magnitude(args)
     if args.command in {"steer", "steering-status"}:
         state_root = _steering_state_root(
             repository=args.repository,

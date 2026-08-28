@@ -22,10 +22,35 @@ The model-facing surface is intentionally small: a stable instruction prefix and
 
 ## Quick start
 
-Prerequisites: Python 3.11+, [`uv`](https://docs.astral.sh/uv/), Google credentials or a Gemini API key, and `git`.
+Prerequisites: Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and `git`.
+
+Install the locked runtime and expose `adk-coding-agent` on your user PATH:
 
 ```bash
-uv sync --all-groups
+./install.sh
+```
+
+The installer is safe to rerun. It installs from this checkout, enables local-model
+support by default, and links the CLI into `~/.local/bin` (or `UV_TOOL_BIN_DIR`). It
+never installs system packages or replaces an existing non-symlink. Optional modes:
+
+```bash
+./install.sh --tui                    # also build the Bubble Tea client; Go 1.24+ required
+./install.sh --dev                    # include test, lint, and type-check dependencies
+./install.sh --no-local-models        # smaller Gemini-only environment
+./install.sh --bin-dir /custom/bin
+```
+
+If `~/.local/bin` is not already on `PATH`, add it in `~/.zshrc`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+For development and verification:
+
+```bash
+./install.sh --dev
 cp .env.example .env
 uv run pytest
 ```
@@ -57,7 +82,7 @@ The repository lockfile pins the tested Google ADK 2.7 minor. Live credentialed
 Gemini runs remain an explicit deployment validation step; deterministic development
 and CI checks do not require cloud credentials.
 
-### Magnitude and other local OpenAI-compatible endpoints
+### Magnitude on macOS
 
 The harness can use a model selected and served by
 [Magnitude](https://github.com/magnitudedev/magnitude), or another
@@ -65,18 +90,55 @@ OpenAI-compatible service, without adding a second model runtime. The provider
 adapter builds ADK's `LiteLlm`; requests, streaming, tools, and lifecycle events
 remain owned by Google ADK.
 
+Install Magnitude, complete its one-time hardware/model setup, and enable its startup
+service. Then one harness command discovers Magnitude's selected model, writes a
+validated generated composition beneath the harness state directory, supplies the
+conventional local placeholder token in process memory, and starts the WebSocket
+server:
+
 ```bash
-uv sync --all-groups --extra local-models
-export MAGNITUDE_API_KEY=magnitude-local
-export ADK_CODING_CONFIG="$PWD/examples/magnitude.yaml"
+npm install -g @magnitudedev/cli
+magnitude --setup
+
+./install.sh --tui
+mkdir -p "$HOME/.local/state/adk-coding-agent"
+adk-coding-agent serve-magnitude \
+  --workspace /absolute/path/to/repository \
+  --state-root "$HOME/.local/state/adk-coding-agent"
 ```
 
-Set `harness.config.models.coding.name` in the example to the model id selected by
-Magnitude, then start Magnitude's local inference service and run the harness
-normally. The example targets `http://127.0.0.1:10100/inference/v1`. The token is an
-environment reference in YAML and is never serialized into the composition hash.
-This repository intentionally does not duplicate Magnitude's machine scan or model
-ranking.
+On Magnitude versions with service management, `serve-magnitude` runs `magnitude
+server start` when the endpoint is not already available. Older releases must have
+“Launch Magnitude on startup” enabled during `magnitude --setup`. The command prefers
+the primary model in `~/.magnitude/state/models.json`, falls back to the first model
+reported by Magnitude, and accepts `--model MODEL_ID` as an explicit override. Use
+`--print-config` to inspect the resolved harness endpoint without starting its
+listener.
+
+In a second terminal, connect the installed TUI:
+
+```bash
+export ADK_CODING_AGENT_TOKEN="$(cat "$HOME/.local/state/adk-coding-agent/server/auth-token")"
+adk-agent-tui --server ws://127.0.0.1:8765/v1/agent \
+  --input "Inspect this repository and run its tests"
+```
+
+The generated YAML stores only an environment-variable reference, never the token.
+The checked-in [`examples/magnitude.yaml`](examples/magnitude.yaml) remains available
+for manual or non-default endpoint configuration. This repository intentionally
+reuses Magnitude's machine scan, model ranking, download, and inference lifecycle
+rather than duplicating them.
+
+### Other OpenAI-compatible endpoints
+
+Install the local-model adapter and point a copied composition at the endpoint:
+
+```bash
+./install.sh
+cp examples/magnitude.yaml local-model.yaml
+# Edit the model id, base_url, and API-key environment reference.
+adk-coding-agent serve --config local-model.yaml --workspace /absolute/path/to/repository
+```
 
 Launcher runs can be steered from another terminal without waiting for task
 completion. `adk-coding-agent steer --repository PATH --task-id ID "new guidance"`

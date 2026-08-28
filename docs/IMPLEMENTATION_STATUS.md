@@ -17,6 +17,8 @@ complete.
 - [x] ADK `BaseLlm` provider-adapter and `App` assembly interfaces without a second model runtime.
 - [x] Closed native-Gemini and OpenAI-compatible ADK model adapters, including a
   credential-free tested Magnitude configuration example with environment-only secrets.
+- [x] Repeatable lockfile-based checkout installer plus macOS Magnitude service/model
+  discovery and generated local-model composition.
 - [x] Registered Pi harness factory with implementation-owned strict configuration,
   explicit runtime bindings, isolated builds, and a swappable test harness behind the
   same public contract.

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import yaml
 
 from harness.cli import main
 from harness.config import DEFAULT_COMPOSITION_PATH
+from harness.magnitude import MagnitudeConnection
 
 
 def test_serve_print_config_resolves_composition_without_listening(
@@ -65,3 +67,48 @@ def test_serve_uses_adk_coding_config_when_flag_is_absent(
     assert result == 0
     resolved = json.loads(capsys.readouterr().out)
     assert resolved["websocket_url"] == "ws://127.0.0.1:9876/v1/agent"
+
+
+def test_serve_magnitude_prepares_local_model_and_scopes_placeholder_token(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    generated = tmp_path / "state" / "server" / "magnitude.yaml"
+    captured: dict[str, object] = {}
+
+    def prepare(**kwargs) -> MagnitudeConnection:
+        captured.update(kwargs)
+        return MagnitudeConnection(
+            config_path=generated,
+            endpoint="http://127.0.0.1:10100/inference/v1",
+            model_id="local-model",
+        )
+
+    def serve(args) -> int:
+        captured["config"] = args.config
+        captured["token"] = os.environ.get("MAGNITUDE_API_KEY")
+        return 0
+
+    monkeypatch.setenv("MAGNITUDE_API_KEY", "cloud-secret-must-not-be-forwarded")
+    monkeypatch.setattr("harness.magnitude.prepare_magnitude_connection", prepare)
+    monkeypatch.setattr("harness.cli._serve", serve)
+
+    result = main(
+        [
+            "serve-magnitude",
+            "--workspace",
+            str(tmp_path),
+            "--state-root",
+            str(tmp_path / "state"),
+            "--model",
+            "local-model",
+            "--no-start-magnitude",
+        ]
+    )
+
+    assert result == 0
+    assert captured["requested_model"] == "local-model"
+    assert captured["start_service"] is False
+    assert captured["config"] == generated
+    assert captured["token"] == "magnitude-local"
+    assert os.environ["MAGNITUDE_API_KEY"] == "cloud-secret-must-not-be-forwarded"
