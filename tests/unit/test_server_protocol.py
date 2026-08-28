@@ -19,6 +19,13 @@ from harness.server import (
     SteerTaskMessage,
     parse_client_message,
 )
+from harness.server.protocol import (
+    ControlResultMessage,
+    PongMessage,
+    ServerErrorMessage,
+    TaskAcceptedMessage,
+    parse_server_message,
+)
 
 
 def _descriptor() -> HarnessDescriptor:
@@ -174,6 +181,57 @@ def test_ag_ui_text_and_tool_deltas_require_correlation_ids() -> None:
         AgUiEvent(type=AgUiEventType.TOOL_CALL_ARGS, delta="{}")
 
 
+def test_ag_ui_standard_event_shapes_fail_closed() -> None:
+    with pytest.raises(ValidationError, match="thread_id and run_id"):
+        AgUiEvent(type=AgUiEventType.RUN_STARTED, run_id="run-1")
+    with pytest.raises(ValidationError, match="message_id"):
+        AgUiEvent(type=AgUiEventType.TEXT_MESSAGE_START, role="assistant")
+    with pytest.raises(ValidationError, match="role cannot be tool"):
+        AgUiEvent(
+            type=AgUiEventType.TEXT_MESSAGE_START,
+            message_id="message-1",
+            role="tool",
+        )
+    with pytest.raises(ValidationError, match="message_id, tool_call_id, and content"):
+        AgUiEvent(
+            type=AgUiEventType.TOOL_CALL_RESULT,
+            message_id="message-1",
+            tool_call_id="call-1",
+        )
+    with pytest.raises(ValidationError, match="RFC 6902"):
+        AgUiEvent(type=AgUiEventType.STATE_DELTA, delta="not-a-json-patch")
+
+    result = AgUiEvent(
+        type=AgUiEventType.TOOL_CALL_RESULT,
+        message_id="message-1",
+        tool_call_id="call-1",
+        content='{"ok":true}',
+        role="tool",
+    )
+    assert result.role == "tool"
+    with pytest.raises(ValidationError, match="role must be tool"):
+        AgUiEvent(
+            type=AgUiEventType.TOOL_CALL_RESULT,
+            message_id="message-1",
+            tool_call_id="call-1",
+            content="ok",
+            role="assistant",
+        )
+
+
+def test_ag_ui_text_start_allows_canonical_default_role() -> None:
+    event = AgUiEvent(
+        type=AgUiEventType.TEXT_MESSAGE_START,
+        message_id="message-1",
+    )
+
+    assert event.role is None
+    assert json.loads(event.model_dump_json()) == {
+        "type": "TEXT_MESSAGE_START",
+        "messageId": "message-1",
+    }
+
+
 def test_coding_specific_events_use_a_namespaced_custom_event() -> None:
     checkpoint = AgUiEvent(
         type=AgUiEventType.CUSTOM,
@@ -220,3 +278,104 @@ def test_server_envelope_round_trips_normalized_ag_ui_event() -> None:
     assert restored == envelope
     assert restored.sequence == 23
     assert restored.event.type == AgUiEventType.STATE_SNAPSHOT
+
+
+def test_ag_ui_wire_payload_uses_canonical_camel_case_fields() -> None:
+    envelope = ServerEnvelope(
+        sequence=1,
+        run_id="run-1",
+        durable=True,
+        event=AgUiEvent(
+            type=AgUiEventType.TOOL_CALL_START,
+            tool_call_id="call-1",
+            tool_call_name="read",
+        ),
+    )
+
+    payload = json.loads(envelope.model_dump_json())
+
+    assert payload["event"]["toolCallId"] == "call-1"
+    assert payload["event"]["toolCallName"] == "read"
+    assert "tool_call_id" not in payload["event"]
+
+
+def test_ag_ui_envelope_has_deterministic_sparse_golden_wire_json() -> None:
+    envelope = ServerEnvelope(
+        sequence=1,
+        run_id="run-1",
+        durable=True,
+        event=AgUiEvent(
+            type=AgUiEventType.TOOL_CALL_START,
+            tool_call_id="call-1",
+            tool_call_name="read",
+        ),
+    )
+
+    assert envelope.model_dump_json() == (
+        '{"type":"event","protocol_version":1,"sequence":1,'
+        '"run_id":"run-1","durable":true,"event":'
+        '{"type":"TOOL_CALL_START","toolCallId":"call-1",'
+        '"toolCallName":"read"}}'
+    )
+    assert ServerEnvelope.model_validate_json(envelope.model_dump_json()) == envelope
+
+
+def test_ag_ui_metadata_must_be_omitted_instead_of_null() -> None:
+    with pytest.raises(ValidationError, match="must be omitted rather than null"):
+        AgUiEvent.model_validate(
+            {"type": "TEXT_MESSAGE_END", "messageId": "message-1", "metadata": None}
+        )
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_type"),
+    [
+        (
+            TaskAcceptedMessage(
+                request_id="request-1",
+                run_id="run-1",
+                thread_id="thread-1",
+                created=True,
+            ),
+            TaskAcceptedMessage,
+        ),
+        (
+            ControlResultMessage(
+                operation="steer",
+                run_id="run-1",
+                accepted=True,
+                command_id="steer-1",
+            ),
+            ControlResultMessage,
+        ),
+        (PongMessage(nonce="ping-1"), PongMessage),
+        (
+            ServerErrorMessage(code="bad_request", message="Invalid control message"),
+            ServerErrorMessage,
+        ),
+    ],
+)
+def test_server_response_messages_round_trip_through_discriminator(
+    message: TaskAcceptedMessage
+    | ControlResultMessage
+    | PongMessage
+    | ServerErrorMessage,
+    expected_type: type[object],
+) -> None:
+    payload = message.model_dump_json()
+
+    assert isinstance(parse_server_message(payload), expected_type)
+    assert None not in json.loads(payload).values()
+
+
+def test_server_error_omits_absent_correlations_from_golden_wire_json() -> None:
+    error = ServerErrorMessage(
+        code="run_not_found",
+        message="No such run",
+        retryable=False,
+    )
+
+    assert error.model_dump_json() == (
+        '{"type":"error","protocol_version":1,"code":"run_not_found",'
+        '"message":"No such run","retryable":false}'
+    )
