@@ -68,7 +68,7 @@ constructs isolated workflow, tool, state, sandbox, plugin, and model dependenci
 The Pi implementation fails closed when YAML changes a topology edge, route, prompt,
 or agent contract that its compiled workflow cannot honor; materially different
 topologies are registered as separate harnesses.
-The WebSocket server and Bubble Tea client remain pending. See
+The WebSocket server and Bubble Tea client implement this boundary. See
 [`design/declarative-runtime-and-clients.md`](design/declarative-runtime-and-clients.md)
 for the full boundary and delivery plan.
 
@@ -265,7 +265,8 @@ app/agent/                 Pi harness factory, ADK App, worker, and workflow nod
 harness/config/            strict YAML composition and volatile runtime bindings
 harness/ai/                provider adapters that build ADK BaseLlm instances
 harness/agent/             factory registry, ADK assembly, and run/control contracts
-harness/server/            AG-UI and WebSocket protocol contracts (server pending)
+harness/server/            AG-UI protocol, durable run coordination, and WebSocket server
+clients/tui/               protocol-only Bubble Tea client
 harness/context/           stable-prefix and bounded-context compiler
 harness/models/            typed contracts
 harness/orchestration/     pure reducers and route decisions

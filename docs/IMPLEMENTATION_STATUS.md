@@ -66,6 +66,13 @@ complete.
 - [x] Database/in-memory/Vertex session service configuration.
 - [x] In-memory/GCS artifact service configuration.
 - [x] In-memory/Vertex memory service configuration.
+- [x] Durable SQLite public-run registry with atomic terminal events, cursor replay,
+  idempotent starts, ownership checks, and bounded live fan-out.
+- [x] Loopback-safe bidirectional WebSocket server with AG-UI normalization,
+  protocol negotiation, steering, cancellation, acknowledgements, heartbeat, and
+  reconnect-after-backpressure semantics.
+- [x] Protocol-only Bubble Tea TUI with cursor resume, replay deduplication, bounded
+  buffers/history, streaming tool/text rendering, and mid-run steering.
 
 ### Verification and evaluation
 
@@ -93,9 +100,9 @@ complete.
 ## Remaining hardening
 
 - [x] Replace import-time singleton wiring with a registered factory that builds the selected harness from YAML and reuses ADK apps, events, plugins, tools, and resume semantics. Runner and service construction remains transport-owned.
-- [ ] Implement the durable run registry and bidirectional WebSocket server behind the versioned AG-UI/control contract.
-- [ ] Implement the Bubble Tea protocol client without ADK or harness-implementation dependencies.
-- [ ] Add deterministic reconnect, replay, backpressure, steering, cancellation, and harness-swap integration tests.
+- [x] Implement the durable run registry and bidirectional WebSocket server behind the versioned AG-UI/control contract.
+- [x] Implement the Bubble Tea protocol client without ADK or harness-implementation dependencies.
+- [x] Add deterministic reconnect, replay, backpressure, steering, cancellation, and harness-swap integration tests.
 - [ ] Exercise the live Gemini/ADK workflow in a credentialed environment.
 - [ ] Run the programmatic-routing and optional semantic-provider ablations with live model credentials.
 - [ ] Run the FFF-versus-rg performance sample on representative developer machines; latency is reported, not a deterministic CI gate.

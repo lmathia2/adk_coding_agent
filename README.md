@@ -83,6 +83,43 @@ completion. `adk-coding-agent steer --repository PATH --task-id ID "new guidance
 queues a bounded durable message that is injected at the next ADK model/tool safe
 point; `steering-status` reports its delivery state.
 
+### WebSocket server and Bubble Tea TUI
+
+The same configured harness can run behind the durable bidirectional server. The
+built-in authentication policy intentionally permits loopback listeners only:
+
+```bash
+uv run adk-coding-agent serve \
+  --workspace /absolute/path/to/repository \
+  --state-root /absolute/path/to/state \
+  --print-config
+
+# Remove --print-config to listen using server.host, port, and websocket_path from YAML.
+uv run adk-coding-agent serve \
+  --workspace /absolute/path/to/repository \
+  --state-root /absolute/path/to/state
+```
+
+The standalone TUI needs Go 1.24+ only when building the client. It speaks the public
+protocol and does not import ADK or harness implementation code:
+
+```bash
+cd clients/tui
+go build -o adk-agent-tui .
+export ADK_CODING_AGENT_TOKEN="$(cat /absolute/path/to/state/server/auth-token)"
+./adk-agent-tui --server ws://127.0.0.1:8765/v1/agent \
+  --input "Fix the parser and run its tests"
+```
+
+The server creates that mode-`0600` token file on first startup, or accepts a
+32-byte-or-longer token supplied through `ADK_CODING_AGENT_TOKEN`. Browser origins
+are rejected by default to prevent webpages from driving the local coding agent.
+
+During execution, ordinary input steers the active run at the next safe point.
+`/pause`, `/cancel`, `/reconnect`, and cursor-based `/attach` are also available.
+Disconnecting the TUI does not cancel the run; reconnect replays durable events after
+the highest sequence already applied.
+
 ## Google Agents CLI skills
 
 This project follows the upstream Google skills and `long-horizon-harness` recipe:
@@ -134,11 +171,10 @@ Bubble Tea or another protocol client
 
 Large logs, repository indexes, checkpoints, and receipts stay outside the model transcript. The model sees bounded summaries and artifact references.
 
-The declarative composition, ADK model/App assembly seams, and protocol models are
-contract scaffolding; the registered factory migration, WebSocket server, and Bubble
-Tea client are still pending. Google ADK remains the execution engine, including
-workflow/agent composition, sessions, artifacts, memory, plugins, streamed events,
-and resume. See the
+The declarative composition, registered harness factory, durable WebSocket runtime,
+and protocol-only Bubble Tea client are implemented. Google ADK remains the execution
+engine, including workflow/agent composition, sessions, artifacts, memory, plugins,
+streamed events, and resume. See the
 [declarative runtime design](docs/design/declarative-runtime-and-clients.md).
 
 Indexed `grep`, fuzzy path discovery, and health checks are virtual commands behind

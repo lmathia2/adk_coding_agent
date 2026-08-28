@@ -118,13 +118,13 @@ as the versioned public mapping is preserved.
 
 ## Bubble Tea client invariant
 
-The Bubble Tea application is a protocol client only. It should:
+The Bubble Tea application is a protocol client only. It:
 
-- open the WebSocket and negotiate the supported protocol version;
-- start or attach to a task and replay from the last acknowledged sequence;
-- render text, tools, progress, verification, approval, and terminal events;
-- submit steering, pause, cancellation, and approval decisions;
-- keep local presentation state, keyboard handling, and reconnect state.
+- opens the WebSocket and negotiates the supported protocol version;
+- starts or attaches to a task and replays from the last applied sequence;
+- renders text, tools, progress, state, custom, error, and terminal events;
+- submits steering, pause, and cancellation controls;
+- keeps bounded local presentation, keyboard, heartbeat, and reconnect state.
 
 It should not import ADK, parse the harness YAML, instantiate agents, understand the
 workflow graph, or call model providers. Consequently, configuration edits and
@@ -159,13 +159,15 @@ Implemented:
 - a swappable test harness proving the common server/client boundary is independent
   of the selected implementation;
 - ADK `BaseLlm` provider-adapter and ADK `App` assembly interfaces;
-- versioned WebSocket control and AG-UI event-envelope models.
+- native Gemini and OpenAI-compatible ADK model adapters;
+- versioned WebSocket control and canonical AG-UI event-envelope models;
+- durable run/event registry, shared per-run ADK Runner adapter, replay broker, and
+  loopback-safe WebSocket transport;
+- composition-driven `serve` bootstrap using durable local ADK sessions and artifacts;
+- protocol-only Bubble Tea client with cursor reconnect, streaming rendering, bounded
+  buffers, steering, cancellation, acknowledgement, and heartbeat;
+- deterministic harness-swap, replay, backpressure, control, server, and client
+  compatibility tests.
 
-Pending executable integration:
-
-- implement the long-lived run registry and WebSocket/AG-UI server;
-- build the Bubble Tea protocol client;
-- add reconnect, replay, backpressure, cancellation, and end-to-end tests.
-
-Until the transport integrations land, the Agents CLI-compatible bootstrap remains
-the executable path and delegates to the same registered factory.
+The Agents CLI-compatible bootstrap and WebSocket server are both executable paths
+and delegate to the same registered factory.
