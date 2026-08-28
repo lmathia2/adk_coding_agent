@@ -22,23 +22,66 @@ The model-facing surface is intentionally small: a stable instruction prefix and
 
 ## Quick start
 
-Prerequisites: Python 3.11+, [`uv`](https://docs.astral.sh/uv/), and `git`.
+### 1. Install on macOS
 
-Install the locked runtime and expose `adk-coding-agent` on your user PATH:
+On macOS, install [Homebrew](https://brew.sh) once. The installer detects macOS and,
+in one run, installs any missing uv, Git, Node.js/npm, and Go prerequisites through
+Homebrew; installs the compatible Magnitude CLI; creates the locked Python environment;
+builds the Bubble Tea TUI; and exposes both commands on your user PATH:
 
 ```bash
 ./install.sh
 ```
 
-The installer is safe to rerun. It explicitly creates or reuses `.venv` with uv,
-syncs every selected Python dependency from `uv.lock` into that environment, verifies
-the required imports and commands, and links the CLI into `~/.local/bin` (or
-`UV_TOOL_BIN_DIR`). It never replaces an existing non-symlink. Optional modes:
+If this is the first Magnitude installation, select and install a local model once:
 
 ```bash
-./install.sh --tui                    # also build the Bubble Tea client; Go 1.24+ required
+magnitude setup
+```
+
+### 2. Start the coding-agent server in Terminal 1
+
+```bash
+cd "$HOME/src/coding_tools"
+STATE_ROOT="$HOME/.local/state/adk-coding-agent"
+
+mkdir -p "$STATE_ROOT"
+adk-coding-agent serve-magnitude \
+  --workspace "$(pwd)" \
+  --state-root "$STATE_ROOT"
+```
+
+Leave Terminal 1 running. The server listens locally and exposes the agent at
+`ws://127.0.0.1:8765/v1/agent`; opening `http://127.0.0.1:8765/` in a browser is not
+the TUI and may return `404 Not Found`.
+
+### 3. Start the TUI in Terminal 2
+
+```bash
+STATE_ROOT="$HOME/.local/state/adk-coding-agent"
+export ADK_CODING_AGENT_TOKEN="$(cat "$STATE_ROOT/server/auth-token")"
+
+adk-agent-tui --server ws://127.0.0.1:8765/v1/agent
+```
+
+Type a request in the TUI and press Enter. You can send additional guidance while
+the agent is running; the server delivers it at the next safe steering point.
+
+### Installation behavior and options
+
+The installer is safe to rerun. It removes only this checkout's `.venv`, recreates it
+with uv, syncs every selected Python dependency from `uv.lock`, verifies
+the required imports and commands, and links the CLI into `~/.local/bin` (or
+`UV_TOOL_BIN_DIR`). It never replaces an existing non-symlink. On other operating
+systems, install Python 3.11+, uv, Git, npm, and Go 1.24+ before requesting their
+corresponding features. Options:
+
+```bash
+./install.sh --plan                   # show the detected platform and planned work
 ./install.sh --dev                    # include test, lint, and type-check dependencies
-./install.sh --magnitude              # install/update Magnitude 0.0.8+ through npm
+./install.sh --minimal                # Python CLI only; skip local models and TUI
+./install.sh --tui                    # request the Bubble Tea client outside macOS
+./install.sh --magnitude              # request Magnitude outside macOS
 ./install.sh --no-local-models        # smaller Gemini-only environment
 ./install.sh --bin-dir /custom/bin
 ```
@@ -96,15 +139,16 @@ OpenAI-compatible service, without adding a second model runtime. The provider
 adapter builds ADK's `LiteLlm`; requests, streaming, tools, and lifecycle events
 remain owned by Google ADK.
 
-Install Magnitude 0.0.8 or newer and complete its one-time hardware/model setup. Then
-one harness command discovers Magnitude's selected model, writes a
+The default macOS installation installs Magnitude 0.0.8 or newer and the TUI. Complete
+Magnitude's interactive hardware/model setup once. Then one harness command discovers
+Magnitude's selected model, writes a
 validated generated composition beneath the harness state directory, supplies the
 conventional local placeholder token in process memory, and starts the WebSocket
 server:
 
 ```bash
-./install.sh --magnitude
-magnitude --setup
+./install.sh
+magnitude setup
 
 mkdir -p "$HOME/.local/state/adk-coding-agent"
 adk-coding-agent serve-magnitude \
@@ -121,13 +165,12 @@ reported by Magnitude, and accepts `--model MODEL_ID` as an explicit override. U
 listener. After an install or upgrade, initial hardware and model assessment can take
 a few minutes; the launcher keeps probing the service through that startup window.
 
-To use the optional TUI, install Go 1.24+ once, rerun the installer, and connect from
-a second terminal:
+The installer prints the complete launch sequence. Keep the harness in the first
+terminal and connect the TUI from a second terminal:
 
 ```bash
-brew install go
-./install.sh --tui
-export ADK_CODING_AGENT_TOKEN="$(cat "$HOME/.local/state/adk-coding-agent/server/auth-token")"
+STATE_ROOT="$HOME/.local/state/adk-coding-agent"
+export ADK_CODING_AGENT_TOKEN="$(cat "$STATE_ROOT/server/auth-token")"
 adk-agent-tui --server ws://127.0.0.1:8765/v1/agent \
   --input "Inspect this repository and run its tests"
 ```

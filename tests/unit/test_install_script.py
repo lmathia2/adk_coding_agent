@@ -20,7 +20,48 @@ def test_install_script_is_executable_and_has_valid_help() -> None:
 
     assert "--no-local-models" in completed.stdout
     assert "--magnitude" in completed.stdout
+    assert "--minimal" in completed.stdout
+    assert "--plan" in completed.stdout
     assert "--tui" in completed.stdout
+
+
+def test_install_script_reports_platform_aware_plan_without_installing() -> None:
+    root = Path(__file__).resolve().parents[2]
+    completed = subprocess.run(
+        (str(root / "install.sh"), "--plan"),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Detected platform:" in completed.stdout
+    assert "Installation plan:" in completed.stdout
+    assert f"Python environment: {root}/.venv" in completed.stdout
+    assert "remove and recreate on every installation" in completed.stdout
+    assert "Launch workspace: selected at runtime" in completed.stdout
+
+
+def test_install_script_macos_plan_includes_full_local_tui_stack(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uname = fake_bin / "uname"
+    fake_uname.write_text("#!/bin/sh\nprintf '%s\\n' Darwin\n", encoding="utf-8")
+    fake_uname.chmod(0o755)
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+
+    completed = subprocess.run(
+        (str(root / "install.sh"), "--plan"),
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+    assert "Detected platform: macOS" in completed.stdout
+    assert "Magnitude: 1" in completed.stdout
+    assert "Bubble Tea TUI: 1" in completed.stdout
 
 
 def test_install_script_rejects_magnitude_without_local_model_dependencies() -> None:

@@ -60,7 +60,7 @@ def _model_ids(payload: object) -> tuple[str, ...]:
             model_ids.append(value)
     if not model_ids:
         raise MagnitudeConnectionError(
-            "Magnitude has no installed local model; run `magnitude --setup` first"
+            "Magnitude has no installed local model; run `magnitude setup` first"
         )
     return tuple(model_ids)
 
@@ -144,7 +144,7 @@ def _start_service(command_runner: CommandRunner) -> str | None:
     except (OSError, subprocess.SubprocessError) as error:
         raise MagnitudeConnectionError(
             "Magnitude is not running and could not be started; install or update "
-            "it with `./install.sh --magnitude`, then run `magnitude --setup`"
+            "it with `./install.sh --magnitude`, then run `magnitude setup`"
         ) from error
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
@@ -252,7 +252,7 @@ def prepare_magnitude_connection(
             raise MagnitudeConnectionError(
                 "Magnitude did not become ready after `magnitude server start` reported: "
                 f"{startup_error}. Run `./install.sh --magnitude`, then "
-                "`magnitude --setup` once"
+                "`magnitude setup` once"
             ) from error
     selected = select_model_id(
         models,
