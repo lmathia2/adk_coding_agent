@@ -509,6 +509,102 @@ class SqliteRunEventStore:
             limit=limit,
         ).events
 
+    def terminalize(
+        self,
+        run_id: str,
+        *,
+        status: Literal["completed", "cancelled", "failed"],
+        event: AgUiEvent,
+        source_key: str,
+        expected_status: Literal["queued", "running"],
+        error: str | None = None,
+    ) -> EventAppendResult:
+        """Atomically append the terminal event and freeze terminal run status."""
+
+        if not source_key or len(source_key) > 512:
+            raise ValueError("source_key must contain 1 to 512 characters")
+        if event.run_id is not None and event.run_id != run_id:
+            raise ValueError("event run_id does not match terminal run_id")
+        if status == "completed" and error is not None:
+            raise ValueError("completed runs cannot carry an error")
+        if error is not None:
+            error = error[:4_096]
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM agent_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if row is None:
+                connection.execute("ROLLBACK")
+                raise KeyError(f"unknown run: {run_id}")
+            previous = str(row["status"])
+            prior_error = row["error"]
+            existing_row = connection.execute(
+                """
+                SELECT envelope_json FROM public_run_events
+                WHERE run_id=? AND source_key=?
+                """,
+                (run_id, source_key),
+            ).fetchone()
+            existing = (
+                ServerEnvelope.model_validate_json(existing_row["envelope_json"])
+                if existing_row is not None
+                else None
+            )
+            if previous == status:
+                if prior_error != error or existing is None or existing.event != event:
+                    connection.execute("ROLLBACK")
+                    raise ValueError("terminal run replay conflicts with durable state")
+                connection.execute("COMMIT")
+                return EventAppendResult(envelope=existing, created=False)
+            if previous != expected_status:
+                connection.execute("ROLLBACK")
+                raise ValueError(
+                    "run status compare-and-set conflict: "
+                    f"expected {expected_status}, found {previous}"
+                )
+            if existing is not None:
+                connection.execute("ROLLBACK")
+                raise ValueError("terminal source key already exists for an active run")
+            sequence = int(
+                connection.execute(
+                    """
+                    SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence
+                    FROM public_run_events WHERE run_id=?
+                    """,
+                    (run_id,),
+                ).fetchone()["next_sequence"]
+            )
+            envelope = ServerEnvelope(
+                sequence=sequence,
+                run_id=run_id,
+                session_id=str(row["session_id"]),
+                invocation_id=str(row["invocation_id"]),
+                durable=True,
+                event=event,
+            )
+            connection.execute(
+                """
+                INSERT INTO public_run_events(
+                    run_id, sequence, source_key, envelope_json, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (run_id, sequence, source_key, envelope.model_dump_json(), now),
+            )
+            updated = connection.execute(
+                """
+                UPDATE agent_runs SET status=?, error=?, updated_at=?
+                WHERE run_id=? AND status=?
+                """,
+                (status, error, now, run_id, expected_status),
+            )
+            if updated.rowcount != 1:
+                connection.execute("ROLLBACK")
+                raise ValueError("run status compare-and-set conflict")
+            connection.execute("COMMIT")
+        return EventAppendResult(envelope=envelope, created=True)
+
     def replay_page(
         self,
         run_id: str,
@@ -720,6 +816,28 @@ class DurableRunEventJournal:
             if result.created:
                 self.broker.publish(result.envelope)
         return tuple(result.envelope for result in results)
+
+    def terminalize(
+        self,
+        run_id: str,
+        *,
+        status: Literal["completed", "cancelled", "failed"],
+        event: AgUiEvent,
+        source_key: str,
+        expected_status: Literal["queued", "running"],
+        error: str | None = None,
+    ) -> ServerEnvelope:
+        result = self.store.terminalize(
+            run_id,
+            status=status,
+            event=event,
+            source_key=source_key,
+            expected_status=expected_status,
+            error=error,
+        )
+        if result.created:
+            self.broker.publish(result.envelope)
+        return result.envelope
 
 
 __all__ = [

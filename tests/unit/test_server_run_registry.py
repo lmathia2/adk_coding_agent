@@ -275,6 +275,67 @@ def test_status_transitions_are_conditional_idempotent_and_terminally_immutable(
     assert store.get_run(record.run_id) == completed
 
 
+def test_terminalize_commits_event_and_status_atomically_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    store = SqliteRunEventStore(tmp_path / "server-runs.db")
+    record = _create_run(store)
+    store.update_status(record.run_id, "running", expected_status="queued")
+    event = AgUiEvent(
+        type=AgUiEventType.RUN_FINISHED,
+        run_id=record.run_id,
+        thread_id=record.thread_id,
+        result={"status": "completed"},
+    )
+
+    committed = store.terminalize(
+        record.run_id,
+        status="completed",
+        event=event,
+        source_key="server:run-finished",
+        expected_status="running",
+    )
+    repeated = store.terminalize(
+        record.run_id,
+        status="completed",
+        event=event,
+        source_key="server:run-finished",
+        expected_status="running",
+    )
+
+    assert committed.created is True
+    assert repeated.created is False
+    assert repeated.envelope == committed.envelope
+    assert store.get_run(record.run_id).status == "completed"  # type: ignore[union-attr]
+    assert store.replay(record.run_id) == (committed.envelope,)
+
+
+def test_terminalize_conflict_rolls_back_event_and_status(tmp_path: Path) -> None:
+    store = SqliteRunEventStore(tmp_path / "server-runs.db")
+    record = _create_run(store)
+    event = AgUiEvent(
+        type=AgUiEventType.RUN_ERROR,
+        run_id=record.run_id,
+        thread_id=record.thread_id,
+        message="failed",
+    )
+
+    with pytest.raises(ValueError, match="compare-and-set conflict"):
+        store.terminalize(
+            record.run_id,
+            status="failed",
+            event=event,
+            source_key="server:run-error",
+            expected_status="running",
+            error="failed",
+        )
+
+    current = store.get_run(record.run_id)
+    assert current is not None
+    assert current.status == "queued"
+    assert store.replay(record.run_id) == ()
+
+
 def test_concurrent_status_compare_and_set_has_exactly_one_winner(tmp_path: Path) -> None:
     store = SqliteRunEventStore(tmp_path / "server-runs.db")
     record = _create_run(store)

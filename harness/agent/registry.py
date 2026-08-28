@@ -8,7 +8,12 @@ from pydantic import BaseModel
 
 from harness.config import HarnessComposition, RuntimeBindings
 
-from .contracts import AdkHarnessAssembly, HarnessFactory, RuntimeCapability
+from .contracts import (
+    AdkHarnessAssembly,
+    HarnessDescriptor,
+    HarnessFactory,
+    RuntimeCapability,
+)
 
 
 class HarnessRegistry:
@@ -53,6 +58,14 @@ class HarnessRegistry:
 
     def available(self) -> tuple[str, ...]:
         return tuple(sorted(self._factories))
+
+    def descriptor(self, implementation: str) -> HarnessDescriptor:
+        try:
+            return self._factories[implementation].descriptor
+        except KeyError as error:
+            raise LookupError(
+                f"harness implementation is not registered: {implementation}"
+            ) from error
 
     def config_models(self) -> Mapping[str, type[BaseModel]]:
         return {
