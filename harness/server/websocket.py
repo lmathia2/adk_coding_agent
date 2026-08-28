@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import os
+import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -66,24 +68,63 @@ class AuthenticationError(PermissionError):
     """A connection could not be assigned a trusted server-side identity."""
 
 
+@dataclass(frozen=True, slots=True)
+class LocalBearerAuthenticator:
+    """Authenticate a native local client without trusting browser ambient access."""
+
+    token: str
+    allowed_origins: frozenset[str] = frozenset()
+    user_id: str = "local-user"
+
+    def __post_init__(self) -> None:
+        if len(self.token.encode("utf-8")) < 32:
+            raise ValueError("local bearer tokens must contain at least 32 UTF-8 bytes")
+        if not self.user_id or len(self.user_id) > 256:
+            raise ValueError("local authenticator user_id must contain 1 to 256 characters")
+        if any(not origin for origin in self.allowed_origins):
+            raise ValueError("allowed origins cannot contain empty values")
+
+    async def __call__(self, websocket: WebSocket) -> str:
+        client = websocket.client
+        if client is None:
+            raise AuthenticationError("client address is unavailable")
+        host = client.host.split("%", 1)[0]
+        try:
+            is_loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            is_loopback = False
+        if not is_loopback:
+            raise AuthenticationError("the default server accepts loopback clients only")
+
+        # Native clients do not send Origin. Browser clients always do; rejecting
+        # untrusted origins prevents a remote web page from driving localhost.
+        origin = websocket.headers.get("origin")
+        if origin is not None and origin not in self.allowed_origins:
+            raise AuthenticationError("the WebSocket origin is not allowed")
+
+        authorization = websocket.headers.get("authorization", "")
+        scheme, separator, supplied = authorization.partition(" ")
+        if (
+            not separator
+            or scheme.lower() != "bearer"
+            or not secrets.compare_digest(supplied, self.token)
+        ):
+            raise AuthenticationError("a valid local bearer token is required")
+        return self.user_id
+
+
 async def authenticate_local_connection(websocket: WebSocket) -> str:
-    """Allow only loopback peers and assign a fixed local identity.
+    """Authenticate from the explicit process environment, failing closed.
 
     The identity never comes from task metadata, headers, query parameters, or a
-    client protocol frame. Remote deployments must inject their own authenticator.
+    client protocol frame. Server bootstrap normally injects a generated or explicit
+    token authenticator; direct embedders may set ``ADK_CODING_AGENT_TOKEN``.
     """
 
-    client = websocket.client
-    if client is None:
-        raise AuthenticationError("client address is unavailable")
-    host = client.host.split("%", 1)[0]
-    try:
-        is_loopback = ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        is_loopback = False
-    if not is_loopback:
-        raise AuthenticationError("the default server accepts loopback clients only")
-    return "local-user"
+    token = os.getenv("ADK_CODING_AGENT_TOKEN", "")
+    if not token:
+        raise AuthenticationError("ADK_CODING_AGENT_TOKEN is not configured")
+    return await LocalBearerAuthenticator(token)(websocket)
 
 
 @dataclass(frozen=True, slots=True)
@@ -605,6 +646,7 @@ __all__ = [
     "AgentWebSocketServer",
     "AuthenticationError",
     "Authenticator",
+    "LocalBearerAuthenticator",
     "RunCoordinatorContract",
     "WebSocketServerSettings",
     "authenticate_local_connection",

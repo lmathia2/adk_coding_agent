@@ -38,6 +38,7 @@ from harness.server.runtime import (
     PublicEventBatch,
     RunCoordinator,
     RunExecution,
+    RunInitializationError,
 )
 
 
@@ -69,17 +70,13 @@ class _QueueExecution:
     def __init__(self, record: RunRecord) -> None:
         self.record = record
         self.entered = asyncio.Event()
-        self._items: asyncio.Queue[PublicEventBatch | BaseException | None] = (
-            asyncio.Queue()
-        )
+        self._items: asyncio.Queue[PublicEventBatch | BaseException | None] = asyncio.Queue()
         self.steering: list[SteeringCommand] = []
         self.pauses: list[ControlCommand] = []
         self.closed = False
 
     def emit(self, source_key: str, *events: AgUiEvent) -> None:
-        self._items.put_nowait(
-            PublicEventBatch(source_key=source_key, events=tuple(events))
-        )
+        self._items.put_nowait(PublicEventBatch(source_key=source_key, events=tuple(events)))
 
     def fail(self, error: BaseException) -> None:
         self._items.put_nowait(error)
@@ -323,9 +320,7 @@ async def test_steering_and_pause_delegate_exact_commands_to_active_execution(
         )
     ]
     assert pause.accepted is True
-    assert execution.pauses == [
-        ControlCommand(run_id=record.run_id, idempotency_key="pause-1")
-    ]
+    assert execution.pauses == [ControlCommand(run_id=record.run_id, idempotency_key="pause-1")]
     execution.finish()
     await coordinator.wait(record.run_id)
 
@@ -384,9 +379,7 @@ async def test_run_ownership_is_enforced_for_controls_attach_and_ack(
     with pytest.raises(KeyError, match="unknown run"):
         await anext(coordinator.attach(record.run_id, user_id="intruder"))
     with pytest.raises(KeyError, match="unknown run"):
-        coordinator.acknowledge(
-            record.run_id, user_id="intruder", through_sequence=0
-        )
+        coordinator.acknowledge(record.run_id, user_id="intruder", through_sequence=0)
     with pytest.raises(KeyError, match="unknown run"):
         await coordinator.cancel(
             CancelTaskMessage(
@@ -430,15 +423,16 @@ async def test_initialization_failure_is_redacted_and_durably_terminal(
 ) -> None:
     factory = _FakeExecutionFactory()
     secret = "ghp_abcdefghijklmnopqrstuvwxyz123456"
-    factory.initialization_error = RuntimeError(f"provider rejected {secret}")
+    factory.initialization_error = ValueError(f"provider rejected {secret}")
     coordinator, _ = _coordinator(
         tmp_path,
         factory=factory,
         redactor=SecretRedactor(known_secrets=(secret,)),
     )
 
-    with pytest.raises(RuntimeError, match="provider rejected"):
+    with pytest.raises(RunInitializationError, match="task initialization failed") as caught:
         await coordinator.start(_start(), user_id="user-1")
+    assert secret not in str(caught.value)
 
     record = factory.created[0]
     stored = coordinator.store.get_run(record.run_id)
@@ -450,6 +444,52 @@ async def test_initialization_failure_is_redacted_and_durably_terminal(
     assert events[0].event.type == AgUiEventType.RUN_ERROR
     assert events[0].event.message == "provider rejected <redacted>"
     assert secret not in events[0].model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_stale_running_run_is_atomically_failed_with_terminal_event(
+    tmp_path: Path,
+) -> None:
+    factory = _FakeExecutionFactory()
+    store = SqliteRunEventStore(tmp_path / "runs.db")
+    message = _start()
+    thread_id = RunCoordinator._default_thread_id("user-1", message.idempotency_key)
+    stale, _ = store.create_run(
+        request_id=message.request_id,
+        idempotency_key=message.idempotency_key,
+        thread_id=thread_id,
+        user_id="user-1",
+        input=message.input,
+        metadata={"coding.factory": "fake"},
+    )
+    store.update_status(stale.run_id, "running", expected_status="queued")
+    store.append_event(
+        stale.run_id,
+        AgUiEvent(
+            type=AgUiEventType.RUN_STARTED,
+            run_id=stale.run_id,
+            thread_id=stale.thread_id,
+        ),
+        source_key="server:run-started",
+    )
+    coordinator = RunCoordinator(
+        store=store,
+        broker=RunEventBroker(queue_capacity=32),
+        execution_factory=factory,
+    )
+
+    recovered, created = await coordinator.start(message, user_id="user-1")
+
+    assert created is False
+    assert recovered.status == "failed"
+    assert recovered.error == ("server restarted during an active run; automatic rerun refused")
+    events = store.replay(stale.run_id)
+    assert [item.event.type for item in events] == [
+        AgUiEventType.RUN_STARTED,
+        AgUiEventType.RUN_ERROR,
+    ]
+    assert events[-1].event.code == "server_restarted"
+    assert factory.created == []
 
 
 @pytest.mark.asyncio
@@ -493,9 +533,7 @@ async def test_close_cancels_all_active_runs_and_is_idempotent(tmp_path: Path) -
 
 
 class _CredentialFreeAgent(BaseAgent):
-    async def _run_async_impl(
-        self, ctx: InvocationContext
-    ) -> AsyncGenerator[Event, None]:
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         yield Event(
             id="deterministic-event",
             invocation_id=ctx.invocation_id,

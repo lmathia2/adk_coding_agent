@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.testclient import TestClient
+from starlette.datastructures import Address, Headers
 
 from harness.agent import ControlReceipt, HarnessDescriptor, RuntimeCapability
 from harness.server.protocol import (
@@ -21,6 +23,8 @@ from harness.server.protocol import (
 )
 from harness.server.registry import RunRecord, SubscriberBackpressureError
 from harness.server.websocket import (
+    AuthenticationError,
+    LocalBearerAuthenticator,
     WebSocketServerSettings,
     create_websocket_app,
 )
@@ -28,6 +32,42 @@ from harness.server.websocket import (
 
 async def _authenticated(_websocket: WebSocket) -> str:
     return "server-user"
+
+
+def _local_websocket(*, token: str, origin: str | None = None) -> Any:
+    headers = {"authorization": f"Bearer {token}"}
+    if origin is not None:
+        headers["origin"] = origin
+    return SimpleNamespace(
+        client=Address("127.0.0.1", 51_234),
+        headers=Headers(headers),
+    )
+
+
+@pytest.mark.asyncio
+async def test_local_bearer_authenticator_requires_token_and_rejects_browser_origin() -> None:
+    token = "local-token-" + "x" * 32
+    authenticator = LocalBearerAuthenticator(token)
+
+    assert await authenticator(_local_websocket(token=token)) == "local-user"
+    with pytest.raises(AuthenticationError, match="bearer"):
+        await authenticator(_local_websocket(token="wrong-token-" + "y" * 32))
+    with pytest.raises(AuthenticationError, match="origin"):
+        await authenticator(_local_websocket(token=token, origin="https://attacker.example"))
+
+
+@pytest.mark.asyncio
+async def test_local_bearer_authenticator_accepts_only_explicitly_allowed_origin() -> None:
+    token = "local-token-" + "x" * 32
+    authenticator = LocalBearerAuthenticator(
+        token,
+        allowed_origins=frozenset({"http://127.0.0.1:3000"}),
+    )
+
+    assert (
+        await authenticator(_local_websocket(token=token, origin="http://127.0.0.1:3000"))
+        == "local-user"
+    )
 
 
 def _record(run_id: str, *, user_id: str = "server-user") -> RunRecord:

@@ -211,16 +211,27 @@ def _serve(args: argparse.Namespace) -> int:
         if args.state_root is not None
         else _default_state_root(workspace)
     )
+    configured_path = os.getenv("ADK_CODING_CONFIG", "").strip()
+    config_path = (
+        args.config
+        if args.config is not None
+        else Path(configured_path) if configured_path else DEFAULT_COMPOSITION_PATH
+    )
     assembly = build_server_assembly(
         workspace=workspace,
         state_root=state_root,
-        config_path=args.config or DEFAULT_COMPOSITION_PATH,
+        config_path=config_path,
     )
     server = assembly.composition.server
     if args.print_config:
         print(
             json.dumps(
                 {
+                    "auth_token_source": (
+                        assembly.auth_token_path.as_posix()
+                        if assembly.auth_token_path is not None
+                        else "environment:ADK_CODING_AGENT_TOKEN"
+                    ),
                     "config_sha256": assembly.composition.composition_sha256,
                     "harness": assembly.coordinator.descriptor.implementation,
                     "host": server.host,

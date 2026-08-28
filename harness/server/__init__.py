@@ -1,7 +1,13 @@
 """Transport contracts for reusable agent clients."""
 
 from .adk_mapper import AdkAgUiNormalizer, map_adk_event
-from .bootstrap import ServerAssembly, build_server_assembly, require_loopback_host
+from .bootstrap import (
+    LOCAL_TOKEN_ENV,
+    ServerAssembly,
+    build_server_assembly,
+    load_or_create_local_auth_token,
+    require_loopback_host,
+)
 from .protocol import (
     PROTOCOL_VERSION,
     AckMessage,
@@ -43,11 +49,13 @@ from .runtime import (
     RunCoordinator,
     RunExecution,
     RunExecutionFactory,
+    RunInitializationError,
 )
 from .websocket import (
     AgentWebSocketServer,
     AuthenticationError,
     Authenticator,
+    LocalBearerAuthenticator,
     RunCoordinatorContract,
     WebSocketServerSettings,
     authenticate_local_connection,
@@ -55,6 +63,7 @@ from .websocket import (
 )
 
 __all__ = [
+    "LOCAL_TOKEN_ENV",
     "PROTOCOL_VERSION",
     "AckMessage",
     "AdkAgUiNormalizer",
@@ -72,6 +81,7 @@ __all__ = [
     "DurableRunEventJournal",
     "EventAppendResult",
     "HelloMessage",
+    "LocalBearerAuthenticator",
     "PauseTaskMessage",
     "PingMessage",
     "PongMessage",
@@ -83,6 +93,7 @@ __all__ = [
     "RunEventSubscription",
     "RunExecution",
     "RunExecutionFactory",
+    "RunInitializationError",
     "RunRecord",
     "RunStatus",
     "ServerAssembly",
@@ -99,6 +110,7 @@ __all__ = [
     "authenticate_local_connection",
     "build_server_assembly",
     "create_websocket_app",
+    "load_or_create_local_auth_token",
     "map_adk_event",
     "parse_client_message",
     "parse_server_message",

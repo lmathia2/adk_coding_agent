@@ -77,6 +77,10 @@ class RunExecutionFactory(Protocol):
     async def create(self, record: RunRecord) -> RunExecution: ...
 
 
+class RunInitializationError(RuntimeError):
+    """A run could not be assembled; its public detail is intentionally generic."""
+
+
 class AdkRunExecution:
     """Thin ADK Runner adapter for one durable run."""
 
@@ -291,9 +295,7 @@ class RunCoordinator:
 
     @staticmethod
     def _default_thread_id(user_id: str, idempotency_key: str) -> str:
-        digest = hashlib.sha256(
-            f"thread\0{user_id}\0{idempotency_key}".encode()
-        ).hexdigest()[:32]
+        digest = hashlib.sha256(f"thread\0{user_id}\0{idempotency_key}".encode()).hexdigest()[:32]
         return f"thread-{digest}"
 
     def _owned_run(self, run_id: str, user_id: str) -> RunRecord:
@@ -308,9 +310,7 @@ class RunCoordinator:
         *,
         user_id: str,
     ) -> tuple[RunRecord, bool]:
-        thread_id = message.thread_id or self._default_thread_id(
-            user_id, message.idempotency_key
-        )
+        thread_id = message.thread_id or self._default_thread_id(user_id, message.idempotency_key)
         metadata = dict(message.metadata)
         metadata.update(self.execution_factory.run_metadata)
         record, created = self.store.create_run(
@@ -323,12 +323,23 @@ class RunCoordinator:
         )
         async with self._lifecycle_lock:
             if record.status == "running" and record.run_id not in self._active:
-                record = self.store.update_status(
+                restart_error = "server restarted during an active run; automatic rerun refused"
+                self.journal.terminalize(
                     record.run_id,
-                    "failed",
-                    error="server restarted during an active run; automatic rerun refused",
+                    status="failed",
+                    event=AgUiEvent(
+                        type=AgUiEventType.RUN_ERROR,
+                        thread_id=record.thread_id,
+                        run_id=record.run_id,
+                        code="server_restarted",
+                        message=restart_error,
+                    ),
+                    source_key="server:run-error",
                     expected_status="running",
+                    error=restart_error,
                 )
+                record = self.store.get_run(record.run_id)
+                assert record is not None
                 return record, created
             if record.status == "queued" and record.run_id not in self._active:
                 try:
@@ -349,7 +360,7 @@ class RunCoordinator:
                         expected_status="queued",
                         error=safe_error,
                     )
-                    raise
+                    raise RunInitializationError("task initialization failed") from error
                 task = asyncio.create_task(
                     self._drive(record, execution),
                     name=f"agent-run:{record.run_id}",
@@ -381,13 +392,10 @@ class RunCoordinator:
                 runtime_error: str | None = None
                 async for batch in execution.events():
                     durable_events = tuple(
-                        event
-                        for event in batch.events
-                        if event.type != AgUiEventType.RUN_ERROR
+                        event for event in batch.events if event.type != AgUiEventType.RUN_ERROR
                     )
                     source_keys = tuple(
-                        f"{batch.source_key}:{index}"
-                        for index in range(len(durable_events))
+                        f"{batch.source_key}:{index}" for index in range(len(durable_events))
                     )
                     if durable_events:
                         self.journal.append_events(
@@ -455,9 +463,7 @@ class RunCoordinator:
                         result={"status": "cancelled"},
                     ),
                     source_key="server:run-finished",
-                    expected_status=(
-                        "queued" if current.status == "queued" else "running"
-                    ),
+                    expected_status=("queued" if current.status == "queued" else "running"),
                 )
             raise
         except Exception as error:
@@ -475,9 +481,7 @@ class RunCoordinator:
                         message=safe_error or "runtime failed",
                     ),
                     source_key="server:run-error",
-                    expected_status=(
-                        "queued" if current.status == "queued" else "running"
-                    ),
+                    expected_status=("queued" if current.status == "queued" else "running"),
                     error=safe_error or "runtime failed",
                 )
         finally:
@@ -657,4 +661,5 @@ __all__ = [
     "RunCoordinator",
     "RunExecution",
     "RunExecutionFactory",
+    "RunInitializationError",
 ]
