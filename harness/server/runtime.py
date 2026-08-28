@@ -21,6 +21,8 @@ from harness.agent import (
     HarnessControlHooks,
     HarnessDescriptor,
     HarnessRegistry,
+    ModelReadiness,
+    PublicModelStatus,
     SteeringCommand,
 )
 from harness.config import HarnessComposition, RuntimeBindings
@@ -58,6 +60,9 @@ class RunExecution(Protocol):
 
     def events(self) -> AsyncIterator[PublicEventBatch]: ...
 
+    @property
+    def coding_model_status(self) -> PublicModelStatus | None: ...
+
     async def steer(self, command: SteeringCommand) -> ControlReceipt: ...
 
     async def pause(self, command: ControlCommand) -> ControlReceipt: ...
@@ -93,6 +98,7 @@ class AdkRunExecution:
         session_service: Any,
         controls: HarnessControlHooks | None,
         max_llm_calls: int,
+        coding_model_status: PublicModelStatus | None = None,
     ) -> None:
         self.record = record
         self.runner = runner
@@ -100,7 +106,12 @@ class AdkRunExecution:
         self.session_service = session_service
         self.controls = controls
         self.max_llm_calls = max_llm_calls
+        self._coding_model_status = coding_model_status
         self._closed = False
+
+    @property
+    def coding_model_status(self) -> PublicModelStatus | None:
+        return self._coding_model_status
 
     async def _ensure_session(self) -> None:
         session = await self.session_service.get_session(
@@ -149,8 +160,28 @@ class AdkRunExecution:
             yield_user_message=False,
         )
         async with aclosing(generator) as adk_events:
+            responding_reported = False
             async for event in adk_events:
                 normalized = normalizer.push(event)
+                if (
+                    not responding_reported
+                    and self.coding_model_status is not None
+                    and event.model_version
+                    and not event.error_code
+                ):
+                    responding_reported = True
+                    normalized = (
+                        AgUiEvent(
+                            type=AgUiEventType.CUSTOM,
+                            thread_id=self.record.thread_id,
+                            run_id=self.record.run_id,
+                            name="coding.model.status",
+                            value=self.coding_model_status.model_copy(
+                                update={"readiness": ModelReadiness.RESPONDING}
+                            ).model_dump(mode="json"),
+                        ),
+                        *normalized,
+                    )
                 if normalized:
                     yield PublicEventBatch(
                         source_key=f"adk:{event.id}",
@@ -253,6 +284,17 @@ class AdkRunExecutionFactory:
         )
         config = self.composition.harness.config
         max_iterations = int(getattr(getattr(config, "workflow", None), "max_iterations", 40))
+        coding_model_name = assembly.build_info.models.get("coding")
+        coding_model_provider = assembly.build_info.model_providers.get("coding")
+        coding_model_status = (
+            PublicModelStatus(
+                provider=coding_model_provider,
+                name=coding_model_name,
+                readiness=ModelReadiness.ADAPTER_INITIALIZED,
+            )
+            if coding_model_name is not None and coding_model_provider is not None
+            else None
+        )
         return AdkRunExecution(
             record=record,
             runner=runner,
@@ -260,6 +302,7 @@ class AdkRunExecutionFactory:
             session_service=self.services.session_service,
             controls=assembly.controls,
             max_llm_calls=max(1, min(5_000, max_iterations * 4)),
+            coding_model_status=coding_model_status,
         )
 
 
@@ -379,13 +422,25 @@ class RunCoordinator:
                     "running",
                     expected_status="queued",
                 )
-                self.journal.append_event(
-                    record.run_id,
-                    AgUiEvent(
+                run_started = AgUiEvent(
+                    type=AgUiEventType.RUN_STARTED,
+                    thread_id=record.thread_id,
+                    run_id=record.run_id,
+                )
+                if execution.coding_model_status is not None:
+                    run_started = AgUiEvent(
                         type=AgUiEventType.RUN_STARTED,
                         thread_id=record.thread_id,
                         run_id=record.run_id,
-                    ),
+                        metadata={
+                            "coding.model": self.redactor.redact(
+                                execution.coding_model_status.model_dump(mode="json")
+                            )
+                        },
+                    )
+                self.journal.append_event(
+                    record.run_id,
+                    run_started,
                     source_key="server:run-started",
                 )
                 result: object | None = None

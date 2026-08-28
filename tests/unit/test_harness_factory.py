@@ -121,6 +121,7 @@ def test_registered_harness_owns_strict_config_and_swaps_behind_same_protocol(
     assert assembly.app.name == "swappable_harness"
     assert assembly.app.root_agent is not None
     assert assembly.app.root_agent.name == "fake_root"
+    assert assembly.build_info.model_providers == {}
     assert composition.server.protocol == "ag_ui_websocket_v1"
     assert ServerHello(harness=assembly.descriptor).protocol_version == PROTOCOL_VERSION
 
@@ -181,9 +182,7 @@ def test_default_pi_factory_builds_from_composition_without_credentials(
     pi_config = cast(PiCodingConfig, composition.harness.config)
     configured_model = "composition-selected-model"
     models = dict(pi_config.models)
-    models["coding"] = models["coding"].model_copy(
-        update={"name": configured_model}
-    )
+    models["coding"] = models["coding"].model_copy(update={"name": configured_model})
     configured = composition.model_copy(
         update={
             "app": composition.app.model_copy(update={"name": "configured_app"}),
@@ -192,9 +191,7 @@ def test_default_pi_factory_builds_from_composition_without_credentials(
                     "config": pi_config.model_copy(
                         update={
                             "models": models,
-                            "workflow": pi_config.workflow.model_copy(
-                                update={"max_iterations": 7}
-                            ),
+                            "workflow": pi_config.workflow.model_copy(update={"max_iterations": 7}),
                             "context": pi_config.context.model_copy(
                                 update={"compact_at_tokens": 12_345}
                             ),
@@ -225,6 +222,7 @@ def test_default_pi_factory_builds_from_composition_without_credentials(
     assert assembly.app.name == "configured_app"
     assert assembly.build_info.behavior_sha256 == configured.behavior_sha256
     assert assembly.build_info.models["coding"] == configured_model
+    assert assembly.build_info.model_providers["coding"] == "google_adk"
     assert assembly.build_info.tool_names == ("read", "bash", "edit", "write")
     assert assembly.build_info.max_iterations == 7
     assert assembly.build_info.compact_at_tokens == 12_345
@@ -292,9 +290,7 @@ def test_pi_factory_rejects_ignored_workflow_edge_changes(tmp_path: Path) -> Non
     route = nodes["route"]
     route_payload = route.model_dump(mode="python")
     routes = cast(dict[str, str], route_payload["routes"])
-    nodes["route"] = route.model_copy(
-        update={"routes": {**routes, "verify": "blocked"}}
-    )
+    nodes["route"] = route.model_copy(update={"routes": {**routes, "verify": "blocked"}})
     altered = composition.model_copy(
         update={
             "harness": composition.harness.model_copy(
@@ -430,9 +426,7 @@ def test_pi_factory_enforces_configured_steering_message_limit(tmp_path: Path) -
 
     assert assembly.controls is not None
     receipt = asyncio.run(
-        assembly.controls.steer(
-            SteeringCommand(run_id="run-1", content="x" * 257)
-        )
+        assembly.controls.steer(SteeringCommand(run_id="run-1", content="x" * 257))
     )
     assert receipt.accepted is False
     assert "256 UTF-8 bytes" in (receipt.detail or "")

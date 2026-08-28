@@ -36,9 +36,9 @@ def test_serve_print_config_resolves_composition_without_listening(
     assert payload["websocket_url"] == "ws://127.0.0.1:8765/v1/agent"
     assert payload["workspace"] == tmp_path.resolve().as_posix()
     assert payload["state_root"] == state_root.resolve().as_posix()
-    assert payload["auth_token_source"] == (
-        state_root.resolve() / "server" / "auth-token"
-    ).as_posix()
+    assert (
+        payload["auth_token_source"] == (state_root.resolve() / "server" / "auth-token").as_posix()
+    )
     assert len(payload["config_sha256"]) == 64
 
 
@@ -72,6 +72,7 @@ def test_serve_uses_adk_coding_config_when_flag_is_absent(
 def test_serve_magnitude_prepares_local_model_and_scopes_placeholder_token(
     tmp_path: Path,
     monkeypatch,
+    capsys,
 ) -> None:
     generated = tmp_path / "state" / "server" / "magnitude.yaml"
     captured: dict[str, object] = {}
@@ -112,3 +113,7 @@ def test_serve_magnitude_prepares_local_model_and_scopes_placeholder_token(
     assert captured["config"] == generated
     assert captured["token"] == "magnitude-local"
     assert os.environ["MAGNITUDE_API_KEY"] == "cloud-secret-must-not-be-forwarded"
+    announcement = capsys.readouterr().err
+    assert "Model: local-model" in announcement
+    assert "advertised by the local Magnitude service" in announcement
+    assert "cloud-secret-must-not-be-forwarded" not in announcement

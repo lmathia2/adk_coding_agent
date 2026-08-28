@@ -13,6 +13,8 @@ from .contracts import (
     HarnessControlHooks,
     HarnessDescriptor,
     HarnessFactory,
+    ModelReadiness,
+    PublicModelStatus,
     RuntimeCapability,
     SteeringCommand,
 )
@@ -32,6 +34,8 @@ __all__ = [
     "HarnessDescriptor",
     "HarnessFactory",
     "HarnessRegistry",
+    "ModelReadiness",
+    "PublicModelStatus",
     "RuntimeCapability",
     "SteeringCommand",
 ]

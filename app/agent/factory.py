@@ -238,9 +238,7 @@ class PiCodingHarnessFactory:
     def _known_secrets(config: PiCodingConfig) -> list[str]:
         names = set(config.safety.redact_environment_names)
         names.update(
-            model.api_key.env
-            for model in config.models.values()
-            if model.api_key is not None
+            model.api_key.env for model in config.models.values() if model.api_key is not None
         )
         token = getattr(config.sandbox, "token", None)
         if token is not None:
@@ -284,14 +282,13 @@ class PiCodingHarnessFactory:
             search_default_page_size=config.tools.search.default_page_size,
             search_max_page_size=config.tools.search.max_page_size,
         )
+
         def build_model(model_name: str):
             model_config = config.models[model_name]
             return self._model_providers.get(model_config.provider).build_model(
                 model_config,
                 secrets=(
-                    {"api_key": model_config.api_key}
-                    if model_config.api_key is not None
-                    else {}
+                    {"api_key": model_config.api_key} if model_config.api_key is not None else {}
                 ),
             )
 
@@ -358,9 +355,7 @@ class PiCodingHarnessFactory:
             repository_map_tokens=config.context.repository_map_tokens,
             steering_batch_limit=config.steering.batch_limit,
             steering_enabled=config.steering.enabled,
-            steering_at_work_batch_boundary=(
-                "work_batch_boundary" in config.steering.safe_points
-            ),
+            steering_at_work_batch_boundary=("work_batch_boundary" in config.steering.safe_points),
         )
         root_agent = build_root_agent(deps)
         plugins: list[BasePlugin] = []
@@ -370,28 +365,30 @@ class PiCodingHarnessFactory:
         }.intersection(config.steering.safe_points):
             plugins.append(
                 SteeringPlugin(
-                queue=steering,
-                event_store=control_state.event_store,
-                lease_seconds=settings.task_lease_seconds,
+                    queue=steering,
+                    event_store=control_state.event_store,
+                    lease_seconds=settings.task_lease_seconds,
                     batch_limit=config.steering.batch_limit,
                     before_model="before_model" in config.steering.safe_points,
                     before_tool="before_tool" in config.steering.safe_points,
                 )
             )
-        plugins.extend([
-            metrics_plugin,
-            VerifiedProjectMemoryPlugin(
-                workspace=settings.workspace,
-                state_root=settings.state_root,
-                project_root=settings.source_repository or settings.workspace,
-                default_task_id=settings.task_id_override,
-                event_store=control_state.event_store,
-            ),
-            CodingToolArtifactPlugin(
-                event_store=control_state.event_store,
-                default_task_id=settings.task_id_override,
-            ),
-        ])
+        plugins.extend(
+            [
+                metrics_plugin,
+                VerifiedProjectMemoryPlugin(
+                    workspace=settings.workspace,
+                    state_root=settings.state_root,
+                    project_root=settings.source_repository or settings.workspace,
+                    default_task_id=settings.task_id_override,
+                    event_store=control_state.event_store,
+                ),
+                CodingToolArtifactPlugin(
+                    event_store=control_state.event_store,
+                    default_task_id=settings.task_id_override,
+                ),
+            ]
+        )
         trace_plugin: HarnessTracePlugin | None = None
         if config.tracing.mode != "off":
             try:
@@ -448,6 +445,9 @@ class PiCodingHarnessFactory:
             build_info=HarnessBuildInfo(
                 behavior_sha256=composition.behavior_sha256,
                 models={name: model.name for name, model in sorted(config.models.items())},
+                model_providers={
+                    name: model.provider for name, model in sorted(config.models.items())
+                },
                 tool_names=FOUR_CODING_TOOLS,
                 max_iterations=config.workflow.max_iterations,
                 compact_at_tokens=config.context.compact_at_tokens,

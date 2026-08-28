@@ -240,7 +240,9 @@ def _serve(args: argparse.Namespace) -> int:
     config_path = (
         args.config
         if args.config is not None
-        else Path(configured_path) if configured_path else DEFAULT_COMPOSITION_PATH
+        else Path(configured_path)
+        if configured_path
+        else DEFAULT_COMPOSITION_PATH
     )
     assembly = build_server_assembly(
         workspace=workspace,
@@ -262,9 +264,7 @@ def _serve(args: argparse.Namespace) -> int:
                     "host": server.host,
                     "port": server.port,
                     "state_root": assembly.state_root.as_posix(),
-                    "websocket_url": (
-                        f"ws://{server.host}:{server.port}{server.websocket_path}"
-                    ),
+                    "websocket_url": (f"ws://{server.host}:{server.port}{server.websocket_path}"),
                     "workspace": assembly.workspace.as_posix(),
                 },
                 sort_keys=True,
@@ -308,6 +308,15 @@ def _serve_magnitude(args: argparse.Namespace) -> int:
     except MagnitudeConnectionError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+
+    print(
+        "Magnitude coding model:\n"
+        f"  Model: {connection.model_id}\n"
+        "  Status: advertised by the local Magnitude service\n"
+        f"  Endpoint: {connection.endpoint}",
+        file=sys.stderr,
+        flush=True,
+    )
 
     previous_token = os.environ.get("MAGNITUDE_API_KEY")
     os.environ["MAGNITUDE_API_KEY"] = MAGNITUDE_API_KEY
@@ -378,16 +387,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     if args.command == "trace-export":
-        exported = TraceStore(args.state_root.resolve() / "traces.db").export_jsonl(
-            args.task_id
-        )
+        exported = TraceStore(args.state_root.resolve() / "traces.db").export_jsonl(args.task_id)
         if exported:
             print(exported)
         return 0
     if args.command in {"learned-skills", "disable-skill"}:
-        registry = LearnedSkillRegistry(
-            args.state_root.resolve() / "learned-skills"
-        )
+        registry = LearnedSkillRegistry(args.state_root.resolve() / "learned-skills")
         if args.command == "disable-skill":
             print(registry.disable(args.name).model_dump_json(indent=2))
             return 0

@@ -280,6 +280,28 @@ def test_server_envelope_round_trips_normalized_ag_ui_event() -> None:
     assert restored.event.type == AgUiEventType.STATE_SNAPSHOT
 
 
+def test_run_started_model_status_metadata_round_trips_without_secrets() -> None:
+    event = AgUiEvent(
+        type=AgUiEventType.RUN_STARTED,
+        thread_id="thread-1",
+        run_id="run-1",
+        metadata={
+            "coding.model": {
+                "role": "coding",
+                "provider": "openai_compatible",
+                "name": "qwen-local",
+                "readiness": "adapter_initialized",
+            }
+        },
+    )
+
+    restored = AgUiEvent.model_validate_json(event.model_dump_json())
+
+    assert restored == event
+    assert "api_key" not in restored.model_dump_json()
+    assert "base_url" not in restored.model_dump_json()
+
+
 def test_ag_ui_wire_payload_uses_canonical_camel_case_fields() -> None:
     envelope = ServerEnvelope(
         sequence=1,
@@ -356,10 +378,7 @@ def test_ag_ui_metadata_must_be_omitted_instead_of_null() -> None:
     ],
 )
 def test_server_response_messages_round_trip_through_discriminator(
-    message: TaskAcceptedMessage
-    | ControlResultMessage
-    | PongMessage
-    | ServerErrorMessage,
+    message: TaskAcceptedMessage | ControlResultMessage | PongMessage | ServerErrorMessage,
     expected_type: type[object],
 ) -> None:
     payload = message.model_dump_json()

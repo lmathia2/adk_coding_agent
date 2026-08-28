@@ -117,3 +117,63 @@ func TestDeltaTextHandlesStringsAndStructuredDeltas(t *testing.T) {
 		t.Fatalf("structured delta = %q", got)
 	}
 }
+
+func TestCodingModelStatusAcceptsRunMetadataAndCustomUpdates(t *testing.T) {
+	t.Parallel()
+	want := CodingModelStatus{
+		Role:      "coding",
+		Provider:  "openai_compatible",
+		Name:      "qwen/local-coder",
+		Readiness: ModelAdapterInitialized,
+	}
+	started := AGUIEvent{
+		Type:     EventRunStarted,
+		Metadata: json.RawMessage(`{"coding.model":{"role":"coding","provider":"openai_compatible","name":"qwen/local-coder","readiness":"adapter_initialized"}}`),
+	}
+	if got, ok := started.CodingModelStatus(); !ok || got != want {
+		t.Fatalf("RUN_STARTED status = %#v, ok=%v", got, ok)
+	}
+
+	responding := AGUIEvent{
+		Type: EventCustom,
+		Name: CodingModelStatusEventName,
+		Value: json.RawMessage(
+			`{"role":"coding","provider":"openai_compatible","name":"qwen/local-coder","readiness":"responding"}`,
+		),
+	}
+	want.Readiness = ModelResponding
+	if got, ok := responding.CodingModelStatus(); !ok || got != want {
+		t.Fatalf("CUSTOM status = %#v, ok=%v", got, ok)
+	}
+}
+
+func TestCodingModelStatusIgnoresMalformedOrExtendedPayloads(t *testing.T) {
+	t.Parallel()
+	for _, payload := range []string{
+		`null`,
+		`{"role":"review","provider":"openai_compatible","name":"coder","readiness":"responding"}`,
+		`{"role":"coding","provider":"openai_compatible","name":"coder","readiness":"loaded"}`,
+		`{"role":"coding","provider":"openai_compatible","name":"coder","readiness":"responding","api_key":"ghp_abcdefghijklmnopqrstuvwxyz123456"}`,
+		`{"role":"coding","provider":"bad\nprovider","name":"coder","readiness":"responding"}`,
+	} {
+		event := AGUIEvent{Type: EventCustom, Name: CodingModelStatusEventName, Value: json.RawMessage(payload)}
+		if status, ok := event.CodingModelStatus(); ok {
+			t.Fatalf("accepted unsafe status %#v from %s", status, payload)
+		}
+	}
+}
+
+func TestDecodeLegacyRunStartedWithoutModelStatus(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{
+		"type":"event","protocol_version":1,"sequence":1,"run_id":"run-1","durable":true,
+		"event":{"type":"RUN_STARTED","threadId":"thread-1","runId":"run-1"}
+	}`)
+	message, err := DecodeServer(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := message.Envelope.Event.CodingModelStatus(); ok {
+		t.Fatal("legacy RUN_STARTED unexpectedly reported a model")
+	}
+}

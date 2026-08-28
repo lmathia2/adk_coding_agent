@@ -242,7 +242,11 @@ func (m Model) View() string {
 	}
 	header := fmt.Sprintf("adk-agent  %s  harness=%s  run=%s  status=%s  seq=%d",
 		connection, harness, valueOr(m.session.RunID, "-"), m.session.Status, m.session.Cursor)
-	output = append(output, clip(header, width), strings.Repeat("─", min(width, utf8.RuneCountInString(header)+8)))
+	output = append(output,
+		clip(header, width),
+		clip(codingModelLine(m.session), width),
+		strings.Repeat("─", min(width, utf8.RuneCountInString(header)+8)),
+	)
 
 	for _, entry := range m.session.Entries {
 		marker := entryMarker(entry.Kind)
@@ -260,11 +264,12 @@ func (m Model) View() string {
 
 	footerLines := 3
 	available := height - footerLines
-	if available < 2 {
-		available = 2
+	const fixedHeaderLines = 3
+	if available < fixedHeaderLines {
+		available = fixedHeaderLines
 	}
 	if len(output) > available {
-		output = append(output[:2], output[len(output)-(available-2):]...)
+		output = append(output[:fixedHeaderLines], output[len(output)-(available-fixedHeaderLines):]...)
 	}
 	prompt := "start> "
 	if m.session.RunID != "" && !terminalStatus(m.session.Status) {
@@ -276,6 +281,20 @@ func (m Model) View() string {
 		clip("enter send · /start /attach /pause /cancel /reconnect /help · ctrl+d quit", width),
 	)
 	return strings.Join(output, "\n")
+}
+
+func codingModelLine(state session.State) string {
+	if state.RunID == "" {
+		return "coding-model  waiting for task"
+	}
+	if state.Status == session.StatusStarting {
+		return "coding-model  initializing"
+	}
+	if state.CodingModel == nil {
+		return "coding-model  unknown (server did not report)"
+	}
+	return fmt.Sprintf("coding-model  %s/%s  readiness=%s",
+		state.CodingModel.Provider, state.CodingModel.Name, state.CodingModel.Readiness)
 }
 
 func (m Model) submit() (tea.Model, tea.Cmd) {

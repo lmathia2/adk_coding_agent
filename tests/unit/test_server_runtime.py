@@ -24,6 +24,8 @@ from harness.agent import (
     ControlCommand,
     ControlReceipt,
     HarnessDescriptor,
+    ModelReadiness,
+    PublicModelStatus,
     RuntimeCapability,
     SteeringCommand,
 )
@@ -81,13 +83,22 @@ def _custom_event(record: RunRecord, value: object) -> AgUiEvent:
 
 
 class _QueueExecution:
-    def __init__(self, record: RunRecord) -> None:
+    def __init__(
+        self,
+        record: RunRecord,
+        coding_model_status: PublicModelStatus | None = None,
+    ) -> None:
         self.record = record
+        self._coding_model_status = coding_model_status
         self.entered = asyncio.Event()
         self._items: asyncio.Queue[PublicEventBatch | BaseException | None] = asyncio.Queue()
         self.steering: list[SteeringCommand] = []
         self.pauses: list[ControlCommand] = []
         self.closed = False
+
+    @property
+    def coding_model_status(self) -> PublicModelStatus | None:
+        return self._coding_model_status
 
     def emit(self, source_key: str, *events: AgUiEvent) -> None:
         self._items.put_nowait(PublicEventBatch(source_key=source_key, events=tuple(events)))
@@ -154,6 +165,11 @@ class _FakeExecutionFactory:
         self.executions: dict[str, _QueueExecution] = {}
         self.created: list[RunRecord] = []
         self.initialization_error: BaseException | None = None
+        self.coding_model_status = PublicModelStatus(
+            provider="openai_compatible",
+            name="local-test-model",
+            readiness=ModelReadiness.ADAPTER_INITIALIZED,
+        )
 
     @property
     def run_metadata(self) -> Mapping[str, str]:
@@ -163,7 +179,7 @@ class _FakeExecutionFactory:
         self.created.append(record)
         if self.initialization_error is not None:
             raise self.initialization_error
-        execution = _QueueExecution(record)
+        execution = _QueueExecution(record, self.coding_model_status)
         self.executions[record.run_id] = execution
         return execution
 
@@ -220,6 +236,14 @@ async def test_start_persists_lifecycle_and_exact_duplicate_is_not_reexecuted(
         AgUiEventType.CUSTOM,
         AgUiEventType.RUN_FINISHED,
     ]
+    assert envelopes[0].event.metadata == {
+        "coding.model": {
+            "role": "coding",
+            "provider": "openai_compatible",
+            "name": "local-test-model",
+            "readiness": "adapter_initialized",
+        }
+    }
     assert all(envelope.durable for envelope in envelopes)
     assert execution.closed is True
 
@@ -461,6 +485,41 @@ async def test_initialization_failure_is_redacted_and_durably_terminal(
 
 
 @pytest.mark.asyncio
+async def test_run_started_model_status_is_redacted_before_persistence(
+    tmp_path: Path,
+) -> None:
+    secret = "ghp_abcdefghijklmnopqrstuvwxyz123456"
+    factory = _FakeExecutionFactory()
+    factory.coding_model_status = PublicModelStatus(
+        provider="openai_compatible",
+        name=secret,
+        readiness=ModelReadiness.ADAPTER_INITIALIZED,
+    )
+    coordinator, _ = _coordinator(
+        tmp_path,
+        factory=factory,
+        redactor=SecretRedactor(known_secrets=(secret,)),
+    )
+
+    record, _ = await coordinator.start(_start(), user_id="user-1")
+    execution = factory.executions[record.run_id]
+    await _wait_entered(execution)
+    execution.finish()
+    await coordinator.wait(record.run_id)
+
+    started = coordinator.store.replay(record.run_id)[0].event
+    assert started.metadata == {
+        "coding.model": {
+            "role": "coding",
+            "provider": "openai_compatible",
+            "name": "<redacted>",
+            "readiness": "adapter_initialized",
+        }
+    }
+    assert secret not in started.model_dump_json()
+
+
+@pytest.mark.asyncio
 async def test_stale_running_run_is_atomically_failed_with_terminal_event(
     tmp_path: Path,
 ) -> None:
@@ -552,6 +611,7 @@ class _CredentialFreeAgent(BaseAgent):
             id="deterministic-event",
             invocation_id=ctx.invocation_id,
             author=self.name,
+            model_version="test-local-model",
             content=types.Content(
                 role="assistant",
                 parts=[types.Part(text="credential-free output")],
@@ -621,6 +681,11 @@ async def test_real_adk_runner_creates_session_and_maps_output_without_credentia
         session_service=service,
         controls=None,
         max_llm_calls=1,
+        coding_model_status=PublicModelStatus(
+            provider="openai_compatible",
+            name="test-local-model",
+            readiness=ModelReadiness.ADAPTER_INITIALIZED,
+        ),
     )
 
     batches = [batch async for batch in execution.events()]
@@ -635,11 +700,19 @@ async def test_real_adk_runner_creates_session_and_maps_output_without_credentia
     assert session.state["run_id"] == record.run_id
     events = [event for batch in batches for event in batch.events]
     assert [event.type for event in events] == [
+        AgUiEventType.CUSTOM,
         AgUiEventType.TEXT_MESSAGE_START,
         AgUiEventType.TEXT_MESSAGE_CONTENT,
         AgUiEventType.TEXT_MESSAGE_END,
     ]
-    assert events[1].delta == "credential-free output"
+    assert events[0].name == "coding.model.status"
+    assert events[0].value == {
+        "role": "coding",
+        "provider": "openai_compatible",
+        "name": "test-local-model",
+        "readiness": "responding",
+    }
+    assert events[2].delta == "credential-free output"
 
 
 @pytest.mark.asyncio
@@ -704,8 +777,7 @@ async def test_real_adk_runner_unwraps_content_for_pi_workflow_root(
     outputs = [
         event.value
         for event in public_events
-        if event.type == AgUiEventType.CUSTOM
-        and event.name == "coding.workflow.output"
+        if event.type == AgUiEventType.CUSTOM and event.name == "coding.workflow.output"
     ]
     assert outputs
     workflow_output = json.loads(cast(str, outputs[-1]["output"]))

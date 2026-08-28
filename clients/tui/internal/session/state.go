@@ -51,6 +51,7 @@ type State struct {
 	StateSnapshot  json.RawMessage
 	LastError      string
 	LastPongNonce  string
+	CodingModel    *protocol.CodingModelStatus
 	maxEntries     int
 	maxContentByte int
 	ackEvery       int64
@@ -155,6 +156,9 @@ func (s *State) reduceEvent(event protocol.AGUIEvent) {
 	switch event.Type {
 	case protocol.EventRunStarted:
 		s.Status = StatusRunning
+		if model, ok := event.CodingModelStatus(); ok {
+			s.CodingModel = &model
+		}
 		if event.ThreadID != "" {
 			s.ThreadID = event.ThreadID
 		}
@@ -198,6 +202,12 @@ func (s *State) reduceEvent(event protocol.AGUIEvent) {
 	case protocol.EventStateDelta:
 		s.appendEntry(Entry{Kind: EntryStatus, Title: "state delta", Content: bounded(string(event.Delta), s.maxContentByte), Done: true})
 	case protocol.EventCustom:
+		if event.Name == protocol.CodingModelStatusEventName {
+			if model, ok := event.CodingModelStatus(); ok {
+				s.CodingModel = &model
+			}
+			return
+		}
 		if event.Name == "coding.run.cancelled" {
 			s.Status = StatusCancelled
 		}

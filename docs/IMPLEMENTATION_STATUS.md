@@ -77,6 +77,8 @@ complete.
   reconnect-after-backpressure semantics.
 - [x] Protocol-only Bubble Tea TUI with cursor resume, replay deduplication, bounded
   buffers/history, streaming tool/text rendering, and mid-run steering.
+- [x] Public, replayable coding-model identity and honest adapter/responding status
+  without exposing endpoints, credential references, or provider secrets.
 
 ### Verification and evaluation
 

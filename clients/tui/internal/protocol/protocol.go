@@ -40,6 +40,25 @@ const (
 	EventCustom             = "CUSTOM"
 )
 
+const CodingModelStatusEventName = "coding.model.status"
+
+type ModelReadiness string
+
+const (
+	ModelAdapterInitialized ModelReadiness = "adapter_initialized"
+	ModelResponding         ModelReadiness = "responding"
+)
+
+// CodingModelStatus is the small, allowlisted public projection of the model
+// serving the coding role. Provider configuration and credentials never enter
+// this client-side contract.
+type CodingModelStatus struct {
+	Role      string         `json:"role"`
+	Provider  string         `json:"provider"`
+	Name      string         `json:"name"`
+	Readiness ModelReadiness `json:"readiness"`
+}
+
 // ClientMessage is implemented by every client-to-server control message.
 type ClientMessage interface {
 	clientMessage()
@@ -255,6 +274,46 @@ func (e AGUIEvent) DeltaText() string {
 		return value
 	}
 	return string(e.Delta)
+}
+
+// CodingModelStatus returns model status carried by either the initial
+// RUN_STARTED metadata or a later namespaced status event. Invalid or extended
+// payloads are deliberately ignored so arbitrary provider data cannot reach the
+// presentation layer.
+func (e AGUIEvent) CodingModelStatus() (CodingModelStatus, bool) {
+	var payload json.RawMessage
+	switch {
+	case e.Type == EventRunStarted:
+		var metadata map[string]json.RawMessage
+		if len(e.Metadata) == 0 || json.Unmarshal(e.Metadata, &metadata) != nil {
+			return CodingModelStatus{}, false
+		}
+		payload = metadata["coding.model"]
+	case e.Type == EventCustom && e.Name == CodingModelStatusEventName:
+		payload = e.Value
+	default:
+		return CodingModelStatus{}, false
+	}
+	if len(payload) == 0 {
+		return CodingModelStatus{}, false
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var status CodingModelStatus
+	if err := decoder.Decode(&status); err != nil {
+		return CodingModelStatus{}, false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return CodingModelStatus{}, false
+	}
+	if status.Role != "coding" || !validModelStatusField(status.Provider, 64) ||
+		!validModelStatusField(status.Name, 128) ||
+		(status.Readiness != ModelAdapterInitialized && status.Readiness != ModelResponding) {
+		return CodingModelStatus{}, false
+	}
+	return status, true
 }
 
 type EventEnvelope struct {
@@ -482,6 +541,18 @@ func rawString(value json.RawMessage) (string, bool) {
 
 func validString(value string, max int) bool {
 	return value != "" && len(value) <= max
+}
+
+func validModelStatusField(value string, max int) bool {
+	if !validString(value, max) || strings.TrimSpace(value) != value {
+		return false
+	}
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func validImplementation(value string) bool {

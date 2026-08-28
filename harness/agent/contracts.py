@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from google.adk.agents import BaseAgent
 from google.adk.apps import App
@@ -38,11 +38,26 @@ class HarnessDescriptor(FrozenModel):
     protocol_versions: tuple[int, ...] = (1,)
 
 
+class ModelReadiness(StrEnum):
+    ADAPTER_INITIALIZED = "adapter_initialized"
+    RESPONDING = "responding"
+
+
+class PublicModelStatus(FrozenModel):
+    """Allowlisted model identity and evidence safe for public clients."""
+
+    role: Literal["coding"] = "coding"
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
+    name: str = Field(min_length=1, max_length=128, pattern=r"^[^\x00-\x1f\x7f]+$")
+    readiness: ModelReadiness
+
+
 class HarnessBuildInfo(FrozenModel):
     """Safe effective behavior metadata for diagnostics and assembly caching."""
 
     behavior_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     models: dict[str, str] = Field(default_factory=dict)
+    model_providers: dict[str, str] = Field(default_factory=dict)
     tool_names: tuple[str, ...] = ()
     max_iterations: int | None = Field(default=None, ge=1)
     compact_at_tokens: int | None = Field(default=None, ge=1)
@@ -175,6 +190,8 @@ __all__ = [
     "HarnessControlHooks",
     "HarnessDescriptor",
     "HarnessFactory",
+    "ModelReadiness",
+    "PublicModelStatus",
     "RuntimeCapability",
     "SteeringCommand",
 ]

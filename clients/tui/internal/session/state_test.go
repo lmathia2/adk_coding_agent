@@ -182,3 +182,68 @@ func TestCancelledRunFinishDoesNotRenderCompleted(t *testing.T) {
 		t.Fatalf("terminal content = %q", got)
 	}
 }
+
+func TestReducerTracksCodingModelWithoutAddingStatusTranscriptEntries(t *testing.T) {
+	t.Parallel()
+	state := New(10, 1024, 100)
+	state.AcceptTask(protocol.TaskAccepted{RunID: "run-1", ThreadID: "thread-1", Created: true})
+	started := protocol.AGUIEvent{
+		Type:     protocol.EventRunStarted,
+		RunID:    "run-1",
+		ThreadID: "thread-1",
+		Metadata: json.RawMessage(`{"coding.model":{"role":"coding","provider":"openai_compatible","name":"qwen/local-coder","readiness":"adapter_initialized"}}`),
+	}
+	state.ApplyEnvelope(envelope(1, started))
+	if state.CodingModel == nil || state.CodingModel.Name != "qwen/local-coder" || state.CodingModel.Readiness != protocol.ModelAdapterInitialized {
+		t.Fatalf("initial coding model = %#v", state.CodingModel)
+	}
+	entriesAfterStart := len(state.Entries)
+
+	state.ApplyEnvelope(envelope(2, protocol.AGUIEvent{
+		Type: protocol.EventCustom,
+		Name: protocol.CodingModelStatusEventName,
+		Value: json.RawMessage(
+			`{"role":"coding","provider":"openai_compatible","name":"qwen/local-coder","readiness":"responding"}`,
+		),
+	}))
+	if state.CodingModel == nil || state.CodingModel.Readiness != protocol.ModelResponding {
+		t.Fatalf("updated coding model = %#v", state.CodingModel)
+	}
+	if len(state.Entries) != entriesAfterStart {
+		t.Fatal("model status custom event was rendered as a transcript entry")
+	}
+}
+
+func TestReducerIgnoresUnsafeModelStatusAndReplay(t *testing.T) {
+	t.Parallel()
+	state := New(10, 1024, 100)
+	state.RunID = "run-1"
+	state.ApplyEnvelope(envelope(1, protocol.AGUIEvent{
+		Type:     protocol.EventRunStarted,
+		RunID:    "run-1",
+		ThreadID: "thread-1",
+	}))
+	unsafe := protocol.AGUIEvent{
+		Type: protocol.EventCustom,
+		Name: protocol.CodingModelStatusEventName,
+		Value: json.RawMessage(
+			`{"role":"coding","provider":"openai_compatible","name":"coder","readiness":"responding","api_key":"ghp_abcdefghijklmnopqrstuvwxyz123456"}`,
+		),
+	}
+	state.ApplyEnvelope(envelope(2, unsafe))
+	if state.CodingModel != nil {
+		t.Fatalf("unsafe model status was retained: %#v", state.CodingModel)
+	}
+	if len(state.Entries) != 1 {
+		t.Fatalf("unsafe model event changed transcript: %#v", state.Entries)
+	}
+
+	valid := unsafe
+	valid.Value = json.RawMessage(`{"role":"coding","provider":"openai_compatible","name":"coder","readiness":"responding"}`)
+	if replay := state.ApplyEnvelope(envelope(2, valid)); replay.Applied {
+		t.Fatal("replayed sequence changed model status")
+	}
+	if state.CodingModel != nil {
+		t.Fatal("replayed model status mutated state")
+	}
+}
