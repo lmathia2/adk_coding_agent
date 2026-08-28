@@ -111,6 +111,10 @@ func (c *Client) Run(ctx context.Context) {
 
 		backoff = c.config.ReconnectMin
 		c.setCurrent(conn)
+		// Messages are reconstructed by the UI from durable session state after
+		// every negotiated hello. Discard connection-scoped frames left behind by
+		// an ambiguous disconnect so controls cannot be duplicated or reordered.
+		c.drainOutbound()
 		c.publish(ctx, Event{Kind: Connected})
 		err = c.serve(ctx, conn)
 		c.clearCurrent(conn)
@@ -189,12 +193,6 @@ func (c *Client) writeLoop(ctx context.Context, conn *websocket.Conn, done <-cha
 				return
 			}
 			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
-				// Controls are idempotent, so retrying an ambiguously delivered frame is safe.
-				select {
-				case c.outbound <- payload:
-				default:
-					c.publish(ctx, Event{Kind: Warning, Err: ErrOutboundBufferFull})
-				}
 				select {
 				case errors <- fmt.Errorf("write: %w", err):
 				default:
@@ -202,6 +200,17 @@ func (c *Client) writeLoop(ctx context.Context, conn *websocket.Conn, done <-cha
 				_ = conn.Close()
 				return
 			}
+		}
+	}
+}
+
+func (c *Client) drainOutbound() {
+	for {
+		select {
+		case <-c.outbound:
+			continue
+		default:
+			return
 		}
 	}
 }

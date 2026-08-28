@@ -100,6 +100,28 @@ func TestReconnectUsesHighestAppliedCursor(t *testing.T) {
 	}
 }
 
+func TestReducerDoesNotAdvanceAcrossSequenceGap(t *testing.T) {
+	t.Parallel()
+	state := New(10, 1024, 5)
+	state.RunID = "run-1"
+	state.Cursor = 7
+
+	result := state.ApplyEnvelope(envelope(9, protocol.AGUIEvent{
+		Type:    protocol.EventRunError,
+		Message: "must not be applied",
+	}))
+	if !result.Gap || result.Applied {
+		t.Fatalf("gap result = %#v", result)
+	}
+	if state.Cursor != 7 || state.Status == StatusFailed {
+		t.Fatalf("gap mutated state: cursor=%d status=%s", state.Cursor, state.Status)
+	}
+	attach, ok := state.ResumeMessage()
+	if !ok || attach.AfterSequence != 7 {
+		t.Fatalf("resume = %#v, ok=%v", attach, ok)
+	}
+}
+
 func TestReducerBoundsHistoryAndEntryContent(t *testing.T) {
 	t.Parallel()
 	state := New(2, 256, 100)

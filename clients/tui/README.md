@@ -12,8 +12,15 @@ release). Dependency checksums are committed in `go.sum`.
 ```bash
 cd clients/tui
 go build -o adk-agent-tui .
+export STATE_ROOT=/absolute/path/to/state
+export ADK_CODING_AGENT_TOKEN="$(cat "$STATE_ROOT/server/auth-token")"
 ./adk-agent-tui --server ws://127.0.0.1:8765/v1/agent
 ```
+
+The local server requires a bearer token of at least 32 UTF-8 bytes. The client
+reads it from `ADK_CODING_AGENT_TOKEN` by default or from `--token`; it never sends
+an `Origin` header. The default token file is beneath the configured state root at
+`server/auth-token`.
 
 Start immediately with a prompt or attach to a durable run cursor:
 

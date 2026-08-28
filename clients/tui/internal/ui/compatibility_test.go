@@ -209,6 +209,72 @@ func TestLoopbackReconnectResumesAfterAppliedCursor(t *testing.T) {
 	assertNoFixtureError(t, serverErrors)
 }
 
+func TestReconnectReplaysUnconfirmedControlWithSameIdempotencyKey(t *testing.T) {
+	t.Parallel()
+	serverErrors := make(chan error, 1)
+	secondHandlerDone := make(chan struct{})
+	var connections atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection := connections.Add(1)
+		conn, err := fixtureUpgrader.Upgrade(writer, request, nil)
+		if err != nil {
+			reportFixtureError(serverErrors, err)
+			return
+		}
+		defer conn.Close()
+		if connection == 2 {
+			defer close(secondHandlerDone)
+		}
+		if err := expectClientMessage(conn, "client.hello", nil); err != nil {
+			reportFixtureError(serverErrors, err)
+			return
+		}
+		if err := writeServerHello(conn); err != nil {
+			reportFixtureError(serverErrors, err)
+			return
+		}
+		if err := expectAttach(conn, "run-control", 0); err != nil {
+			reportFixtureError(serverErrors, err)
+			return
+		}
+		if err := expectClientMessage(conn, "task.steer", func(value map[string]any) error {
+			if value["idempotency_key"] != "control-fixed" || value["content"] != "keep going" {
+				return fmt.Errorf("unexpected control: %#v", value)
+			}
+			return nil
+		}); err != nil {
+			reportFixtureError(serverErrors, err)
+			return
+		}
+		if connection == 1 {
+			return
+		}
+		if err := conn.WriteJSON(map[string]any{
+			"type": "control.result", "protocol_version": 1, "operation": "steer",
+			"run_id": "run-control", "accepted": true, "command_id": "control-fixed",
+		}); err != nil {
+			reportFixtureError(serverErrors, err)
+			return
+		}
+		_, _, _ = conn.ReadMessage()
+	}))
+	defer server.Close()
+
+	client, model, cancel, clientDone := startFixtureClient(t, server, Config{
+		InitialRunID: "run-control", History: 20, ContentBytes: 4096, AckEvery: 10,
+	})
+	model.pendingControls = []pendingControl{{
+		commandID: "control-fixed",
+		message:   protocol.NewSteerTask("run-control", "keep going", "control-fixed", 0),
+	}}
+	pumpUntil(t, client, &model, func(model *Model) bool {
+		return connections.Load() >= 2 && len(model.pendingControls) == 0
+	})
+	stopFixtureClient(t, cancel, clientDone)
+	waitFixtureHandler(t, secondHandlerDone)
+	assertNoFixtureError(t, serverErrors)
+}
+
 func startFixtureClient(t *testing.T, server *httptest.Server, config Config) (*ws.Client, Model, context.CancelFunc, <-chan struct{}) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())

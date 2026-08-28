@@ -134,7 +134,12 @@ func (s *State) ApplyEnvelope(envelope protocol.EventEnvelope) ApplyResult {
 	if envelope.Sequence <= s.Cursor {
 		return ApplyResult{}
 	}
-	result := ApplyResult{Applied: true, Gap: envelope.Sequence > s.Cursor+1 && s.Cursor != 0}
+	if envelope.Sequence > s.Cursor+1 {
+		// Never advance beyond a hole: reconnect must resume from the highest
+		// contiguous sequence so the omitted durable events can still be replayed.
+		return ApplyResult{Gap: true}
+	}
+	result := ApplyResult{Applied: true}
 	s.Cursor = envelope.Sequence
 	s.reduceEvent(envelope.Event)
 

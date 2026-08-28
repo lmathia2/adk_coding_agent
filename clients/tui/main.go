@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -55,6 +56,8 @@ func run() error {
 	initialInput := flag.String("input", "", "task prompt to start after negotiation")
 	threadID := flag.String("thread", "", "optional thread ID for a new task")
 	heartbeat := flag.Duration("heartbeat", 20*time.Second, "application heartbeat interval")
+	heartbeatTimeout := flag.Duration("heartbeat-timeout", 45*time.Second, "maximum wait for a heartbeat response")
+	token := flag.String("token", os.Getenv("ADK_CODING_AGENT_TOKEN"), "server bearer token (or ADK_CODING_AGENT_TOKEN)")
 	reconnectMin := flag.Duration("reconnect-min", 250*time.Millisecond, "minimum reconnect delay")
 	reconnectMax := flag.Duration("reconnect-max", 10*time.Second, "maximum reconnect delay")
 	inboundBuffer := flag.Int("inbound-buffer", 128, "bounded inbound event buffer")
@@ -84,8 +87,12 @@ func run() error {
 	if *reconnectMin <= 0 || *reconnectMax < *reconnectMin {
 		return errors.New("reconnect durations must satisfy 0 < min <= max")
 	}
-	if *heartbeat <= 0 || *inboundBuffer < 1 || *outboundBuffer < 1 || *maxMessageBytes < 1 || *history < 1 || *contentBytes < 1 || *ackEvery < 1 {
+	if *heartbeat <= 0 || *heartbeatTimeout <= 0 || *inboundBuffer < 1 || *outboundBuffer < 1 || *maxMessageBytes < 1 || *history < 1 || *contentBytes < 1 || *ackEvery < 1 {
 		return errors.New("heartbeat, buffers, message limits, history, and ack interval must be positive")
+	}
+	headers, err := bearerHeaders(*token)
+	if err != nil {
+		return err
 	}
 	prompt := strings.TrimSpace(*initialInput)
 	if prompt == "" && flag.NArg() > 0 {
@@ -100,6 +107,7 @@ func run() error {
 	transport := ws.New(ws.Config{
 		URL:             *serverURL,
 		ClientName:      *clientName,
+		Headers:         headers,
 		InboundBuffer:   *inboundBuffer,
 		OutboundBuffer:  *outboundBuffer,
 		MaxMessageBytes: *maxMessageBytes,
@@ -109,21 +117,30 @@ func run() error {
 	go transport.Run(ctx)
 
 	model := ui.New(transport, ui.Config{
-		InitialInput:  prompt,
-		InitialRunID:  *initialRun,
-		InitialCursor: *initialCursor,
-		ThreadID:      *threadID,
-		Metadata:      metadata,
-		Heartbeat:     *heartbeat,
-		History:       *history,
-		ContentBytes:  *contentBytes,
-		AckEvery:      *ackEvery,
+		InitialInput:     prompt,
+		InitialRunID:     *initialRun,
+		InitialCursor:    *initialCursor,
+		ThreadID:         *threadID,
+		Metadata:         metadata,
+		Heartbeat:        *heartbeat,
+		HeartbeatTimeout: *heartbeatTimeout,
+		History:          *history,
+		ContentBytes:     *contentBytes,
+		AckEvery:         *ackEvery,
 	})
 	options := []tea.ProgramOption{tea.WithContext(ctx)}
 	if !*noAltScreen {
 		options = append(options, tea.WithAltScreen())
 	}
-	_, err := tea.NewProgram(model, options...).Run()
+	_, err = tea.NewProgram(model, options...).Run()
 	cancel()
 	return err
+}
+
+func bearerHeaders(token string) (http.Header, error) {
+	token = strings.TrimSpace(token)
+	if len([]byte(token)) < 32 {
+		return nil, errors.New("--token or ADK_CODING_AGENT_TOKEN must contain at least 32 UTF-8 bytes")
+	}
+	return http.Header{"Authorization": []string{"Bearer " + token}}, nil
 }

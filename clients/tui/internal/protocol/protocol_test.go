@@ -97,6 +97,10 @@ func TestDecodeRejectsUnknownTypeVersionAndFields(t *testing.T) {
 		`{"type":"unknown","protocol_version":1}`,
 		`{"type":"pong","protocol_version":2,"nonce":"n"}`,
 		`{"type":"pong","protocol_version":1,"nonce":"n","extra":true}`,
+		`{"type":"pong","protocol_version":1,"nonce":""}`,
+		`{"type":"pong","protocol_version":1,"nonce":"n"}{}`,
+		`{"type":"event","protocol_version":1,"sequence":3,"run_id":"run-1","durable":true,"event":{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":[]}}`,
+		`{"type":"event","protocol_version":1,"sequence":3,"run_id":"run-1","durable":true,"event":{"type":"CUSTOM","name":"foreign.event","value":{}}}`,
 	} {
 		if _, err := DecodeServer([]byte(payload)); err == nil {
 			t.Fatalf("expected failure for %s", payload)

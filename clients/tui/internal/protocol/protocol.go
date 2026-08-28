@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 )
 
 const Version = 1
@@ -318,10 +320,180 @@ func DecodeServer(data []byte) (ServerMessage, error) {
 	if err := decoder.Decode(target); err != nil {
 		return ServerMessage{}, fmt.Errorf("protocol: decode %s: %w", discriminator.Type, err)
 	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return ServerMessage{}, errors.New("protocol: multiple JSON values in one frame")
+		}
+		return ServerMessage{}, fmt.Errorf("protocol: trailing JSON: %w", err)
+	}
 	if version := serverVersion(result); version != Version {
 		return ServerMessage{}, fmt.Errorf("protocol: unsupported server version %d", version)
 	}
+	if err := validateServer(result); err != nil {
+		return ServerMessage{}, err
+	}
 	return result, nil
+}
+
+func validateServer(message ServerMessage) error {
+	switch {
+	case message.Hello != nil:
+		harness := message.Hello.Harness
+		if !validImplementation(harness.Implementation) || !validString(harness.DisplayName, 128) || harness.APIVersion < 1 {
+			return errors.New("protocol: invalid harness descriptor")
+		}
+		foundVersion := false
+		for _, version := range harness.ProtocolVersions {
+			foundVersion = foundVersion || version == Version
+		}
+		if !foundVersion {
+			return errors.New("protocol: harness does not advertise negotiated version")
+		}
+	case message.TaskAccepted != nil:
+		value := message.TaskAccepted
+		if !validString(value.RequestID, 256) || !validString(value.RunID, 256) || !validString(value.ThreadID, 256) {
+			return errors.New("protocol: invalid task acceptance")
+		}
+	case message.ControlResult != nil:
+		value := message.ControlResult
+		if (value.Operation != "steer" && value.Operation != "pause" && value.Operation != "cancel") ||
+			!validString(value.RunID, 256) || !validString(value.CommandID, 256) || len(value.Detail) > 2048 {
+			return errors.New("protocol: invalid control result")
+		}
+	case message.Envelope != nil:
+		value := message.Envelope
+		if value.Sequence < 1 || !validString(value.RunID, 256) || len(value.SessionID) > 256 || len(value.InvocationID) > 256 {
+			return errors.New("protocol: invalid event envelope")
+		}
+		if err := validateEvent(value.Event); err != nil {
+			return err
+		}
+	case message.Pong != nil:
+		if !validString(message.Pong.Nonce, 256) {
+			return errors.New("protocol: invalid pong nonce")
+		}
+	case message.Error != nil:
+		value := message.Error
+		if !validString(value.Code, 256) || !validString(value.Message, 4096) || len(value.RequestID) > 256 || len(value.RunID) > 256 {
+			return errors.New("protocol: invalid server error")
+		}
+	default:
+		return errors.New("protocol: empty server message")
+	}
+	return nil
+}
+
+func validateEvent(event AGUIEvent) error {
+	if event.Timestamp < 0 || len(event.ThreadID) > 256 || len(event.RunID) > 256 || len(event.MessageID) > 256 ||
+		len(event.ToolCallID) > 256 || len(event.ToolCallName) > 128 || len(event.Name) > 256 || len(event.Code) > 256 || len(event.StepName) > 256 {
+		return errors.New("protocol: invalid AG-UI event field")
+	}
+	if event.Role != "" && event.Role != "developer" && event.Role != "system" && event.Role != "assistant" &&
+		event.Role != "user" && event.Role != "tool" {
+		return errors.New("protocol: invalid AG-UI role")
+	}
+	require := func(value, field string) error {
+		if value == "" {
+			return fmt.Errorf("protocol: AG-UI event requires %s", field)
+		}
+		return nil
+	}
+	switch event.Type {
+	case EventRunStarted, EventRunFinished:
+		if err := require(event.ThreadID, "threadId"); err != nil {
+			return err
+		}
+		return require(event.RunID, "runId")
+	case EventRunError:
+		if event.Message == "" {
+			return errors.New("protocol: RUN_ERROR requires message")
+		}
+	case EventStepStarted, EventStepFinished:
+		return require(event.StepName, "stepName")
+	case EventTextMessageStart:
+		if event.Role == "tool" {
+			return errors.New("protocol: text message role cannot be tool")
+		}
+		return require(event.MessageID, "messageId")
+	case EventTextMessageContent:
+		if err := require(event.MessageID, "messageId"); err != nil {
+			return err
+		}
+		if _, ok := rawString(event.Delta); !ok {
+			return errors.New("protocol: text content delta must be a JSON string")
+		}
+	case EventTextMessageEnd:
+		return require(event.MessageID, "messageId")
+	case EventToolCallStart:
+		if err := require(event.ToolCallID, "toolCallId"); err != nil {
+			return err
+		}
+		return require(event.ToolCallName, "toolCallName")
+	case EventToolCallArgs:
+		if err := require(event.ToolCallID, "toolCallId"); err != nil {
+			return err
+		}
+		if _, ok := rawString(event.Delta); !ok {
+			return errors.New("protocol: tool args delta must be a JSON string")
+		}
+	case EventToolCallEnd:
+		return require(event.ToolCallID, "toolCallId")
+	case EventToolCallResult:
+		if err := require(event.MessageID, "messageId"); err != nil {
+			return err
+		}
+		if err := require(event.ToolCallID, "toolCallId"); err != nil {
+			return err
+		}
+		if event.Role != "" && event.Role != "tool" {
+			return errors.New("protocol: tool result role must be tool")
+		}
+	case EventStateSnapshot:
+		var snapshot map[string]any
+		if len(event.Snapshot) == 0 || json.Unmarshal(event.Snapshot, &snapshot) != nil || snapshot == nil {
+			return errors.New("protocol: state snapshot must be a JSON object")
+		}
+	case EventStateDelta:
+		var delta []map[string]any
+		if len(event.Delta) == 0 || json.Unmarshal(event.Delta, &delta) != nil || delta == nil {
+			return errors.New("protocol: state delta must be a JSON array")
+		}
+	case EventCustom:
+		if !strings.HasPrefix(event.Name, "coding.") || len(event.Value) == 0 || bytes.Equal(bytes.TrimSpace(event.Value), []byte("null")) {
+			return errors.New("protocol: invalid coding custom event")
+		}
+	default:
+		return fmt.Errorf("protocol: unsupported AG-UI event type %q", event.Type)
+	}
+	return nil
+}
+
+func rawString(value json.RawMessage) (string, bool) {
+	if len(value) == 0 {
+		return "", false
+	}
+	var decoded string
+	if json.Unmarshal(value, &decoded) != nil {
+		return "", false
+	}
+	return decoded, true
+}
+
+func validString(value string, max int) bool {
+	return value != "" && len(value) <= max
+}
+
+func validImplementation(value string) bool {
+	if len(value) < 3 || len(value) > 64 || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for _, char := range value[1:] {
+		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func serverVersion(message ServerMessage) int {
