@@ -58,7 +58,9 @@ def test_adk_function_call_maps_to_canonical_ag_ui_tool_sequence() -> None:
         AgUiEventType.TOOL_CALL_ARGS,
         AgUiEventType.TOOL_CALL_END,
     ]
-    assert {item.tool_call_id for item in mapped} == {"call-1"}
+    tool_call_ids = {item.tool_call_id for item in mapped}
+    assert len(tool_call_ids) == 1
+    assert next(iter(tool_call_ids)).startswith("tool-")
     assert mapped[0].tool_call_name == "read"
     assert mapped[1].delta == '{"limit":20,"path":"README.md"}'
     assert all(item.run_id == "run-1" for item in mapped)
@@ -69,9 +71,7 @@ def test_adk_state_delta_and_error_map_without_exposing_raw_adk_objects() -> Non
         id="event-state-1",
         invocation_id="invocation-1",
         author="coding_workflow",
-        actions=EventActions(
-            state_delta={"task_route": "verify", "checkpoint_id": "checkpoint-1"}
-        ),
+        actions=EventActions(state_delta={"task_route": "verify", "checkpoint_id": "checkpoint-1"}),
     )
     error_event = Event(
         id="event-error-1",
@@ -203,8 +203,115 @@ def test_normalizer_closes_text_before_tools_and_correlates_results() -> None:
         AgUiEventType.TOOL_CALL_END,
         AgUiEventType.TOOL_CALL_RESULT,
     ]
-    assert mapped[-1].tool_call_id == "call-1"
+    assert mapped[-1].tool_call_id == mapped[-4].tool_call_id
     assert mapped[-1].content == '{"status":"ok"}'
+
+
+def test_normalizer_scopes_sequentially_reused_provider_tool_call_ids() -> None:
+    normalizer = AdkAgUiNormalizer(run_id="run-1", thread_id="thread-1")
+    read_call = Event(
+        id="read-call",
+        author="coding_worker",
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_call=types.FunctionCall(
+                        id="call_icn_0", name="read", args={"path": "README.md"}
+                    )
+                )
+            ],
+        ),
+    )
+    read_result = Event(
+        id="read-result",
+        author="coding_worker",
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id="call_icn_0", name="read", response={"status": "ok"}
+                    )
+                )
+            ],
+        ),
+    )
+    bash_call = Event(
+        id="bash-call",
+        author="coding_worker",
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_call=types.FunctionCall(
+                        id="call_icn_0",
+                        name="bash",
+                        args={"command": "git status --short"},
+                    )
+                )
+            ],
+        ),
+    )
+    bash_result = Event(
+        id="bash-result",
+        author="coding_worker",
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id="call_icn_0", name="bash", response={"status": "blocked"}
+                    )
+                )
+            ],
+        ),
+    )
+
+    first_call = normalizer.push(read_call)
+    first_result = normalizer.push(read_result)
+    second_call = normalizer.push(bash_call)
+    second_result = normalizer.push(bash_result)
+
+    first_id = first_call[0].tool_call_id
+    second_id = second_call[0].tool_call_id
+    assert first_id is not None
+    assert second_id is not None
+    assert first_id != second_id
+    assert first_result[0].tool_call_id == first_id
+    assert second_result[0].tool_call_id == second_id
+    assert all(item.tool_call_id == first_id for item in first_call)
+    assert all(item.tool_call_id == second_id for item in second_call)
+    assert len(first_id) <= 256
+    assert len(second_id) <= 256
+    assert normalizer.push(read_call) == ()
+    assert normalizer.push(read_result) == ()
+
+
+def test_normalizer_bounds_long_provider_tool_call_ids_deterministically() -> None:
+    event = Event(
+        id="long-call",
+        author="coding_worker",
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_call=types.FunctionCall(
+                        id="provider-" + "x" * 1_000,
+                        name="read",
+                        args={"path": "README.md"},
+                    )
+                )
+            ],
+        ),
+    )
+
+    first = AdkAgUiNormalizer(run_id="run-1", thread_id="thread-1").push(event)
+    second = AdkAgUiNormalizer(run_id="run-1", thread_id="thread-1").push(event)
+
+    assert first[0].tool_call_id == second[0].tool_call_id
+    assert first[0].tool_call_id is not None
+    assert len(first[0].tool_call_id) <= 256
 
 
 def test_normalizer_filters_private_state_user_content_and_reasoning() -> None:
@@ -235,9 +342,7 @@ def test_normalizer_filters_private_state_user_content_and_reasoning() -> None:
 
     assert len(mapped) == 1
     assert mapped[0].type == AgUiEventType.STATE_DELTA
-    assert mapped[0].delta == [
-        {"op": "add", "path": "/task_route", "value": "verify"}
-    ]
+    assert mapped[0].delta == [{"op": "add", "path": "/task_route", "value": "verify"}]
     serialized = mapped[0].model_dump_json()
     assert "task_ledger" not in serialized
     assert "private-message" not in serialized

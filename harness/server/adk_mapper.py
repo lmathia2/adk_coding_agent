@@ -42,6 +42,17 @@ def _event_identity(event: Event) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
+def _scoped_tool_call_id(raw_id: str, event_id: str, part_index: int) -> str:
+    """Return a bounded public ID for one provider tool-call occurrence."""
+
+    payload = json.dumps(
+        ["tool", event_id, part_index, raw_id],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return "tool-" + hashlib.sha256(payload.encode()).hexdigest()
+
+
 class AdkAgUiNormalizer:
     """Reduce an ordered ADK event stream into a safe public AG-UI stream.
 
@@ -65,8 +76,13 @@ class AdkAgUiNormalizer:
         self._active_message_id: str | None = None
         self._active_author: str | None = None
         self._active_text = ""
-        self._tool_calls: dict[str, tuple[str, str]] = {}
+        # Provider call IDs are correlation keys, not run-global identifiers. Some
+        # OpenAI-compatible providers restart their counter after every model turn.
+        self._pending_tool_calls: dict[str, tuple[str, str, str]] = {}
+        self._tool_calls: dict[str, tuple[str, str, str]] = {}
         self._tool_results: dict[str, str] = {}
+        self._tool_result_events: dict[tuple[str, int], tuple[str, str, str]] = {}
+        self._last_tool_results: dict[str, tuple[str, str]] = {}
 
     def _event(self, event_type: AgUiEventType, **fields: object) -> AgUiEvent:
         return AgUiEvent.model_validate(
@@ -180,7 +196,8 @@ class AdkAgUiNormalizer:
         part_index: int,
         call: object,
     ) -> list[AgUiEvent]:
-        call_id = str(getattr(call, "id", "") or f"{event_id}:tool:{part_index}")
+        raw_call_id = str(getattr(call, "id", "") or f"{event_id}:tool:{part_index}")
+        call_id = _scoped_tool_call_id(raw_call_id, event_id, part_index)
         name = self._bounded_text(getattr(call, "name", "tool"), limit=128)
         arguments = json.dumps(
             self._public_value(getattr(call, "args", {}) or {}),
@@ -190,10 +207,26 @@ class AdkAgUiNormalizer:
         )
         prior = self._tool_calls.get(call_id)
         if prior is not None:
-            if prior != (name, arguments):
-                raise ValueError(f"ADK tool call id was reused with different content: {call_id}")
+            if prior != (raw_call_id, name, arguments):
+                raise ValueError(
+                    f"ADK tool call occurrence was replayed with different content: {raw_call_id}"
+                )
             return []
-        self._tool_calls[call_id] = (name, arguments)
+
+        pending = self._pending_tool_calls.get(raw_call_id)
+        if pending is not None:
+            _, pending_name, pending_arguments = pending
+            if (pending_name, pending_arguments) != (name, arguments):
+                raise ValueError(
+                    "ADK tool call id was reused with different content before its "
+                    f"result: {raw_call_id}"
+                )
+            self._tool_calls[call_id] = (raw_call_id, name, arguments)
+            return []
+
+        self._tool_calls[call_id] = (raw_call_id, name, arguments)
+        self._pending_tool_calls[raw_call_id] = (call_id, name, arguments)
+        self._last_tool_results.pop(raw_call_id, None)
         return [
             self._event(
                 AgUiEventType.TOOL_CALL_START,
@@ -215,23 +248,55 @@ class AdkAgUiNormalizer:
         part_index: int,
         response: object,
     ) -> list[AgUiEvent]:
-        call_id = str(
-            getattr(response, "id", "") or f"{event_id}:tool-result:{part_index}"
-        )
+        raw_call_id = str(getattr(response, "id", "") or f"{event_id}:tool-result:{part_index}")
         content = json.dumps(
             self._public_value(getattr(response, "response", {}) or {}),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
         )
+        result_event_key = (event_id, part_index)
+        seen_result = self._tool_result_events.get(result_event_key)
+        if seen_result is not None:
+            seen_raw_call_id, _, seen_content = seen_result
+            if (seen_raw_call_id, seen_content) != (raw_call_id, content):
+                raise ValueError(
+                    f"ADK tool result occurrence was replayed with different content: {raw_call_id}"
+                )
+            return []
+
+        pending = self._pending_tool_calls.pop(raw_call_id, None)
+        if pending is not None:
+            call_id = pending[0]
+        else:
+            last = self._last_tool_results.get(raw_call_id)
+            if last is not None:
+                last_call_id, last_content = last
+                if last_content != content:
+                    raise ValueError(
+                        "ADK tool result id was reused with different content without "
+                        f"an active call: {raw_call_id}"
+                    )
+                self._tool_result_events[result_event_key] = (
+                    raw_call_id,
+                    last_call_id,
+                    content,
+                )
+                return []
+            call_id = _scoped_tool_call_id(raw_call_id, event_id, part_index)
+
         prior = self._tool_results.get(call_id)
         if prior is not None:
             if prior != content:
-                raise ValueError(
-                    f"ADK tool result id was reused with different content: {call_id}"
-                )
+                raise ValueError(f"ADK tool result id was reused with different content: {call_id}")
             return []
         self._tool_results[call_id] = content
+        self._tool_result_events[result_event_key] = (
+            raw_call_id,
+            call_id,
+            content,
+        )
+        self._last_tool_results[raw_call_id] = (call_id, content)
         return [
             self._event(
                 AgUiEventType.TOOL_CALL_RESULT,
@@ -299,9 +364,7 @@ class AdkAgUiNormalizer:
         state_delta = getattr(event.actions, "state_delta", None)
         if state_delta:
             allowed = {
-                key: value
-                for key, value in state_delta.items()
-                if key in self.public_state_keys
+                key: value for key, value in state_delta.items() if key in self.public_state_keys
             }
             value = self._public_value(allowed)
             if isinstance(value, dict) and value:
