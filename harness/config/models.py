@@ -452,9 +452,9 @@ class HarnessSelectionConfig(FrozenModel):
 
 
 class PersistenceConfig(FrozenModel):
-    session_backend: Literal["in_memory", "database", "vertex"] = "in_memory"
+    session_backend: Literal["in_memory", "sqlite", "database", "vertex"] = "in_memory"
     session_database_url: SecretRef | None = None
-    artifact_backend: Literal["in_memory", "gcs"] = "in_memory"
+    artifact_backend: Literal["in_memory", "file", "gcs"] = "in_memory"
     memory_backend: Literal["in_memory", "vertex"] = "in_memory"
     gcs_bucket: str | None = Field(default=None, max_length=256)
     cloud_project: str | None = Field(default=None, max_length=128)

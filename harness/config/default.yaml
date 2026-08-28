@@ -162,8 +162,8 @@ harness:
       max_chars: 60000
 
 persistence:
-  session_backend: in_memory
-  artifact_backend: in_memory
+  session_backend: sqlite
+  artifact_backend: file
   memory_backend: in_memory
 
 server:

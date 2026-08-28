@@ -10,6 +10,8 @@ from .adk_services import (
     build_memory_service,
     build_service_bundle,
     build_session_service,
+    local_durable_settings,
+    settings_from_composition,
     settings_from_env,
 )
 
@@ -23,5 +25,7 @@ __all__ = [
     "build_memory_service",
     "build_service_bundle",
     "build_session_service",
+    "local_durable_settings",
+    "settings_from_composition",
     "settings_from_env",
 ]
