@@ -170,6 +170,91 @@ def test_harness_yaml_can_select_openai_compatible_adk_model(tmp_path: Path) -> 
     assert capture.options["api_base"] == "http://127.0.0.1:10100/inference/v1"
 
 
+def test_factory_does_not_construct_unused_or_disabled_models(tmp_path: Path) -> None:
+    providers = ClosedAdkModelProviderRegistry(
+        (
+            GoogleAdkModelProvider(),
+            OpenAiCompatibleModelProvider(environment={}, model_factory=_CapturingFactory()),
+        )
+    )
+    registry = default_harness_registry(model_providers=providers)
+    composition = load_harness_composition(config_models=registry.config_models())
+    config = cast(PiCodingConfig, composition.harness.config)
+    unreachable = ModelConfig(
+        provider="openai_compatible",
+        name="unreachable-local-model",
+        base_url="http://127.0.0.1:10100/inference/v1",
+        api_key=SecretRef(env="MISSING_LOCAL_API_KEY"),
+    )
+    agents = {
+        **config.agents,
+        "final_diff_reviewer": config.agents["final_diff_reviewer"].model_copy(
+            update={"model": "unreachable"}
+        ),
+    }
+    configured = composition.model_copy(
+        update={
+            "harness": composition.harness.model_copy(
+                update={
+                    "config": config.model_copy(
+                        update={
+                            "models": {**config.models, "unreachable": unreachable},
+                            "agents": agents,
+                        }
+                    )
+                }
+            )
+        }
+    )
+
+    assembly = registry.build(
+        configured,
+        RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state"),
+    )
+
+    assert tuple(assembly.agents) == ("coding_worker",)
+
+
+def test_factory_constructs_configured_reviewer_when_enabled(tmp_path: Path) -> None:
+    capture = _CapturingFactory()
+    providers = ClosedAdkModelProviderRegistry(
+        (
+            GoogleAdkModelProvider(),
+            OpenAiCompatibleModelProvider(
+                environment={"MAGNITUDE_API_KEY": "magnitude-local"},
+                model_factory=capture,
+            ),
+        )
+    )
+    registry = default_harness_registry(model_providers=providers)
+    composition = load_harness_composition(config_models=registry.config_models())
+    config = cast(PiCodingConfig, composition.harness.config)
+    configured = composition.model_copy(
+        update={
+            "harness": composition.harness.model_copy(
+                update={
+                    "config": config.model_copy(
+                        update={
+                            "models": {**config.models, "reviewer": _magnitude_model()},
+                            "reviewer": config.reviewer.model_copy(update={"enabled": True}),
+                        }
+                    )
+                }
+            )
+        }
+    )
+
+    assembly = registry.build(
+        configured,
+        RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state"),
+    )
+
+    assert cast(Any, assembly.agents["final_diff_reviewer"]).model.model == (
+        "openai/local-coder"
+    )
+    assert capture.options["api_key"] == "magnitude-local"
+
+
 def test_magnitude_example_is_a_valid_portable_composition() -> None:
     repository_root = Path(__file__).resolve().parents[2]
 

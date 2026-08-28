@@ -172,6 +172,4 @@ server:
   websocket_path: /v1/agent
   protocol: ag_ui_websocket_v1
   max_connections: 32
-  inbound_queue_size: 64
   outbound_queue_size: 256
-  heartbeat_seconds: 20

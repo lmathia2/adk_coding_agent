@@ -284,8 +284,9 @@ class PiCodingHarnessFactory:
             search_default_page_size=config.tools.search.default_page_size,
             search_max_page_size=config.tools.search.max_page_size,
         )
-        models = {
-            name: self._model_providers.get(model_config.provider).build_model(
+        def build_model(model_name: str):
+            model_config = config.models[model_name]
+            return self._model_providers.get(model_config.provider).build_model(
                 model_config,
                 secrets=(
                     {"api_key": model_config.api_key}
@@ -293,11 +294,11 @@ class PiCodingHarnessFactory:
                     else {}
                 ),
             )
-            for name, model_config in sorted(config.models.items())
-        }
+
+        coding_model = build_model("coding")
         worker = build_coding_worker(
             settings,
-            models["coding"],
+            coding_model,
             tools=tools,
             tool_config=config.tools,
         )
@@ -306,9 +307,13 @@ class PiCodingHarnessFactory:
         if reviewer_config is None:
             reviewer_config = config.agents["final_diff_reviewer"]
         reviewer_model_config = config.models[reviewer_config.model]
-        reviewer = build_final_diff_reviewer(
-            models[reviewer_config.model],
-            model_name=reviewer_model_config.name,
+        reviewer = (
+            build_final_diff_reviewer(
+                build_model(reviewer_config.model),
+                model_name=reviewer_model_config.name,
+            )
+            if config.reviewer.enabled
+            else None
         )
 
         control_state = create_control_state_backend(
@@ -342,12 +347,14 @@ class PiCodingHarnessFactory:
             ),
             workspace_manager=workspace_manager,
             coding_worker=worker.agent,
-            final_diff_reviewer=reviewer.agent,
+            final_diff_reviewer=reviewer.agent if reviewer is not None else None,
             learning_controller=build_learning_controller(settings),
             static_prefix_hash=prefix_hash(settings.static_prefix),
             static_prefix_tokens=len(settings.static_prefix) // 4,
-            review_prefix_hash=prefix_hash(reviewer.static_prefix),
-            review_prefix_tokens=len(reviewer.static_prefix) // 4,
+            review_prefix_hash=(
+                prefix_hash(reviewer.static_prefix) if reviewer is not None else None
+            ),
+            review_prefix_tokens=(len(reviewer.static_prefix) // 4 if reviewer is not None else 0),
             repository_map_tokens=config.context.repository_map_tokens,
             steering_batch_limit=config.steering.batch_limit,
             steering_enabled=config.steering.enabled,
@@ -432,6 +439,9 @@ class PiCodingHarnessFactory:
             ),
             resumability_config=ResumabilityConfig(is_resumable=config.adk.resumable),
         )
+        agents = {"coding_worker": worker.agent}
+        if reviewer is not None:
+            agents["final_diff_reviewer"] = reviewer.agent
         return AdkHarnessAssembly(
             descriptor=self.descriptor,
             app=app,
@@ -442,10 +452,7 @@ class PiCodingHarnessFactory:
                 max_iterations=config.workflow.max_iterations,
                 compact_at_tokens=config.context.compact_at_tokens,
             ),
-            agents={
-                "coding_worker": worker.agent,
-                "final_diff_reviewer": reviewer.agent,
-            },
+            agents=agents,
             controls=_PiControlHooks(
                 steering=steering,
                 deps=deps,

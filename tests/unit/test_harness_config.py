@@ -82,6 +82,15 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert composition.harness.config.models["coding"].provider == "google_adk"
 
 
+@pytest.mark.parametrize("removed_field", ["inbound_queue_size", "heartbeat_seconds"])
+def test_server_rejects_settings_without_runtime_semantics(removed_field: str) -> None:
+    payload = _composition_payload()
+    payload["server"] = {removed_field: 20}
+
+    with pytest.raises(ValidationError, match=removed_field):
+        parse_harness_composition(payload)
+
+
 def test_canonical_composition_hash_is_stable_across_mapping_order() -> None:
     payload = _composition_payload()
     reordered = dict(reversed(payload.items()))

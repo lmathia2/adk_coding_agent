@@ -92,11 +92,11 @@ class PiWorkflowDependencies:
     repository_index: StructuralIndex
     workspace_manager: GitWorktreeManager | None
     coding_worker: BaseAgent
-    final_diff_reviewer: BaseAgent
+    final_diff_reviewer: BaseAgent | None
     learning_controller: TraceSkillLearningController
     static_prefix_hash: str
     static_prefix_tokens: int
-    review_prefix_hash: str
+    review_prefix_hash: str | None
     review_prefix_tokens: int
     repository_map_tokens: int
     steering_batch_limit: int
@@ -563,6 +563,10 @@ async def _review_final_diff(
 ) -> dict[str, Any]:
     """Run the optional bounded reviewer after deterministic verification passes."""
 
+    reviewer = deps.final_diff_reviewer
+    review_prefix_hash = deps.review_prefix_hash
+    if reviewer is None or review_prefix_hash is None:
+        raise RuntimeError("final diff reviewer is not configured for this harness")
     packet = build_diff_review_packet(
         deps.settings.workspace,
         str(node_input["base_revision"]),
@@ -573,10 +577,10 @@ async def _review_final_diff(
         ctx,
         task_id=str(node_input["task_id"]),
         dynamic_tokens=len(reviewer_input) // 4,
-        stable_prefix_hash=deps.review_prefix_hash,
+        stable_prefix_hash=review_prefix_hash,
         static_prefix_tokens=deps.review_prefix_tokens,
     )
-    raw_review = await ctx.run_node(deps.final_diff_reviewer, node_input=reviewer_input)
+    raw_review = await ctx.run_node(reviewer, node_input=reviewer_input)
     review = parse_final_diff_review(raw_review)
     return {
         "review": review.model_dump(mode="json"),

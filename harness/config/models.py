@@ -512,9 +512,7 @@ class ServerConfig(FrozenModel):
     websocket_path: str = Field(default="/v1/agent", pattern=r"^/")
     protocol: Literal["ag_ui_websocket_v1"] = "ag_ui_websocket_v1"
     max_connections: int = Field(default=32, ge=1, le=10_000)
-    inbound_queue_size: int = Field(default=64, ge=1, le=10_000)
     outbound_queue_size: int = Field(default=256, ge=1, le=100_000)
-    heartbeat_seconds: int = Field(default=20, ge=5, le=300)
 
 
 class HarnessComposition(FrozenModel):
