@@ -1,0 +1,34 @@
+# ADK Coding Agent TUI
+
+This Bubble Tea client speaks only the versioned WebSocket control protocol and
+normalized AG-UI JSON events. It does not import Google ADK, load harness YAML, or
+know which registered harness is serving a run.
+
+Building requires Go 1.24 or newer (the minimum required by the pinned Bubble Tea
+release). Dependency checksums are committed in `go.sum`.
+
+## Build and run
+
+```bash
+cd clients/tui
+go build -o adk-agent-tui .
+./adk-agent-tui --server ws://127.0.0.1:8765/v1/agent
+```
+
+Start immediately with a prompt or attach to a durable run cursor:
+
+```bash
+./adk-agent-tui --input "Fix the parser and run its tests"
+./adk-agent-tui --run RUN_ID --after 42
+```
+
+While a run is active, ordinary input is sent as steering at the next safe point.
+Commands are `/start PROMPT`, `/attach RUN [CURSOR]`, `/pause`, `/cancel`,
+`/reconnect`, `/help`, and `/quit`. `Ctrl-C` requests cancellation for a running
+task; `Ctrl-D` exits the client.
+
+The client reconnects with exponential backoff, negotiates protocol version 1 on
+each connection, and attaches with the highest event sequence it has applied.
+Replayed events at or below that cursor are ignored. Buffers, frame size, retained
+history, acknowledgement frequency, heartbeat, and reconnect bounds are all
+configurable through CLI flags; run with `--help` for the complete list.
