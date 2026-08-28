@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from pathlib import Path
+from typing import cast
 
 import pytest
 from google.adk import Runner
@@ -10,9 +12,13 @@ from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.apps import App
 from google.adk.events import Event
+from google.adk.models import BaseLlm
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from app.agent.factory import default_harness_registry
 from harness.agent import (
     AgentSnapshot,
     ControlCommand,
@@ -20,6 +26,14 @@ from harness.agent import (
     HarnessDescriptor,
     RuntimeCapability,
     SteeringCommand,
+)
+from harness.ai import ClosedAdkModelProviderRegistry
+from harness.config import (
+    ModelConfig,
+    PiCodingConfig,
+    RuntimeBindings,
+    SecretRef,
+    load_harness_composition,
 )
 from harness.safety import SecretRedactor
 from harness.server import (
@@ -545,6 +559,46 @@ class _CredentialFreeAgent(BaseAgent):
         )
 
 
+class _BlockingTestLlm(BaseLlm):
+    async def generate_content_async(
+        self,
+        llm_request: LlmRequest,
+        stream: bool = False,
+    ) -> AsyncGenerator[LlmResponse, None]:
+        del llm_request, stream
+        yield LlmResponse(
+            content=types.Content(
+                role="model",
+                parts=[
+                    types.Part(
+                        text=json.dumps(
+                            {
+                                "status": "blocked",
+                                "questions": ["credential-free test stop"],
+                            },
+                            sort_keys=True,
+                        )
+                    )
+                ],
+            )
+        )
+
+
+class _BlockingModelProvider:
+    @property
+    def provider_id(self) -> str:
+        return "blocking_test"
+
+    def build_model(
+        self,
+        config: ModelConfig,
+        *,
+        secrets: Mapping[str, SecretRef],
+    ) -> BaseLlm:
+        del secrets
+        return _BlockingTestLlm(model=config.name)
+
+
 @pytest.mark.asyncio
 async def test_real_adk_runner_creates_session_and_maps_output_without_credentials(
     tmp_path: Path,
@@ -586,3 +640,74 @@ async def test_real_adk_runner_creates_session_and_maps_output_without_credentia
         AgUiEventType.TEXT_MESSAGE_END,
     ]
     assert events[1].delta == "credential-free output"
+
+
+@pytest.mark.asyncio
+async def test_real_adk_runner_unwraps_content_for_pi_workflow_root(
+    tmp_path: Path,
+) -> None:
+    providers = ClosedAdkModelProviderRegistry((_BlockingModelProvider(),))
+    registry = default_harness_registry(model_providers=providers)
+    composition = load_harness_composition(config_models=registry.config_models())
+    config = cast(PiCodingConfig, composition.harness.config)
+    models = {
+        name: model.model_copy(update={"provider": "blocking_test"})
+        for name, model in config.models.items()
+    }
+    configured = composition.model_copy(
+        update={
+            "harness": composition.harness.model_copy(
+                update={"config": config.model_copy(update={"models": models})}
+            )
+        }
+    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+    assembly = registry.build(
+        configured,
+        RuntimeBindings(
+            workspace=workspace,
+            state_root=state_root,
+            task_id="task-adk-workflow-input",
+        ),
+    )
+    service = InMemorySessionService()
+    runner = Runner(
+        app=assembly.app,
+        session_service=service,
+        auto_create_session=False,
+    )
+    store = SqliteRunEventStore(tmp_path / "record.db")
+    record, _ = store.create_run(
+        request_id="request-adk-workflow",
+        idempotency_key="start-adk-workflow",
+        thread_id="thread-adk-workflow",
+        user_id="user-adk-workflow",
+        input="Inspect the workspace",
+    )
+    execution = AdkRunExecution(
+        record=record,
+        runner=runner,
+        app_name=assembly.app.name,
+        session_service=service,
+        controls=assembly.controls,
+        max_llm_calls=4,
+    )
+
+    try:
+        batches = [batch async for batch in execution.events()]
+    finally:
+        await execution.aclose()
+
+    public_events = [event for batch in batches for event in batch.events]
+    outputs = [
+        event.value
+        for event in public_events
+        if event.type == AgUiEventType.CUSTOM
+        and event.name == "coding.workflow.output"
+    ]
+    assert outputs
+    workflow_output = json.loads(cast(str, outputs[-1]["output"]))
+    assert workflow_output["status"] == "blocked"
+    assert workflow_output["task_id"] == "task-adk-workflow-input"

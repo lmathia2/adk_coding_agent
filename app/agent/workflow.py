@@ -1126,8 +1126,12 @@ def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
     @node(rerun_on_resume=True)
     async def orchestrate(
         ctx: Context,
-        node_input: str | dict[str, Any],
+        node_input: str,
     ) -> AsyncGenerator[Event | str, None]:
+        # ADK Runner supplies the root user message as ``types.Content``. Its
+        # FunctionNode adapter unwraps that message only when this boundary
+        # directly expects ``str``; structured requests remain supported as
+        # JSON text by ``parse_task_request``.
         request = parse_task_request(node_input)
         session_id = _session_id(ctx)
         task_id = deps.settings.task_id_override or task_id_for(request, session_id)

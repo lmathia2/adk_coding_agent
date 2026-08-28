@@ -18,7 +18,7 @@
     "skill_content_hash": "cb49da1a57fe8f823c0c18c449db1e4020d9f60f2fe859d1801a437cd5dba80c",
     "model": "gemini-3.7-flash",
     "reasoning": "default",
-    "harness_content_hash": "11110db01749877ecd70122ac39f1fe4f6973785739d67c4bc4e7eb3ae123eae",
+    "harness_content_hash": "0da1e26b6dd4f04cc92278f911788682ae7114b11b21f75c1e049478fc59a4bc",
     "static_prefix_hash": "1a5749e89117a8408693b0030f515575e65ef960f79895da06809e19a0217348",
     "settings": {
       "max_iterations": 8,
