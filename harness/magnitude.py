@@ -20,6 +20,8 @@ from harness.config import DEFAULT_COMPOSITION_PATH, parse_harness_composition
 
 MAGNITUDE_API_KEY = "magnitude-local"
 MAGNITUDE_BASE_URL = "http://127.0.0.1:10100/inference/v1"
+MINIMUM_MAGNITUDE_VERSION = (0, 0, 8)
+_MAGNITUDE_STARTUP_ATTEMPTS = 960
 
 
 class MagnitudeConnectionError(RuntimeError):
@@ -107,21 +109,47 @@ def _run_magnitude_server(command: Sequence[str]) -> subprocess.CompletedProcess
     )
 
 
-def _start_service(command_runner: CommandRunner) -> None:
+def _version_tuple(value: str) -> tuple[int, int, int] | None:
+    normalized = value.strip().removeprefix("v").split("-", 1)[0]
+    parts = normalized.split(".")
+    if len(parts) != 3 or any(not part.isdigit() for part in parts):
+        return None
+    return (int(parts[0]), int(parts[1]), int(parts[2]))
+
+
+def _require_compatible_magnitude(command_runner: CommandRunner) -> None:
+    try:
+        completed = command_runner(("magnitude", "--version"))
+    except (OSError, subprocess.SubprocessError) as error:
+        raise MagnitudeConnectionError(
+            "Magnitude is required; run `./install.sh --magnitude`"
+        ) from error
+    version = _version_tuple(completed.stdout)
+    if completed.returncode != 0 or version is None:
+        raise MagnitudeConnectionError(
+            "Magnitude's version could not be determined; run `./install.sh --magnitude`"
+        )
+    if version < MINIMUM_MAGNITUDE_VERSION:
+        required = ".".join(str(part) for part in MINIMUM_MAGNITUDE_VERSION)
+        raise MagnitudeConnectionError(
+            f"Magnitude {required}+ is required for external harnesses; found "
+            f"{completed.stdout.strip()}. Run `./install.sh --magnitude`"
+        )
+
+
+def _start_service(command_runner: CommandRunner) -> str | None:
+    _require_compatible_magnitude(command_runner)
     try:
         completed = command_runner(("magnitude", "server", "start"))
     except (OSError, subprocess.SubprocessError) as error:
         raise MagnitudeConnectionError(
             "Magnitude is not running and could not be started; install or update "
-            "`@magnitudedev/cli`, then run `magnitude --setup`"
+            "it with `./install.sh --magnitude`, then run `magnitude --setup`"
         ) from error
     if completed.returncode != 0:
         detail = (completed.stderr or completed.stdout).strip()
-        suffix = f": {detail}" if detail else ""
-        raise MagnitudeConnectionError(
-            "Magnitude is not running and `magnitude server start` failed"
-            f"{suffix}. Update Magnitude and run `magnitude --setup` once"
-        )
+        return detail or f"exit status {completed.returncode}"
+    return None
 
 
 def _discover_models(
@@ -134,11 +162,13 @@ def _discover_models(
     last_error: MagnitudeConnectionError | None = None
     for attempt in range(attempts):
         try:
-            return _model_ids(fetch_json(url, 2.0))
+            payload = fetch_json(url, 2.0)
         except MagnitudeConnectionError as error:
             last_error = error
             if attempt + 1 < attempts:
                 time.sleep(0.25)
+        else:
+            return _model_ids(payload)
     assert last_error is not None
     raise last_error
 
@@ -209,8 +239,21 @@ def prepare_magnitude_connection(
     except MagnitudeConnectionError:
         if not start_service:
             raise
-        _start_service(command_runner)
-        models = _discover_models(endpoint, fetch_json=fetch_json)
+        startup_error = _start_service(command_runner)
+        try:
+            models = _discover_models(
+                endpoint,
+                fetch_json=fetch_json,
+                attempts=_MAGNITUDE_STARTUP_ATTEMPTS,
+            )
+        except MagnitudeConnectionError as error:
+            if startup_error is None:
+                raise
+            raise MagnitudeConnectionError(
+                "Magnitude did not become ready after `magnitude server start` reported: "
+                f"{startup_error}. Run `./install.sh --magnitude`, then "
+                "`magnitude --setup` once"
+            ) from error
     selected = select_model_id(
         models,
         requested=requested_model,
@@ -231,6 +274,7 @@ def prepare_magnitude_connection(
 __all__ = [
     "MAGNITUDE_API_KEY",
     "MAGNITUDE_BASE_URL",
+    "MINIMUM_MAGNITUDE_VERSION",
     "MagnitudeConnection",
     "MagnitudeConnectionError",
     "prepare_magnitude_connection",

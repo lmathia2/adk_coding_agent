@@ -30,16 +30,22 @@ Install the locked runtime and expose `adk-coding-agent` on your user PATH:
 ./install.sh
 ```
 
-The installer is safe to rerun. It installs from this checkout, enables local-model
-support by default, and links the CLI into `~/.local/bin` (or `UV_TOOL_BIN_DIR`). It
-never installs system packages or replaces an existing non-symlink. Optional modes:
+The installer is safe to rerun. It explicitly creates or reuses `.venv` with uv,
+syncs every selected Python dependency from `uv.lock` into that environment, verifies
+the required imports and commands, and links the CLI into `~/.local/bin` (or
+`UV_TOOL_BIN_DIR`). It never replaces an existing non-symlink. Optional modes:
 
 ```bash
 ./install.sh --tui                    # also build the Bubble Tea client; Go 1.24+ required
 ./install.sh --dev                    # include test, lint, and type-check dependencies
+./install.sh --magnitude              # install/update Magnitude 0.0.8+ through npm
 ./install.sh --no-local-models        # smaller Gemini-only environment
 ./install.sh --bin-dir /custom/bin
 ```
+
+Use `source .venv/bin/activate` when you want the repository's Python, pytest,
+Ruff, and Pyright commands directly in the current shell. The installed
+`adk-coding-agent` link already targets that environment and does not require activation.
 
 If `~/.local/bin` is not already on `PATH`, add it in `~/.zshrc`:
 
@@ -90,34 +96,37 @@ OpenAI-compatible service, without adding a second model runtime. The provider
 adapter builds ADK's `LiteLlm`; requests, streaming, tools, and lifecycle events
 remain owned by Google ADK.
 
-Install Magnitude, complete its one-time hardware/model setup, and enable its startup
-service. Then one harness command discovers Magnitude's selected model, writes a
+Install Magnitude 0.0.8 or newer and complete its one-time hardware/model setup. Then
+one harness command discovers Magnitude's selected model, writes a
 validated generated composition beneath the harness state directory, supplies the
 conventional local placeholder token in process memory, and starts the WebSocket
 server:
 
 ```bash
-npm install -g @magnitudedev/cli
+./install.sh --magnitude
 magnitude --setup
 
-./install.sh --tui
 mkdir -p "$HOME/.local/state/adk-coding-agent"
 adk-coding-agent serve-magnitude \
   --workspace /absolute/path/to/repository \
   --state-root "$HOME/.local/state/adk-coding-agent"
 ```
 
-On Magnitude versions with service management, `serve-magnitude` runs `magnitude
-server start` when the endpoint is not already available. Older releases must have
-“Launch Magnitude on startup” enabled during `magnitude --setup`. The command prefers
-the primary model in `~/.magnitude/state/models.json`, falls back to the first model
+`serve-magnitude` runs `magnitude server start` when the endpoint is not already
+available. Magnitude 0.0.6 and earlier do not expose the fixed external-harness
+service and are rejected with an exact update command. The launcher prefers the
+primary model in `~/.magnitude/state/models.json`, falls back to the first model
 reported by Magnitude, and accepts `--model MODEL_ID` as an explicit override. Use
 `--print-config` to inspect the resolved harness endpoint without starting its
-listener.
+listener. After an install or upgrade, initial hardware and model assessment can take
+a few minutes; the launcher keeps probing the service through that startup window.
 
-In a second terminal, connect the installed TUI:
+To use the optional TUI, install Go 1.24+ once, rerun the installer, and connect from
+a second terminal:
 
 ```bash
+brew install go
+./install.sh --tui
 export ADK_CODING_AGENT_TOKEN="$(cat "$HOME/.local/state/adk-coding-agent/server/auth-token")"
 adk-agent-tui --server ws://127.0.0.1:8765/v1/agent \
   --input "Inspect this repository and run its tests"

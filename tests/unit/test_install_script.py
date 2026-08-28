@@ -19,4 +19,18 @@ def test_install_script_is_executable_and_has_valid_help() -> None:
     )
 
     assert "--no-local-models" in completed.stdout
+    assert "--magnitude" in completed.stdout
     assert "--tui" in completed.stdout
+
+
+def test_install_script_rejects_magnitude_without_local_model_dependencies() -> None:
+    root = Path(__file__).resolve().parents[2]
+    completed = subprocess.run(
+        (str(root / "install.sh"), "--magnitude", "--no-local-models"),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "cannot be combined" in completed.stderr

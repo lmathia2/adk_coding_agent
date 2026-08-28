@@ -69,7 +69,8 @@ def test_prepare_magnitude_connection_starts_service_when_initial_probe_fails(
 
     def run(command) -> subprocess.CompletedProcess[str]:
         commands.append(tuple(command))
-        return subprocess.CompletedProcess(command, 0, stdout="ready", stderr="")
+        stdout = "0.0.8\n" if tuple(command) == ("magnitude", "--version") else "ready"
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
 
     connection = prepare_magnitude_connection(
         state_root=tmp_path / "state",
@@ -78,7 +79,81 @@ def test_prepare_magnitude_connection_starts_service_when_initial_probe_fails(
     )
 
     assert connection.model_id == "local-model"
-    assert commands == [("magnitude", "server", "start")]
+    assert commands == [
+        ("magnitude", "--version"),
+        ("magnitude", "server", "start"),
+    ]
+
+
+def test_prepare_magnitude_connection_accepts_service_that_outlives_start_timeout(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def fetch(_url: str, _timeout: float) -> object:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise MagnitudeConnectionError("not running")
+        return {"data": [{"id": "local-model"}]}
+
+    def run(command) -> subprocess.CompletedProcess[str]:
+        if tuple(command) == ("magnitude", "--version"):
+            return subprocess.CompletedProcess(command, 0, stdout="0.0.8\n", stderr="")
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="",
+            stderr="Unable to connect. Is the computer able to access the url?",
+        )
+
+    connection = prepare_magnitude_connection(
+        state_root=tmp_path / "state",
+        fetch_json=fetch,
+        command_runner=run,
+    )
+
+    assert connection.model_id == "local-model"
+
+
+def test_model_catalog_errors_are_not_retried(tmp_path: Path) -> None:
+    calls = 0
+
+    def no_models(_url: str, _timeout: float) -> object:
+        nonlocal calls
+        calls += 1
+        return {"data": []}
+
+    with pytest.raises(MagnitudeConnectionError, match="no installed local model"):
+        prepare_magnitude_connection(
+            state_root=tmp_path / "state",
+            start_service=False,
+            fetch_json=no_models,
+        )
+
+    assert calls == 1
+
+
+def test_prepare_magnitude_connection_rejects_release_without_external_service(
+    tmp_path: Path,
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def unavailable(_url: str, _timeout: float) -> object:
+        raise MagnitudeConnectionError("not running")
+
+    def run(command) -> subprocess.CompletedProcess[str]:
+        commands.append(tuple(command))
+        return subprocess.CompletedProcess(command, 0, stdout="0.0.6\n", stderr="")
+
+    with pytest.raises(MagnitudeConnectionError, match=r"0\.0\.8\+.*found 0\.0\.6"):
+        prepare_magnitude_connection(
+            state_root=tmp_path / "state",
+            fetch_json=unavailable,
+            command_runner=run,
+        )
+
+    assert commands == [("magnitude", "--version")]
 
 
 def test_explicit_unavailable_magnitude_model_fails_closed(tmp_path: Path) -> None:
