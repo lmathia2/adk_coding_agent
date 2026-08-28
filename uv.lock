@@ -12,6 +12,7 @@ name = "adk-coding-agent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "fastapi" },
     { name = "fff-search" },
     { name = "google-adk", extra = ["gcp"] },
     { name = "pydantic" },
@@ -33,6 +34,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", specifier = ">=0.141,<1.0" },
     { name = "fff-search", specifier = "==0.10.5" },
     { name = "google-adk", extras = ["gcp"], specifier = ">=2.7.1,<2.8.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'production'", specifier = ">=3.2,<4.0" },
