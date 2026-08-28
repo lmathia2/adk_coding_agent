@@ -46,11 +46,17 @@ class SteeringPlugin(BasePlugin):
         queue: SteeringQueue,
         event_store: EventStore,
         lease_seconds: int,
+        batch_limit: int = STEERING_BATCH_LIMIT,
+        before_model: bool = True,
+        before_tool: bool = True,
     ) -> None:
         super().__init__(name="user_steering")
         self.queue = queue
         self.event_store = event_store
         self.lease_seconds = max(1, lease_seconds)
+        self.batch_limit = max(1, batch_limit)
+        self.before_model = before_model
+        self.before_tool = before_tool
 
     @staticmethod
     def _delivery_context(context: Any) -> tuple[str, str, frozenset[str]] | None:
@@ -81,13 +87,15 @@ class SteeringPlugin(BasePlugin):
         callback_context: Any,
         llm_request: LlmRequest,
     ) -> None:
+        if not self.before_model:
+            return None
         delivery = self._delivery_context(callback_context)
         if delivery is None:
             return None
         task_id, owner, packet_ids = delivery
         try:
             existing = self._mid_batch_messages(task_id, owner, packet_ids)
-            capacity = max(0, STEERING_BATCH_LIMIT - len(existing))
+            capacity = max(0, self.batch_limit - len(existing))
             newly_leased = (
                 self.queue.lease(
                     task_id,
@@ -139,6 +147,8 @@ class SteeringPlugin(BasePlugin):
         tool_context: Any,
     ) -> dict[str, Any] | None:
         del tool_args
+        if not self.before_tool:
+            return None
         delivery = self._delivery_context(tool_context)
         if delivery is None:
             return None
@@ -146,7 +156,7 @@ class SteeringPlugin(BasePlugin):
         try:
             in_flight = self._mid_batch_messages(task_id, owner, packet_ids)
             should_yield = (
-                len(in_flight) < STEERING_BATCH_LIMIT
+                len(in_flight) < self.batch_limit
                 and self.queue.has_pending(task_id)
             )
         except Exception:

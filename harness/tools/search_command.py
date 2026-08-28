@@ -64,8 +64,16 @@ def _tokens(command: str) -> list[str] | None:
     return tokens
 
 
-def parse_search_command(command: str) -> SearchCommand | None:
+def parse_search_command(
+    command: str,
+    *,
+    default_limit: int = DEFAULT_SEARCH_LIMIT,
+    max_limit: int = MAX_SEARCH_LIMIT,
+) -> SearchCommand | None:
     """Return a validated virtual command, or ``None`` for ordinary shell input."""
+
+    if not 1 <= default_limit <= max_limit <= MAX_SEARCH_LIMIT:
+        raise ValueError("search page limits must be ordered within the backend maximum")
 
     tokens = _tokens(command)
     if tokens is None:
@@ -123,9 +131,9 @@ def parse_search_command(command: str) -> SearchCommand | None:
     parsed_mode = cast(SearchMode, mode)
     limit = _integer(
         "--limit",
-        values.get("--limit", str(DEFAULT_SEARCH_LIMIT)),
+        values.get("--limit", str(default_limit)),
         minimum=1,
-        maximum=MAX_SEARCH_LIMIT,
+        maximum=max_limit,
     )
     context = _integer(
         "--context",

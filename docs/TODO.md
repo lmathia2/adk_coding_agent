@@ -18,8 +18,8 @@ Each checked item is committed independently.
 ## Declarative runtime and interactive client
 
 - [x] Define strict YAML composition, volatile runtime bindings, ADK model/App assembly seams, and versioned AG-UI/control protocol contracts.
-- [ ] Replace singleton application wiring with a closed registry of harness factories that assemble and reuse ADK primitives.
-- [ ] Adapt the current coding harness to the common runtime and prove a second registered test harness can be selected without server or client changes.
+- [x] Replace singleton application wiring with a closed registry of harness factories that assemble and reuse ADK primitives.
+- [x] Adapt the current coding harness to the common runtime and prove a second registered test harness can be selected without server or client changes.
 - [ ] Implement the durable run registry and bidirectional WebSocket/AG-UI server with replay and backpressure.
 - [ ] Implement a Bubble Tea TUI that depends only on the public protocol.
 - [ ] Add deterministic harness-swap, reconnect, replay, steering, cancellation, and client compatibility tests.

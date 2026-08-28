@@ -10,7 +10,7 @@ from google.adk.plugins.base_plugin import BasePlugin
 
 from harness.models.verification import VerificationReport
 from harness.repo import build_repository_manifest
-from harness.state import EventKind, JsonlEventStore, rebuild_ledger
+from harness.state import EventKind, EventStore, JsonlEventStore, rebuild_ledger
 
 from .identity import project_id_for
 from .project import ProjectMemoryStore, extract_verified_memories
@@ -37,13 +37,14 @@ class VerifiedProjectMemoryPlugin(BasePlugin):
         state_root: Path,
         project_root: Path | None = None,
         default_task_id: str | None = None,
+        event_store: EventStore | None = None,
     ) -> None:
         super().__init__(name="verified_project_memory")
         self.workspace = workspace.resolve()
         self.state_root = state_root.resolve()
         self.project_id = project_id_for(project_root or workspace)
         self.default_task_id = default_task_id
-        self.events = JsonlEventStore(self.state_root / "events")
+        self.events = event_store or JsonlEventStore(self.state_root / "events")
         self.memories = ProjectMemoryStore(self.state_root / "project-memory.db")
 
     def _task_id(self, context: Any) -> str | None:

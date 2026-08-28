@@ -9,8 +9,6 @@ harness:
   required_capabilities:
     - streaming
     - steering
-    - cancel
-    - replay
     - tool_events
     - state_snapshots
     - artifacts
@@ -164,9 +162,7 @@ harness:
       max_chars: 60000
 
 persistence:
-  session_backend: database
-  session_database_url:
-    env: ADK_DATABASE_URL
+  session_backend: in_memory
   artifact_backend: in_memory
   memory_backend: in_memory
 

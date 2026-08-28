@@ -95,3 +95,37 @@ def test_plugin_ignores_non_coding_model_calls(tmp_path: Path) -> None:
 
     assert request.contents == []
     assert queue.has_pending("task-1")
+
+
+def test_plugin_respects_configured_safe_points_and_batch_limit(tmp_path: Path) -> None:
+    queue = SteeringQueue(tmp_path / "state.db")
+    events = JsonlEventStore(tmp_path / "events")
+    plugin = SteeringPlugin(
+        queue=queue,
+        event_store=events,
+        lease_seconds=60,
+        batch_limit=1,
+        before_model=False,
+        before_tool=True,
+    )
+    queue.enqueue("task-1", "First", priority=2)
+    queue.enqueue("task-1", "Second", priority=1)
+    request = LlmRequest()
+
+    asyncio.run(
+        plugin.before_model_callback(
+            callback_context=_context(),
+            llm_request=request,
+        )
+    )
+    fenced = asyncio.run(
+        plugin.before_tool_callback(
+            tool=SimpleNamespace(name="edit"),
+            tool_args={},
+            tool_context=_context(),
+        )
+    )
+
+    assert request.contents == []
+    assert fenced is not None
+    assert queue.list_messages("task-1", statuses=("queued",), limit=10)

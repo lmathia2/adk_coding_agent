@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
+from pydantic import BaseModel
+
 from harness.config import HarnessComposition, RuntimeBindings
 
 from .contracts import AdkHarnessAssembly, HarnessFactory, RuntimeCapability
@@ -35,6 +39,11 @@ class HarnessRegistry:
                 f"configured {composition.harness.api_version}, "
                 f"registered {factory.descriptor.api_version}"
             )
+        if not isinstance(composition.harness.config, factory.config_model):
+            raise TypeError(
+                "harness configuration was not validated with the registered model: "
+                f"{factory.config_model.__name__}"
+            )
         required = {RuntimeCapability(value) for value in composition.harness.required_capabilities}
         missing = required - factory.descriptor.capabilities
         if missing:
@@ -44,6 +53,12 @@ class HarnessRegistry:
 
     def available(self) -> tuple[str, ...]:
         return tuple(sorted(self._factories))
+
+    def config_models(self) -> Mapping[str, type[BaseModel]]:
+        return {
+            implementation: factory.config_model
+            for implementation, factory in sorted(self._factories.items())
+        }
 
 
 __all__ = ["HarnessRegistry"]

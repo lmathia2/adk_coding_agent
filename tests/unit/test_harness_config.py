@@ -9,9 +9,9 @@ from pydantic import ValidationError
 
 from harness.config import (
     FOUR_CODING_TOOLS,
-    HarnessComposition,
     RuntimeBindings,
     load_harness_composition,
+    parse_harness_composition,
 )
 
 
@@ -86,8 +86,8 @@ def test_canonical_composition_hash_is_stable_across_mapping_order() -> None:
     payload = _composition_payload()
     reordered = dict(reversed(payload.items()))
 
-    first = HarnessComposition.model_validate(payload)
-    second = HarnessComposition.model_validate(reordered)
+    first = parse_harness_composition(payload)
+    second = parse_harness_composition(reordered)
 
     assert first.canonical_json() == second.canonical_json()
     assert first.composition_sha256 == second.composition_sha256
@@ -122,7 +122,7 @@ def test_resolved_behavior_hash_tracks_file_prompt_content(tmp_path: Path) -> No
     prompt = tmp_path / "prompts" / "coding.md"
     prompt.parent.mkdir()
     prompt.write_text("first instruction", encoding="utf-8")
-    composition = HarnessComposition.model_validate(payload)
+    composition = parse_harness_composition(payload)
 
     first = composition.resolved_behavior_sha256(tmp_path)
     prompt.write_text("second instruction", encoding="utf-8")
@@ -131,7 +131,7 @@ def test_resolved_behavior_hash_tracks_file_prompt_content(tmp_path: Path) -> No
 
 
 def test_behavior_hash_excludes_deployment_configuration() -> None:
-    composition = HarnessComposition.model_validate(_composition_payload())
+    composition = parse_harness_composition(_composition_payload())
     moved = composition.model_copy(
         update={"server": composition.server.model_copy(update={"host": "0.0.0.0", "port": 9999})}
     )
@@ -146,8 +146,8 @@ def test_capability_order_does_not_change_behavior_hash() -> None:
     reordered = _composition_payload()
     reordered["harness"]["required_capabilities"] = ["cancel", "streaming", "steering"]
 
-    first = HarnessComposition.model_validate(payload)
-    second = HarnessComposition.model_validate(reordered)
+    first = parse_harness_composition(payload)
+    second = parse_harness_composition(reordered)
 
     assert first.behavior_sha256 == second.behavior_sha256
 
@@ -157,7 +157,7 @@ def test_unknown_configuration_fields_are_rejected() -> None:
     payload["surprise"] = True
 
     with pytest.raises(ValidationError, match="surprise"):
-        HarnessComposition.model_validate(payload)
+        parse_harness_composition(payload)
 
 
 def test_workflow_cannot_reach_finish_without_verification() -> None:
@@ -165,7 +165,7 @@ def test_workflow_cannot_reach_finish_without_verification() -> None:
     payload["harness"]["config"]["workflow"]["nodes"]["initialize"]["next"] = "finish"
 
     with pytest.raises(ValidationError, match="must pass through verify"):
-        HarnessComposition.model_validate(payload)
+        parse_harness_composition(payload)
 
 
 def test_workflow_references_must_resolve() -> None:
@@ -173,7 +173,7 @@ def test_workflow_references_must_resolve() -> None:
     payload["harness"]["config"]["workflow"]["nodes"]["review"]["next"] = "missing"
 
     with pytest.raises(ValidationError, match="references missing nodes"):
-        HarnessComposition.model_validate(payload)
+        parse_harness_composition(payload)
 
 
 def test_workflow_requires_a_reachable_finish_node() -> None:
@@ -183,7 +183,7 @@ def test_workflow_requires_a_reachable_finish_node() -> None:
     nodes["review"]["next"] = "blocked"
 
     with pytest.raises(ValidationError, match="finish node"):
-        HarnessComposition.model_validate(payload)
+        parse_harness_composition(payload)
 
 
 @pytest.mark.parametrize(
@@ -204,7 +204,7 @@ def test_workflow_node_kind_requires_its_operands(
     nodes[node_name] = node
 
     with pytest.raises(ValidationError, match=message):
-        HarnessComposition.model_validate(payload)
+        parse_harness_composition(payload)
 
 
 @pytest.mark.parametrize(
@@ -220,7 +220,7 @@ def test_tool_surface_cannot_be_broadened_or_reordered(visible: list[str]) -> No
     payload["harness"]["config"]["tools"] = {"visible": visible}
 
     with pytest.raises(ValidationError, match="exactly read, bash, edit, write"):
-        HarnessComposition.model_validate(payload)
+        parse_harness_composition(payload)
 
 
 def test_reviewer_cannot_receive_model_visible_tools() -> None:
@@ -228,11 +228,11 @@ def test_reviewer_cannot_receive_model_visible_tools() -> None:
     payload["harness"]["config"]["agents"]["final_diff_reviewer"]["tools"] = ["read"]
 
     with pytest.raises(ValidationError, match="cannot expose tools"):
-        HarnessComposition.model_validate(payload)
+        parse_harness_composition(payload)
 
 
 def test_runtime_bindings_are_not_part_of_declarative_behavior(tmp_path: Path) -> None:
-    composition = HarnessComposition.model_validate(_composition_payload())
+    composition = parse_harness_composition(_composition_payload())
     bindings = RuntimeBindings(
         workspace=tmp_path / "workspace",
         state_root=tmp_path / "state",
@@ -254,7 +254,7 @@ def test_secret_values_cannot_be_embedded_in_composition() -> None:
     }
 
     with pytest.raises(ValidationError, match="value"):
-        HarnessComposition.model_validate(payload)
+        parse_harness_composition(payload)
 
 
 def test_search_default_page_size_cannot_exceed_maximum() -> None:
@@ -264,7 +264,7 @@ def test_search_default_page_size_cannot_exceed_maximum() -> None:
     }
 
     with pytest.raises(ValidationError, match="default search page size"):
-        HarnessComposition.model_validate(payload)
+        parse_harness_composition(payload)
 
 
 def test_missing_file_prompt_path_is_a_validation_error(tmp_path: Path) -> None:

@@ -20,6 +20,7 @@ from harness.agent import (
     AgentSnapshot,
     ControlCommand,
     ControlReceipt,
+    HarnessBuildInfo,
     HarnessControlHooks,
     HarnessDescriptor,
     HarnessFactory,
@@ -31,6 +32,7 @@ from harness.ai import AdkModelProvider, AdkModelProviderRegistry
 from harness.config import (
     HarnessComposition,
     ModelConfig,
+    PiCodingConfig,
     RuntimeBindings,
     SecretRef,
     load_harness_composition,
@@ -119,19 +121,28 @@ class _HarnessFactory:
     def descriptor(self) -> HarnessDescriptor:
         return self._descriptor
 
+    @property
+    def config_model(self) -> type[PiCodingConfig]:
+        return PiCodingConfig
+
     def build(
         self,
         composition: HarnessComposition,
         bindings: RuntimeBindings,
     ) -> AdkHarnessAssembly:
         assert bindings.workspace.is_absolute()
+        config = composition.harness.config
+        assert isinstance(config, PiCodingConfig)
         root_agent = LlmAgent(
             name="test_coding_agent",
-            model=composition.harness.config.models["coding"].name,
+            model=config.models["coding"].name,
         )
         return AdkHarnessAssembly(
             descriptor=self.descriptor,
             app=App(name=composition.app.name, root_agent=root_agent),
+            build_info=HarnessBuildInfo(
+                behavior_sha256=composition.behavior_sha256,
+            ),
             controls=_AgentRuntime(self.descriptor),
         )
 
@@ -220,7 +231,7 @@ def test_harness_registry_rejects_missing_required_capability(tmp_path: Path) ->
 
     with pytest.raises(
         ValueError,
-        match="artifacts, cancel, replay, state_snapshots, steering, tool_events",
+        match="artifacts, state_snapshots, steering, tool_events",
     ):
         registry.build(
             load_harness_composition(),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from harness.learning import (
     LearningStore,
@@ -14,16 +15,10 @@ from harness.learning import (
 )
 from harness.skills import SkillRegistry, SkillRoot, learned_skill_roots
 
-from .config import SETTINGS, HarnessSettings
 from .learning import workflow_kind_for
 
-_LEARNING_STORE = LearningStore(SETTINGS.state_root / "learning.db")
-_LEARNED_SKILLS = LearnedSkillRegistry(SETTINGS.learned_skill_root)
-_LEARNING_CONTROLLER = TraceSkillLearningController(
-    store=_LEARNING_STORE,
-    registry=_LEARNED_SKILLS,
-    policy=PromotionPolicy(minimum_support=SETTINGS.learning_min_support),
-)
+if TYPE_CHECKING:
+    from .config import HarnessSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +31,15 @@ class SkillRuntimeContext:
     variant: str | None = None
 
 
-def build_skill_registry(settings: HarnessSettings = SETTINGS) -> SkillRegistry:
+def build_learning_controller(settings: HarnessSettings) -> TraceSkillLearningController:
+    return TraceSkillLearningController(
+        store=LearningStore(settings.state_root / "learning.db"),
+        registry=LearnedSkillRegistry(settings.learned_skill_root),
+        policy=PromotionPolicy(minimum_support=settings.learning_min_support),
+    )
+
+
+def build_skill_registry(settings: HarnessSettings) -> SkillRegistry:
     roots = [
         SkillRoot(
             path=path,
@@ -96,7 +99,7 @@ def build_skill_context(
     goal: str,
     next_action: str,
     workflow_kind: str | None = None,
-    settings: HarnessSettings = SETTINGS,
+    settings: HarnessSettings,
     controller: TraceSkillLearningController | None = None,
 ) -> SkillRuntimeContext:
     """Build bounded dynamic skill context; never alter the stable prefix."""
@@ -105,16 +108,7 @@ def build_skill_context(
         return SkillRuntimeContext()
     active_controller = controller
     if active_controller is None:
-        if settings.learned_skill_root == SETTINGS.learned_skill_root:
-            active_controller = _LEARNING_CONTROLLER
-        else:
-            active_controller = TraceSkillLearningController(
-                store=LearningStore(settings.state_root / "learning.db"),
-                registry=LearnedSkillRegistry(settings.learned_skill_root),
-                policy=PromotionPolicy(
-                    minimum_support=settings.learning_min_support
-                ),
-            )
+        active_controller = build_learning_controller(settings)
     registry = build_skill_registry(settings)
     budget = settings.skill_context_bytes
     catalog_heading = "Available skill catalog:\n"
@@ -247,6 +241,7 @@ def build_skill_context(
 
 __all__ = [
     "SkillRuntimeContext",
+    "build_learning_controller",
     "build_skill_context",
     "build_skill_registry",
 ]

@@ -7,7 +7,7 @@ import pytest
 
 from harness.repo import SearchPage
 from harness.sandbox import SandboxRequest, SandboxResult
-from harness.tools.adk_adapter import create_adk_tools
+from harness.tools.adk_adapter import create_adk_tools, discover_known_secrets
 
 
 class _RecordingSandbox:
@@ -114,6 +114,42 @@ def test_exact_write_replay_uses_receipt_without_repeating_side_effect(
     assert (tmp_path / "result.txt").read_text(encoding="utf-8") == "stable\n"
 
 
+def test_mutation_receipts_are_scoped_to_the_active_task(
+    tmp_path: Path,
+) -> None:
+    tools = create_adk_tools(tmp_path, state_root=tmp_path / "state")
+
+    first = tools.write(
+        "result.txt",
+        "stable\n",
+        expected_absent=True,
+        task_scope="task-a",
+    )
+    (tmp_path / "result.txt").unlink()
+    second = tools.write(
+        "result.txt",
+        "stable\n",
+        expected_absent=True,
+        task_scope="task-b",
+    )
+
+    assert first.get("replayed") is not True
+    assert second.get("replayed") is not True
+    assert (tmp_path / "result.txt").read_text(encoding="utf-8") == "stable\n"
+
+
+def test_secret_discovery_unions_automatic_and_configured_names(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-sensitive-value")
+    monkeypatch.setenv("PRIVATE_MATERIAL", "configured-sensitive-value")
+
+    secrets = discover_known_secrets(["PRIVATE_MATERIAL"])
+
+    assert "gemini-sensitive-value" in secrets
+    assert "configured-sensitive-value" in secrets
+
+
 def test_approved_model_bash_uses_injected_command_sandbox(
     tmp_path: Path,
     monkeypatch,
@@ -130,6 +166,30 @@ def test_approved_model_bash_uses_injected_command_sandbox(
     assert sandbox.requests == [
         SandboxRequest(command="git status --short", timeout_seconds=17)
     ]
+
+
+def test_configured_bash_and_search_limits_are_enforced(tmp_path: Path) -> None:
+    sandbox = _RecordingSandbox(tmp_path)
+    backend = _RecordingSearchBackend()
+    tools = create_adk_tools(
+        tmp_path,
+        state_root=tmp_path / "state",
+        sandbox=sandbox,
+        search_backend=backend,
+        bash_max_timeout_seconds=9,
+        search_default_page_size=3,
+        search_max_page_size=4,
+    )
+
+    tools.bash("search grep --pattern TODO", timeout_seconds=9)
+    assert backend.calls[0][1]["limit"] == 3
+    with pytest.raises(ValueError, match="between 1 and 9"):
+        tools.bash("git status", timeout_seconds=10)
+    invalid_search = tools.bash(
+        "search grep --pattern TODO --limit 5",
+        timeout_seconds=9,
+    )
+    assert invalid_search["status"] == "error"
 
 
 def test_virtual_search_routes_before_policy_and_shell_dispatch(

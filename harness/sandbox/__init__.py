@@ -2,7 +2,7 @@
 
 from .base import CommandSandbox, SandboxRequest, SandboxResult
 from .docker import DockerSandbox
-from .factory import create_command_sandbox
+from .factory import create_command_sandbox, create_configured_command_sandbox
 from .kubernetes import KubernetesSandbox
 from .local import LocalSandbox
 from .remote import (
@@ -26,4 +26,5 @@ __all__ = [
     "SandboxRequest",
     "SandboxResult",
     "create_command_sandbox",
+    "create_configured_command_sandbox",
 ]

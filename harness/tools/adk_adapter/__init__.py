@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -87,18 +87,21 @@ def _state_root(workspace: Path) -> Path:
     return root
 
 
-def _known_secrets() -> list[str]:
+def discover_known_secrets(additional_names: Sequence[str] = ()) -> list[str]:
+    """Return sensitive environment values without exposing their names or values."""
+
     explicit_names = {
         name.strip()
         for name in os.getenv("ADK_CODING_REDACT_ENV_VARS", "").split(",")
         if name.strip()
     }
+    explicit_names.update(additional_names)
     for name in os.environ:
         upper = name.upper()
         if any(
             marker in upper
             for marker in ("API_KEY", "ACCESS_TOKEN", "AUTH_TOKEN", "CLIENT_SECRET", "PASSWORD")
-        ):
+        ) or upper.endswith(("_TOKEN", "_SECRET", "_PRIVATE_KEY")):
             explicit_names.add(name)
     return [
         value
@@ -240,23 +243,40 @@ class _ManagedTools:
         self,
         workspace: Path,
         *,
+        state_root: Path | None = None,
         sandbox: CommandSandbox | None = None,
         search_backend: SearchBackend | None = None,
+        search_mode: str | None = None,
+        policy: ApprovalPolicy | None = None,
+        known_secrets: Sequence[str] | None = None,
+        task_scope: str | None = None,
+        bash_max_timeout_seconds: int = 600,
+        search_default_page_size: int = 20,
+        search_max_page_size: int = 50,
     ) -> None:
         self.workspace = workspace.resolve()
         legacy = _legacy_module()
         self.base = legacy.create_adk_tools(self.workspace)
-        state_root = _state_root(self.workspace)
+        state_root = (
+            state_root.expanduser().resolve()
+            if state_root is not None
+            else _state_root(self.workspace)
+        )
+        state_root.mkdir(parents=True, exist_ok=True)
         self.state_root = state_root
-        known_secrets = _known_secrets()
+        resolved_secrets = (
+            list(known_secrets)
+            if known_secrets is not None
+            else discover_known_secrets()
+        )
         self.sandbox = sandbox or create_command_sandbox(
             self.workspace,
             state_root,
-            known_secrets=known_secrets,
+            known_secrets=resolved_secrets,
         )
         self.receipts = ToolReceiptStore(state_root / "managed-tools.db")
         self.approvals = ApprovalStore(state_root / "approvals.db")
-        self.redactor = SecretRedactor(known_secrets=known_secrets)
+        self.redactor = SecretRedactor(known_secrets=resolved_secrets)
         self.artifacts = _ArtifactResolver(
             workspace=self.workspace,
             state_root=state_root,
@@ -266,17 +286,24 @@ class _ManagedTools:
             for item in os.getenv("ADK_CODING_APPROVED_COMMAND_FINGERPRINTS", "").split(",")
             if item.strip()
         }
-        self.policy = ApprovalPolicy(
+        self.policy = policy or ApprovalPolicy(
             allow_dependency_install=_truthy("ADK_CODING_ALLOW_DEPENDENCY_INSTALL"),
             allow_network=_truthy("ADK_CODING_ALLOW_NETWORK"),
             allow_git_history_mutation=_truthy("ADK_CODING_ALLOW_GIT_MUTATION"),
             allow_unknown=_truthy("ADK_CODING_ALLOW_UNKNOWN_COMMANDS"),
             approved_fingerprints=approved,
         )
-        self.task_scope = os.getenv("ADK_CODING_TASK_ID") or hashlib.sha256(
+        self.task_scope = task_scope or os.getenv("ADK_CODING_TASK_ID") or hashlib.sha256(
             self.workspace.as_posix().encode()
         ).hexdigest()[:24]
-        configured_search = os.getenv("ADK_CODING_SEARCH_BACKEND", "auto").strip().lower()
+        self.bash_max_timeout_seconds = bash_max_timeout_seconds
+        self.search_default_page_size = search_default_page_size
+        self.search_max_page_size = search_max_page_size
+        configured_search = (
+            search_mode
+            if search_mode is not None
+            else os.getenv("ADK_CODING_SEARCH_BACKEND", "auto")
+        ).strip().lower()
         if configured_search not in {"auto", "disabled", "fff"}:
             raise ValueError(
                 "ADK_CODING_SEARCH_BACKEND must be auto, fff, or disabled"
@@ -413,9 +440,24 @@ class _ManagedTools:
             }
         return self._search_result(page)
 
-    def bash(self, command: str, timeout_seconds: int = 120) -> dict[str, Any]:
+    def bash(
+        self,
+        command: str,
+        timeout_seconds: int = 120,
+        *,
+        task_scope: str | None = None,
+    ) -> dict[str, Any]:
+        if not 1 <= timeout_seconds <= self.bash_max_timeout_seconds:
+            raise ValueError(
+                "timeout_seconds must be between 1 and "
+                f"{self.bash_max_timeout_seconds}"
+            )
         try:
-            search_command = parse_search_command(command)
+            search_command = parse_search_command(
+                command,
+                default_limit=self.search_default_page_size,
+                max_limit=self.search_max_page_size,
+            )
         except SearchCommandParseError as exc:
             return {
                 "status": "error",
@@ -428,7 +470,8 @@ class _ManagedTools:
         if search_command is not None:
             return self._run_search(search_command)
         fingerprint = _canonical_hash("bash", {"command": command})
-        persisted = self.approvals.for_fingerprint(self.task_scope, fingerprint)
+        active_scope = task_scope or self.task_scope
+        persisted = self.approvals.for_fingerprint(active_scope, fingerprint)
         if persisted and persisted.status == "approved":
             self.policy.approved_fingerprints.add(fingerprint)
         elif persisted and persisted.status == "denied":
@@ -447,7 +490,7 @@ class _ManagedTools:
             request_id: str | None = None
             if decision.action == ApprovalAction.REQUIRE_APPROVAL:
                 request = self.approvals.request(
-                    task_id=self.task_scope,
+                    task_id=active_scope,
                     fingerprint=fingerprint,
                     operation=self.redactor.redact_text(command),
                     risk=decision.risk.value,
@@ -478,12 +521,16 @@ class _ManagedTools:
         tool_name: str,
         arguments: dict[str, Any],
         operation: Callable[[], Any],
+        *,
+        task_scope: str | None = None,
+        invocation_id: str | None = None,
     ) -> dict[str, Any]:
+        active_scope = task_scope or self.task_scope
         arguments_hash = _canonical_hash(tool_name, arguments)
         tool_call_id = arguments_hash[:32]
         receipt = self.receipts.begin(
-            task_id=self.task_scope,
-            invocation_id="content-addressed",
+            task_id=active_scope,
+            invocation_id=invocation_id or "content-addressed",
             tool_call_id=tool_call_id,
             tool_name=tool_name,
             arguments_hash=arguments_hash,
@@ -501,7 +548,7 @@ class _ManagedTools:
             result = self._redact(operation())
         except Exception as exc:
             self.receipts.finish(
-                task_id=self.task_scope,
+                task_id=active_scope,
                 tool_call_id=tool_call_id,
                 status="failed",
                 error=self.redactor.redact_text(str(exc)),
@@ -511,7 +558,7 @@ class _ManagedTools:
             json.dumps(result, sort_keys=True, default=str).encode()
         ).hexdigest()
         self.receipts.finish(
-            task_id=self.task_scope,
+            task_id=active_scope,
             tool_call_id=tool_call_id,
             status="completed",
             result_hash=result_hash,
@@ -531,6 +578,9 @@ class _ManagedTools:
         old_text: str,
         new_text: str,
         expected_sha256: str | None = None,
+        *,
+        task_scope: str | None = None,
+        invocation_id: str | None = None,
     ) -> dict[str, Any]:
         arguments = {
             "path": path,
@@ -547,6 +597,8 @@ class _ManagedTools:
                 new_text=new_text,
                 expected_sha256=expected_sha256,
             ),
+            task_scope=task_scope,
+            invocation_id=invocation_id,
         )
 
     def write(
@@ -555,6 +607,9 @@ class _ManagedTools:
         content: str,
         expected_sha256: str | None = None,
         expected_absent: bool = False,
+        *,
+        task_scope: str | None = None,
+        invocation_id: str | None = None,
     ) -> dict[str, Any]:
         arguments = {
             "path": path,
@@ -571,19 +626,37 @@ class _ManagedTools:
                 expected_sha256=expected_sha256,
                 expected_absent=expected_absent,
             ),
+            task_scope=task_scope,
+            invocation_id=invocation_id,
         )
 
 
 def create_adk_tools(
     workspace: Path,
     *,
+    state_root: Path | None = None,
     sandbox: CommandSandbox | None = None,
     search_backend: SearchBackend | None = None,
+    search_mode: str | None = None,
+    policy: ApprovalPolicy | None = None,
+    known_secrets: Sequence[str] | None = None,
+    task_scope: str | None = None,
+    bash_max_timeout_seconds: int = 600,
+    search_default_page_size: int = 20,
+    search_max_page_size: int = 50,
 ) -> AdkCodingTools:
     managed = _ManagedTools(
         workspace,
+        state_root=state_root,
         sandbox=sandbox,
         search_backend=search_backend,
+        search_mode=search_mode,
+        policy=policy,
+        known_secrets=known_secrets,
+        task_scope=task_scope,
+        bash_max_timeout_seconds=bash_max_timeout_seconds,
+        search_default_page_size=search_default_page_size,
+        search_max_page_size=search_max_page_size,
     )
     return AdkCodingTools(
         read=managed.read,
@@ -593,4 +666,4 @@ def create_adk_tools(
     )
 
 
-__all__ = ["AdkCodingTools", "create_adk_tools"]
+__all__ = ["AdkCodingTools", "create_adk_tools", "discover_known_secrets"]

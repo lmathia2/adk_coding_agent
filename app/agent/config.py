@@ -8,6 +8,7 @@ import socket
 from dataclasses import dataclass
 from pathlib import Path
 
+from harness.config import HarnessComposition, PiCodingConfig, RuntimeBindings
 from harness.context import build_static_prefix
 from harness.repo import collect_project_instructions
 
@@ -197,6 +198,90 @@ def load_settings() -> HarnessSettings:
     )
 
 
-SETTINGS = load_settings()
+def settings_from_composition(
+    composition: HarnessComposition,
+    bindings: RuntimeBindings,
+) -> HarnessSettings:
+    """Resolve validated declarative behavior against volatile runtime bindings."""
 
-__all__ = ["SETTINGS", "HarnessSettings", "load_settings"]
+    config = composition.harness.config
+    if not isinstance(config, PiCodingConfig):
+        raise TypeError("pi_coding_v1 requires PiCodingConfig")
+    workspace = bindings.workspace.expanduser().resolve()
+    state_root = bindings.state_root.expanduser().resolve()
+    configuration_root = (bindings.configuration_root or workspace).expanduser().resolve()
+    project_instructions = collect_project_instructions(workspace)
+    if len(project_instructions) > 16_000:
+        project_instructions = (
+            project_instructions[:16_000]
+            + "\n[project instructions truncated; read the source files when needed]"
+        )
+    instruction = _BASE_INSTRUCTION
+    if project_instructions:
+        instruction += "\n\nStable project instructions:\n" + project_instructions
+
+    coding_model = config.models["coding"].name
+    review_agent_name = config.reviewer.agent or "final_diff_reviewer"
+    review_agent = config.agents.get(review_agent_name)
+    review_model = (
+        config.models[review_agent.model].name if review_agent is not None else coding_model
+    )
+    skill_roots: list[Path] = []
+    if config.skills.project_root_enabled:
+        skill_roots.append(workspace / ".agents" / "skills")
+    for configured in config.skills.additional_roots:
+        path = configured.expanduser()
+        skill_roots.append(
+            path.resolve() if path.is_absolute() else (configuration_root / path).resolve()
+        )
+    worker_id = bindings.worker_id
+    if not worker_id:
+        worker_id = f"{socket.gethostname()}:{os.getpid()}"
+    return HarnessSettings(
+        app_name=composition.app.name,
+        model=coding_model,
+        workspace=workspace,
+        source_repository=(
+            bindings.source_repository.expanduser().resolve()
+            if bindings.source_repository is not None
+            else None
+        ),
+        state_root=state_root,
+        task_id_override=bindings.task_id,
+        base_revision_override=bindings.base_revision,
+        workspace_id_override=bindings.workspace_id,
+        control_database_url=(
+            bindings.control_database_url.get_secret_value()
+            if bindings.control_database_url is not None
+            else None
+        ),
+        worker_id=worker_id,
+        task_lease_seconds=config.steering.lease_seconds,
+        max_iterations=config.workflow.max_iterations,
+        compact_at_tokens=config.context.compact_at_tokens,
+        recent_event_limit=config.context.recent_event_limit,
+        static_instruction=instruction,
+        static_prefix=build_static_prefix(
+            model_name=coding_model,
+            instruction=instruction,
+        ),
+        final_reviewer_enabled=config.reviewer.enabled,
+        review_model=review_model,
+        review_max_chars=config.reviewer.max_chars,
+        trace_mode=config.tracing.mode,
+        trace_max_content_bytes=config.tracing.max_content_bytes,
+        skill_roots=tuple(dict.fromkeys(skill_roots)),
+        learned_skill_root=state_root / "learned-skills",
+        skill_max_selected=config.context.max_selected_skills,
+        skill_context_bytes=config.context.skill_context_bytes,
+        learning_enabled=config.learning.enabled,
+        learning_min_support=config.learning.minimum_support,
+        learning_trial_percent=config.learning.trial_percent,
+    )
+
+
+__all__ = [
+    "HarnessSettings",
+    "load_settings",
+    "settings_from_composition",
+]

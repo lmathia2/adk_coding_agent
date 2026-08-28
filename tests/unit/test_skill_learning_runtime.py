@@ -13,7 +13,7 @@ os.environ.setdefault(
     str(Path(tempfile.gettempdir()) / "adk-coding-agent-runtime-tests"),
 )
 
-from app.agent.config import SETTINGS
+from app.agent.bootstrap import SETTINGS
 from app.agent.learning import (
     VerifiedTraceLearningPlugin,
     episode_for_verified_task,

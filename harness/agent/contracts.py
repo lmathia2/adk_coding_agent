@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
+from google.adk.agents import BaseAgent
 from google.adk.apps import App
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -35,6 +36,16 @@ class HarnessDescriptor(FrozenModel):
     display_name: str = Field(min_length=1, max_length=128)
     capabilities: frozenset[RuntimeCapability]
     protocol_versions: tuple[int, ...] = (1,)
+
+
+class HarnessBuildInfo(FrozenModel):
+    """Safe effective behavior metadata for diagnostics and assembly caching."""
+
+    behavior_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    models: dict[str, str] = Field(default_factory=dict)
+    tool_names: tuple[str, ...] = ()
+    max_iterations: int | None = Field(default=None, ge=1)
+    compact_at_tokens: int | None = Field(default=None, ge=1)
 
 
 class AgentRunRequest(FrozenModel):
@@ -111,6 +122,8 @@ class AdkHarnessAssembly:
 
     descriptor: HarnessDescriptor
     app: App
+    build_info: HarnessBuildInfo
+    agents: Mapping[str, BaseAgent] = field(default_factory=dict)
     controls: HarnessControlHooks | None = None
 
 
@@ -139,6 +152,9 @@ class HarnessFactory(Protocol):
     @property
     def descriptor(self) -> HarnessDescriptor: ...
 
+    @property
+    def config_model(self) -> type[BaseModel]: ...
+
     def build(
         self,
         composition: HarnessComposition,
@@ -155,6 +171,7 @@ __all__ = [
     "AgentSnapshot",
     "ControlCommand",
     "ControlReceipt",
+    "HarnessBuildInfo",
     "HarnessControlHooks",
     "HarnessDescriptor",
     "HarnessFactory",

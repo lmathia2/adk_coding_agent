@@ -36,13 +36,11 @@ def _ledger() -> TaskLedger:
 
 
 def test_workflow_compaction_uses_safe_suffix_and_chains_snapshot(
-    monkeypatch,
     tmp_path,
 ) -> None:
-    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
     workflow = importlib.import_module("app.agent.workflow")
     store = JsonlEventStore(tmp_path / "events")
+    recent_event_limit = 12
     ledger = _ledger()
     store.append(
         ledger.task_id,
@@ -55,12 +53,13 @@ def test_workflow_compaction_uses_safe_suffix_and_chains_snapshot(
             EventKind.ACTION_RECORDED,
             {"first": index},
         )
-        for index in range(workflow.SETTINGS.recent_event_limit + 2)
+        for index in range(recent_event_limit + 2)
     ]
-    monkeypatch.setattr(workflow, "_EVENT_STORE", store)
 
     first = workflow._prepare_compaction(
         ledger.task_id,
+        event_store=store,
+        recent_event_limit=recent_event_limit,
         ledger=ledger,
         tokens_before=80_000,
     )
@@ -82,11 +81,13 @@ def test_workflow_compaction_uses_safe_suffix_and_chains_snapshot(
             EventKind.ACTION_RECORDED,
             {"second": index},
         )
-        for index in range(workflow.SETTINGS.recent_event_limit + 1)
+        for index in range(recent_event_limit + 1)
     ]
 
     second = workflow._prepare_compaction(
         ledger.task_id,
+        event_store=store,
+        recent_event_limit=recent_event_limit,
         ledger=ledger,
         tokens_before=90_000,
     )
@@ -114,11 +115,13 @@ def test_workflow_compaction_uses_safe_suffix_and_chains_snapshot(
             EventKind.ACTION_RECORDED,
             {"third": index},
         )
-        for index in range(workflow.SETTINGS.recent_event_limit + 1)
+        for index in range(recent_event_limit + 1)
     ]
 
     third = workflow._prepare_compaction(
         ledger.task_id,
+        event_store=store,
+        recent_event_limit=recent_event_limit,
         ledger=ledger,
         tokens_before=95_000,
     )
@@ -133,13 +136,10 @@ def test_workflow_compaction_uses_safe_suffix_and_chains_snapshot(
 
 
 def test_workflow_compaction_recovers_normal_coding_tool_artifacts(
-    monkeypatch,
     tmp_path,
 ) -> None:
     import asyncio
 
-    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
     workflow = importlib.import_module("app.agent.workflow")
     store = JsonlEventStore(tmp_path / "events")
     ledger = _ledger()
@@ -156,10 +156,10 @@ def test_workflow_compaction_recovers_normal_coding_tool_artifacts(
             artifact_uri=artifact_uri,
         )
     )
-    monkeypatch.setattr(workflow, "_EVENT_STORE", store)
-
     snapshot = workflow._prepare_compaction(
         ledger.task_id,
+        event_store=store,
+        recent_event_limit=12,
         ledger=ledger,
         tokens_before=80_000,
     )

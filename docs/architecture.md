@@ -61,9 +61,14 @@ adds start, attach/replay, steering, pause, cancel, acknowledgement, and heartbe
 The TUI speaks only this public protocol: it does not import ADK, parse the YAML, or
 know which harness factory is active.
 
-This layer is currently contract scaffolding. The declarative models and
-ADK model/App assembly interfaces are implemented; the registered factory migration,
-WebSocket server, and Bubble Tea client remain pending. See
+The declarative models, implementation-specific strict schemas, closed factory
+registry, and configuration-driven ADK `App` assembly are implemented. Application
+imports are lazy, and each factory build receives explicit runtime bindings and
+constructs isolated workflow, tool, state, sandbox, plugin, and model dependencies.
+The Pi implementation fails closed when YAML changes a topology edge, route, prompt,
+or agent contract that its compiled workflow cannot honor; materially different
+topologies are registered as separate harnesses.
+The WebSocket server and Bubble Tea client remain pending. See
 [`design/declarative-runtime-and-clients.md`](design/declarative-runtime-and-clients.md)
 for the full boundary and delivery plan.
 
@@ -253,10 +258,10 @@ worker owner with token-checked renewal and release.
 ## Package map
 
 ```text
-app/agent/                 ADK App, coding worker, workflow nodes
+app/agent/                 Pi harness factory, ADK App, worker, and workflow nodes
 harness/config/            strict YAML composition and volatile runtime bindings
 harness/ai/                provider adapters that build ADK BaseLlm instances
-harness/agent/             ADK App assembly and shared run/control contracts
+harness/agent/             factory registry, ADK assembly, and run/control contracts
 harness/server/            AG-UI and WebSocket protocol contracts (server pending)
 harness/context/           stable-prefix and bounded-context compiler
 harness/models/            typed contracts

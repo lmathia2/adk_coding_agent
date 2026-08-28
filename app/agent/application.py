@@ -1,78 +1,20 @@
-"""Final ADK application assembly, including non-prompt telemetry plugins."""
+"""Thin environment-aware Agents CLI bootstrap over the registered factory."""
 
 from __future__ import annotations
 
-import logging
 import os
 
-from google.adk.agents.context_cache_config import ContextCacheConfig
-from google.adk.apps.app import App, EventsCompactionConfig, ResumabilityConfig
+from pydantic import SecretStr
 
-from harness.adk import SteeringPlugin
-from harness.context import prefix_hash
-from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
-from harness.telemetry.adk_plugin import HarnessMetricsPlugin, pricing_from_env
-from harness.tracing import CodingToolArtifactPlugin, HarnessTracePlugin, TraceContentMode
+from harness.config import RuntimeBindings, load_harness_composition
 
-from .config import SETTINGS
-from .learning import VerifiedTraceLearningPlugin
-from .skills import _LEARNING_CONTROLLER
-from .workflow import _EVENT_STORE, _STEERING_QUEUE, root_agent
-
-LOGGER = logging.getLogger(__name__)
-
-_METRICS_PLUGIN = HarnessMetricsPlugin(
-    database=SETTINGS.state_root / "metrics.db",
-    static_prefix_hash=prefix_hash(SETTINGS.static_prefix),
-    static_prefix_tokens=len(SETTINGS.static_prefix) // 4,
-    default_model=SETTINGS.model,
-    default_task_id=SETTINGS.task_id_override,
-    pricing=pricing_from_env(),
-)
-_MEMORY_PLUGIN = VerifiedProjectMemoryPlugin(
-    workspace=SETTINGS.workspace,
-    state_root=SETTINGS.state_root,
-    project_root=SETTINGS.source_repository or SETTINGS.workspace,
-    default_task_id=SETTINGS.task_id_override,
-)
-
-
-def _known_trace_secrets() -> list[str]:
-    names = {
-        name.strip()
-        for name in os.getenv("ADK_CODING_REDACT_ENV_VARS", "").split(",")
-        if name.strip()
-    }
-    names.update(
-        {
-            "GOOGLE_API_KEY",
-            "ADK_CODING_REMOTE_TOKEN",
-        }
-    )
-    return [os.environ[name] for name in sorted(names) if os.getenv(name)]
-
-
-def _build_trace_plugin() -> HarnessTracePlugin | None:
-    if SETTINGS.trace_mode == "off":
-        return None
-    try:
-        return HarnessTracePlugin(
-            database=SETTINGS.state_root / "traces.db",
-            content_mode=(
-                TraceContentMode.REDACTED_CONTENT
-                if SETTINGS.trace_mode == "redacted"
-                else TraceContentMode.METADATA_ONLY
-            ),
-            max_payload_bytes=SETTINGS.trace_max_content_bytes,
-            known_secrets=_known_trace_secrets(),
-            default_task_id=SETTINGS.task_id_override,
-        )
-    except Exception:
-        LOGGER.exception("trace storage initialization failed; tracing is disabled")
-        return None
+from .bootstrap import SETTINGS
+from .factory import build_harness
 
 
 def _optional_int_env(name: str, *, minimum: int) -> int | None:
+    """Compatibility parser retained for operators migrating legacy settings."""
+
     raw = os.getenv(name, "").strip()
     if not raw:
         return None
@@ -82,61 +24,27 @@ def _optional_int_env(name: str, *, minimum: int) -> int | None:
     return value
 
 
-_TOOL_ARTIFACT_PLUGIN = CodingToolArtifactPlugin(
-    event_store=_EVENT_STORE,
-    default_task_id=SETTINGS.task_id_override,
-)
-_STEERING_PLUGIN = SteeringPlugin(
-    queue=_STEERING_QUEUE,
-    event_store=_EVENT_STORE,
-    lease_seconds=SETTINGS.task_lease_seconds,
-)
-_PLUGINS = [
-    _STEERING_PLUGIN,
-    _METRICS_PLUGIN,
-    _MEMORY_PLUGIN,
-    _TOOL_ARTIFACT_PLUGIN,
-]
-_TRACE_PLUGIN = _build_trace_plugin()
-if _TRACE_PLUGIN is not None:
-    _PLUGINS.insert(
-        1,
-        _TRACE_PLUGIN,
-    )
-if SETTINGS.learning_enabled and _TRACE_PLUGIN is not None:
-    _PLUGINS.append(
-        VerifiedTraceLearningPlugin(
-            event_store=_EVENT_STORE,
-            trace_store=_TRACE_PLUGIN.store,
-            metrics_store=_METRICS_PLUGIN.store,
-            controller=_LEARNING_CONTROLLER,
-            minimum_support=SETTINGS.learning_min_support,
-            default_task_id=SETTINGS.task_id_override,
-        )
-    )
-
-app = App(
-    name=SETTINGS.app_name,
-    root_agent=root_agent,
-    plugins=_PLUGINS,
-    context_cache_config=ContextCacheConfig(
-        min_tokens=int(os.getenv("ADK_CODING_CACHE_MIN_TOKENS", "4096")),
-        ttl_seconds=int(os.getenv("ADK_CODING_CACHE_TTL_SECONDS", "1800")),
-        cache_intervals=int(os.getenv("ADK_CODING_CACHE_INTERVALS", "10")),
-    ),
-    events_compaction_config=EventsCompactionConfig(
-        compaction_interval=_optional_int_env(
-            "ADK_CODING_COMPACTION_INTERVAL",
-            minimum=1,
+_COMPOSITION = load_harness_composition()
+_ASSEMBLY = build_harness(
+    _COMPOSITION,
+    RuntimeBindings(
+        workspace=SETTINGS.workspace,
+        state_root=SETTINGS.state_root,
+        configuration_root=None,
+        source_repository=SETTINGS.source_repository,
+        task_id=SETTINGS.task_id_override,
+        base_revision=SETTINGS.base_revision_override,
+        workspace_id=SETTINGS.workspace_id_override,
+        worker_id=SETTINGS.worker_id,
+        control_database_url=(
+            SecretStr(SETTINGS.control_database_url)
+            if SETTINGS.control_database_url is not None
+            else None
         ),
-        overlap_size=_optional_int_env(
-            "ADK_CODING_COMPACTION_OVERLAP",
-            minimum=0,
-        ),
-        token_threshold=int(os.getenv("ADK_CODING_ADK_COMPACT_TOKENS", "96000")),
-        event_retention_size=int(os.getenv("ADK_CODING_EVENT_RETENTION", "20")),
     ),
-    resumability_config=ResumabilityConfig(is_resumable=True),
 )
+app = _ASSEMBLY.app
+root_agent = app.root_agent
+coding_worker = _ASSEMBLY.agents["coding_worker"]
 
-__all__ = ["app"]
+__all__ = ["app", "coding_worker", "root_agent"]

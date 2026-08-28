@@ -12,10 +12,12 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from google.adk import Context, Event, Workflow
+from google.adk.agents import BaseAgent
 from google.adk.events import EventActions
-from google.adk.workflow import node
+from google.adk.workflow import BaseNode, node
 
-from harness.context import build_compaction_snapshot, prefix_hash
+from harness.context import build_compaction_snapshot
+from harness.learning import TraceSkillLearningController
 from harness.models import CompactionSnapshot
 from harness.models.agent_step import AgentStep
 from harness.models.checkpoint import Checkpoint
@@ -37,9 +39,9 @@ from harness.orchestration import (
 from harness.repo import StructuralIndex, build_repository_manifest
 from harness.review import build_diff_review_packet
 from harness.state import (
-    STEERING_BATCH_LIMIT,
     CheckpointStore,
     EventKind,
+    EventStore,
     SteeringQueue,
     rebuild_ledger,
 )
@@ -57,15 +59,12 @@ from harness.verification import (
 )
 from harness.workspace import GitWorktreeManager
 
-from .config import SETTINGS, HarnessSettings
-from .reviewer import (
-    FINAL_REVIEW_STATIC_PREFIX,
+from .builders import (
     build_review_input,
-    final_diff_reviewer,
     parse_final_diff_review,
 )
+from .config import HarnessSettings
 from .skills import SkillRuntimeContext, build_skill_context
-from .worker import coding_worker
 
 ControlStateFactory = Callable[..., ControlStateBackend]
 
@@ -81,25 +80,36 @@ def _build_control_state(
     )
 
 
-_CONTROL_STATE = _build_control_state(SETTINGS)
-_EVENT_STORE = _CONTROL_STATE.event_store
-_TASK_LEASE_STORE = _CONTROL_STATE.task_lease_store
-_STEERING_QUEUE = SteeringQueue(SETTINGS.state_root / "state.db")
-_CHECKPOINT_STORE = CheckpointStore(SETTINGS.state_root / "state.db")
-_METRICS_STORE = MetricsStore(SETTINGS.state_root / "metrics.db")
-_REPOSITORY_INDEX = StructuralIndex(
-    SETTINGS.workspace,
-    SETTINGS.state_root / "repo-index.json",
-)
-_WORKSPACE_MANAGER = (
-    GitWorktreeManager(SETTINGS.source_repository, SETTINGS.state_root)
-    if SETTINGS.source_repository
-    else None
-)
-_STATIC_PREFIX_HASH = prefix_hash(SETTINGS.static_prefix)
-_STATIC_PREFIX_TOKEN_ESTIMATE = len(SETTINGS.static_prefix) // 4
-_REVIEW_PREFIX_HASH = prefix_hash(FINAL_REVIEW_STATIC_PREFIX)
-_REVIEW_PREFIX_TOKEN_ESTIMATE = len(FINAL_REVIEW_STATIC_PREFIX) // 4
+
+
+@dataclass(frozen=True, slots=True)
+class PiWorkflowDependencies:
+    settings: HarnessSettings
+    control_state: ControlStateBackend
+    steering_queue: SteeringQueue
+    checkpoint_store: CheckpointStore
+    metrics_store: MetricsStore
+    repository_index: StructuralIndex
+    workspace_manager: GitWorktreeManager | None
+    coding_worker: BaseAgent
+    final_diff_reviewer: BaseAgent
+    learning_controller: TraceSkillLearningController
+    static_prefix_hash: str
+    static_prefix_tokens: int
+    review_prefix_hash: str
+    review_prefix_tokens: int
+    repository_map_tokens: int
+    steering_batch_limit: int
+    steering_enabled: bool
+    steering_at_work_batch_boundary: bool
+
+    @property
+    def event_store(self) -> Any:
+        return self.control_state.event_store
+
+    @property
+    def task_lease_store(self) -> TaskLeaseStore | None:
+        return self.control_state.task_lease_store
 
 
 @dataclass(slots=True)
@@ -178,10 +188,10 @@ def _session_id(ctx: Context) -> str | None:
     return str(identifier) if identifier else None
 
 
-def _git_output(*args: str) -> str:
+def _git_output(deps: PiWorkflowDependencies, *args: str) -> str:
     completed = subprocess.run(
         args,
-        cwd=SETTINGS.workspace,
+        cwd=deps.settings.workspace,
         check=False,
         capture_output=True,
         text=True,
@@ -190,11 +200,12 @@ def _git_output(*args: str) -> str:
     return completed.stdout if completed.returncode == 0 else ""
 
 
-def _fallback_workspace_fingerprint() -> str:
+def _fallback_workspace_fingerprint(deps: PiWorkflowDependencies) -> str:
     digest = hashlib.sha256()
-    digest.update(_git_output("git", "rev-parse", "HEAD").encode())
-    digest.update(_git_output("git", "diff", "--binary", "HEAD").encode())
+    digest.update(_git_output(deps, "git", "rev-parse", "HEAD").encode())
+    digest.update(_git_output(deps, "git", "diff", "--binary", "HEAD").encode())
     untracked = _git_output(
+        deps,
         "git",
         "ls-files",
         "--others",
@@ -202,22 +213,23 @@ def _fallback_workspace_fingerprint() -> str:
         "-z",
     )
     for relative in sorted(path for path in untracked.split("\0") if path):
-        target = SETTINGS.workspace / relative
+        target = deps.settings.workspace / relative
         digest.update(relative.encode())
         if target.is_file():
             digest.update(target.read_bytes())
     return digest.hexdigest()
 
 
-def _workspace_fingerprint(task_id: str) -> str:
-    if _WORKSPACE_MANAGER is not None and _WORKSPACE_MANAGER.load(task_id) is not None:
-        return _WORKSPACE_MANAGER.fingerprint(task_id)
-    return _fallback_workspace_fingerprint()
+def _workspace_fingerprint(deps: PiWorkflowDependencies, task_id: str) -> str:
+    manager = deps.workspace_manager
+    if manager is not None and manager.load(task_id) is not None:
+        return manager.fingerprint(task_id)
+    return _fallback_workspace_fingerprint(deps)
 
 
-def _render_recent_events(task_id: str) -> list[str]:
+def _render_recent_events(deps: PiWorkflowDependencies, task_id: str) -> list[str]:
     rendered: list[str] = []
-    events = _EVENT_STORE.read(task_id)[-SETTINGS.recent_event_limit :]
+    events = deps.event_store.read(task_id)[-deps.settings.recent_event_limit :]
     for event in events:
         payload = json.dumps(event.payload, sort_keys=True, default=str)
         if len(payload) > 1_000:
@@ -226,8 +238,11 @@ def _render_recent_events(task_id: str) -> list[str]:
     return rendered
 
 
-def _latest_compaction(task_id: str) -> tuple[str, str | None]:
-    for event in reversed(_EVENT_STORE.read(task_id)):
+def _latest_compaction(
+    deps: PiWorkflowDependencies,
+    task_id: str,
+) -> tuple[str, str | None]:
+    for event in reversed(deps.event_store.read(task_id)):
         if event.kind == EventKind.COMPACTION_CREATED:
             return str(event.payload.get("summary", "")), event.event_id
     return "", None
@@ -236,12 +251,14 @@ def _latest_compaction(task_id: str) -> tuple[str, str | None]:
 def _prepare_compaction(
     task_id: str,
     *,
+    event_store: EventStore,
+    recent_event_limit: int,
     ledger: TaskLedger,
     tokens_before: int,
 ) -> CompactionSnapshot:
     """Build one deterministic snapshot from the uncompacted event suffix."""
 
-    events = _EVENT_STORE.read(task_id)
+    events = event_store.read(task_id)
     previous: CompactionSnapshot | str | None = None
     boundary = 0
     for index in range(len(events) - 1, -1, -1):
@@ -278,7 +295,7 @@ def _prepare_compaction(
         for event in events[boundary:]
         if event.kind != EventKind.COMPACTION_CREATED
     ]
-    retained_count = min(SETTINGS.recent_event_limit, len(uncompacted))
+    retained_count = min(recent_event_limit, len(uncompacted))
     if retained_count:
         events_to_summarize = uncompacted[:-retained_count]
         retained_events = uncompacted[-retained_count:]
@@ -322,19 +339,20 @@ def _with_workspace_observations(
 
 
 def _save_checkpoint(
+    deps: PiWorkflowDependencies,
     *,
     task_id: str,
     ledger: TaskLedger,
     session_id: str | None,
     compaction_id: str | None,
 ) -> Checkpoint:
-    fingerprint = _workspace_fingerprint(task_id)
+    fingerprint = _workspace_fingerprint(deps, task_id)
     ledger_json = ledger.model_dump_json()
-    latest = _CHECKPOINT_STORE.latest(task_id)
+    latest = deps.checkpoint_store.latest(task_id)
     checkpoint_id = hashlib.sha256(
         f"{task_id}\0{ledger.iteration}\0{fingerprint}\0{ledger_json}".encode()
     ).hexdigest()[:32]
-    event_stream = _EVENT_STORE.read(task_id)
+    event_stream = deps.event_store.read(task_id)
     checkpoint = Checkpoint(
         checkpoint_id=checkpoint_id,
         task_id=task_id,
@@ -350,8 +368,8 @@ def _save_checkpoint(
         compaction_id=compaction_id,
         created_at=datetime.now(UTC),
     )
-    _CHECKPOINT_STORE.save(checkpoint)
-    _EVENT_STORE.append(
+    deps.checkpoint_store.save(checkpoint)
+    deps.event_store.append(
         task_id,
         EventKind.CHECKPOINT_CREATED,
         {
@@ -364,11 +382,12 @@ def _save_checkpoint(
     return checkpoint
 
 
-def _event_count(task_id: str, kind: EventKind) -> int:
-    return sum(1 for event in _EVENT_STORE.read(task_id) if event.kind == kind)
+def _event_count(deps: PiWorkflowDependencies, task_id: str, kind: EventKind) -> int:
+    return sum(1 for event in deps.event_store.read(task_id) if event.kind == kind)
 
 
 def _record_outcome(
+    deps: PiWorkflowDependencies,
     *,
     task_id: str,
     ledger: TaskLedger,
@@ -378,8 +397,8 @@ def _record_outcome(
     tests_passed: int = 0,
     tests_failed: int = 0,
 ) -> None:
-    events = _EVENT_STORE.read(task_id)
-    _METRICS_STORE.record_outcome(
+    events = deps.event_store.read(task_id)
+    deps.metrics_store.record_outcome(
         TaskOutcomeSample(
             task_id=task_id,
             status=status,
@@ -425,19 +444,19 @@ def _set_model_call_state(
     *,
     task_id: str,
     dynamic_tokens: int,
-    stable_prefix_hash: str = _STATIC_PREFIX_HASH,
-    static_prefix_tokens: int = _STATIC_PREFIX_TOKEN_ESTIMATE,
+    stable_prefix_hash: str,
+    static_prefix_tokens: int,
     steering_owner: str | None = None,
     steering_packet_message_ids: tuple[str, ...] = (),
 ) -> None:
     """Expose current packet identity to ADK callbacks before the model call."""
 
     state_delta: dict[str, Any] = {
-            "task_id": task_id,
-            "stable_instruction_sha256": stable_prefix_hash,
-            "static_prefix_tokens_estimate": static_prefix_tokens,
-            "dynamic_context_tokens_estimate": dynamic_tokens,
-        }
+        "task_id": task_id,
+        "stable_instruction_sha256": stable_prefix_hash,
+        "static_prefix_tokens_estimate": static_prefix_tokens,
+        "dynamic_context_tokens_estimate": dynamic_tokens,
+    }
     if steering_owner is not None:
         state_delta["steering_owner"] = steering_owner
         state_delta["steering_packet_message_ids"] = list(
@@ -493,15 +512,18 @@ def _workflow_kind_hint(goal: str, languages: list[str]) -> str | None:
     return None
 
 
-@node
-async def verify_task(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any]:
+async def _verify_task(
+    deps: PiWorkflowDependencies,
+    ctx: Context,
+    node_input: dict[str, Any],
+) -> dict[str, Any]:
     """Run deterministic checks; model claims are evidence, not verdicts."""
 
     request = TaskRequest.model_validate(node_input["request"])
     ledger = TaskLedger.model_validate(node_input["ledger"])
     claims = node_input.get("claims", [])
-    manifest = build_repository_manifest(SETTINGS.workspace)
-    modified = changed_paths(SETTINGS.workspace, ledger.base_revision)
+    manifest = build_repository_manifest(deps.settings.workspace)
+    modified = changed_paths(deps.settings.workspace, ledger.base_revision)
     plan = discover_validation_plan(
         manifest,
         modified,
@@ -520,7 +542,7 @@ async def verify_task(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any
         claim["criterion"]: list(claim.get("evidence", [])) for claim in claims
     }
     report, command_results = run_validation_plan(
-        SETTINGS.workspace,
+        deps.settings.workspace,
         plan,
         acceptance_criteria=ledger.acceptance_criteria,
         criterion_evidence=evidence_map,
@@ -534,24 +556,27 @@ async def verify_task(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any
     }
 
 
-@node
-async def review_final_diff(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any]:
+async def _review_final_diff(
+    deps: PiWorkflowDependencies,
+    ctx: Context,
+    node_input: dict[str, Any],
+) -> dict[str, Any]:
     """Run the optional bounded reviewer after deterministic verification passes."""
 
     packet = build_diff_review_packet(
-        SETTINGS.workspace,
+        deps.settings.workspace,
         str(node_input["base_revision"]),
-        max_chars=SETTINGS.review_max_chars,
+        max_chars=deps.settings.review_max_chars,
     )
     reviewer_input = build_review_input(packet, dict(node_input["verification"]))
     _set_model_call_state(
         ctx,
         task_id=str(node_input["task_id"]),
         dynamic_tokens=len(reviewer_input) // 4,
-        stable_prefix_hash=_REVIEW_PREFIX_HASH,
-        static_prefix_tokens=_REVIEW_PREFIX_TOKEN_ESTIMATE,
+        stable_prefix_hash=deps.review_prefix_hash,
+        static_prefix_tokens=deps.review_prefix_tokens,
     )
-    raw_review = await ctx.run_node(final_diff_reviewer, node_input=reviewer_input)
+    raw_review = await ctx.run_node(deps.final_diff_reviewer, node_input=reviewer_input)
     review = parse_final_diff_review(raw_review)
     return {
         "review": review.model_dump(mode="json"),
@@ -563,17 +588,22 @@ async def review_final_diff(ctx: Context, node_input: dict[str, Any]) -> dict[st
 
 
 async def _orchestrate_owned(
+    deps: PiWorkflowDependencies,
     ctx: Context,
     node_input: str | dict[str, Any],
     lease_guard: _TaskLeaseGuard,
+    *,
+    verify_node: BaseNode,
+    review_node: BaseNode,
 ) -> AsyncGenerator[Event | str, None]:
     started = time.monotonic()
     request = parse_task_request(node_input)
     session_id = _session_id(ctx)
-    task_id = SETTINGS.task_id_override or task_id_for(request, session_id)
-    manifest = build_repository_manifest(SETTINGS.workspace)
+    settings = deps.settings
+    task_id = settings.task_id_override or task_id_for(request, session_id)
+    manifest = build_repository_manifest(settings.workspace)
 
-    events = _EVENT_STORE.read(task_id)
+    events = deps.event_store.read(task_id)
     if events:
         ledger = rebuild_ledger(events)
     else:
@@ -581,24 +611,24 @@ async def _orchestrate_owned(
             request,
             task_id=task_id,
             base_revision=(
-                SETTINGS.base_revision_override
+                settings.base_revision_override
                 or manifest.base_revision
                 or "unknown"
             ),
             workspace_id=(
-                SETTINGS.workspace_id_override or SETTINGS.workspace.as_posix()
+                settings.workspace_id_override or settings.workspace.as_posix()
             ),
             branch_id=manifest.branch or "detached",
         )
-        _EVENT_STORE.append(
+        deps.event_store.append(
             task_id,
             EventKind.TASK_CREATED,
             {"ledger": ledger.model_dump(mode="json")},
             idempotency_key="task-created",
         )
 
-    latest_checkpoint = _CHECKPOINT_STORE.latest(task_id)
-    current_fingerprint = _workspace_fingerprint(task_id)
+    latest_checkpoint = deps.checkpoint_store.latest(task_id)
+    current_fingerprint = _workspace_fingerprint(deps, task_id)
     if (
         latest_checkpoint is not None
         and latest_checkpoint.git_tree_hash != current_fingerprint
@@ -610,7 +640,7 @@ async def _orchestrate_owned(
             "continuing implementation"
         )
         ledger = TaskLedger.model_validate(data)
-        _EVENT_STORE.append(
+        deps.event_store.append(
             task_id,
             EventKind.WORKSPACE_INITIALIZED,
             {
@@ -621,23 +651,24 @@ async def _orchestrate_owned(
             },
             idempotency_key=f"workspace-reconcile:{current_fingerprint}",
         )
-        _EVENT_STORE.append(
+        deps.event_store.append(
             task_id,
             EventKind.LEDGER_PATCHED,
             _ledger_patch(previous, ledger),
             idempotency_key=f"workspace-reconcile-ledger:{current_fingerprint}",
         )
 
-    _REPOSITORY_INDEX.index_repository()
-    compaction_summary, compaction_id = _latest_compaction(task_id)
-    owner = f"{SETTINGS.worker_id}:{session_id or task_id}"
+    deps.repository_index.index_repository()
+    compaction_summary, compaction_id = _latest_compaction(deps, task_id)
+    owner = f"{settings.worker_id}:{session_id or task_id}"
     max_iterations = min(
-        SETTINGS.max_iterations,
-        int(getattr(request, "max_iterations", None) or SETTINGS.max_iterations),
+        settings.max_iterations,
+        int(getattr(request, "max_iterations", None) or settings.max_iterations),
     )
 
     if latest_checkpoint is None:
         _save_checkpoint(
+            deps,
             task_id=task_id,
             ledger=ledger,
             session_id=session_id,
@@ -652,10 +683,12 @@ async def _orchestrate_owned(
                 goal=ledger.goal,
                 next_action=ledger.next_action or "",
                 workflow_kind=_workflow_kind_hint(ledger.goal, manifest.languages),
+                settings=settings,
+                controller=deps.learning_controller,
             )
         except Exception as error:
             skill_runtime = SkillRuntimeContext()
-            _EVENT_STORE.append(
+            deps.event_store.append(
                 task_id,
                 EventKind.ACTION_RECORDED,
                 {
@@ -676,7 +709,7 @@ async def _orchestrate_owned(
     skill_event_hash = hashlib.sha256(
         json.dumps(skill_event, sort_keys=True).encode()
     ).hexdigest()[:16]
-    _EVENT_STORE.append(
+    deps.event_store.append(
         task_id,
         EventKind.ACTION_RECORDED,
         skill_event,
@@ -690,31 +723,35 @@ async def _orchestrate_owned(
                 "distributed task lease was lost; another worker may own the task",
             )
             return
-        leased = _STEERING_QUEUE.lease(
-            task_id,
-            owner,
-            limit=STEERING_BATCH_LIMIT,
-            lease_seconds=SETTINGS.task_lease_seconds,
+        leased = (
+            deps.steering_queue.lease(
+                task_id,
+                owner,
+                limit=deps.steering_batch_limit,
+                lease_seconds=settings.task_lease_seconds,
+            )
+            if deps.steering_enabled and deps.steering_at_work_batch_boundary
+            else []
         )
         steering = [message.content for message in leased]
         for message in leased:
-            _EVENT_STORE.append(
+            deps.event_store.append(
                 task_id,
                 EventKind.STEERING_RECEIVED,
                 {"message_id": message.message_id, "content": message.content},
                 idempotency_key=f"steering:{message.message_id}",
             )
 
-        manifest = build_repository_manifest(SETTINGS.workspace)
-        _REPOSITORY_INDEX.index_repository()
+        manifest = build_repository_manifest(settings.workspace)
+        deps.repository_index.index_repository()
         query = " ".join(
             part for part in (ledger.goal, ledger.next_action or "") if part
         )
-        repository_map = _REPOSITORY_INDEX.render_map(
+        repository_map = deps.repository_index.render_map(
             query,
             changed_paths=ledger.files_modified,
             recent_paths=ledger.files_read,
-            max_tokens=1_200,
+            max_tokens=deps.repository_map_tokens,
         )
         packet = build_work_packet(
             ledger,
@@ -722,27 +759,29 @@ async def _orchestrate_owned(
             repository_manifest=manifest.to_compact_text(),
             repository_map=repository_map,
             compaction_summary=compaction_summary,
-            recent_events=_render_recent_events(task_id),
+            recent_events=_render_recent_events(deps, task_id),
             steering_messages=steering,
         )
         dynamic_tokens = len(packet) // 4
-        total_context_estimate = _STATIC_PREFIX_TOKEN_ESTIMATE + dynamic_tokens
-        should_compact = total_context_estimate >= SETTINGS.compact_at_tokens
+        total_context_estimate = deps.static_prefix_tokens + dynamic_tokens
+        should_compact = total_context_estimate >= settings.compact_at_tokens
 
         _set_model_call_state(
             ctx,
             task_id=task_id,
             dynamic_tokens=dynamic_tokens,
+            stable_prefix_hash=deps.static_prefix_hash,
+            static_prefix_tokens=deps.static_prefix_tokens,
             steering_owner=owner,
             steering_packet_message_ids=tuple(
                 message.message_id for message in leased
             ),
         )
         try:
-            raw_step = await ctx.run_node(coding_worker, node_input=packet)
+            raw_step = await ctx.run_node(deps.coding_worker, node_input=packet)
         except BaseException:
-            owned = _STEERING_QUEUE.leased_by(task_id, owner)
-            _STEERING_QUEUE.release(
+            owned = deps.steering_queue.leased_by(task_id, owner)
+            deps.steering_queue.release(
                 [message.message_id for message in owned],
                 owner,
             )
@@ -756,7 +795,7 @@ async def _orchestrate_owned(
         try:
             step = parse_agent_step(raw_step)
         except ValueError as error:
-            _EVENT_STORE.append(
+            deps.event_store.append(
                 task_id,
                 EventKind.ACTION_RECORDED,
                 {"kind": "malformed_agent_step", "error": str(error)[:2_000]},
@@ -769,26 +808,30 @@ async def _orchestrate_owned(
         ledger = _with_workspace_observations(
             ledger,
             step,
-            changed_paths(SETTINGS.workspace, ledger.base_revision),
+            changed_paths(settings.workspace, ledger.base_revision),
         )
-        _EVENT_STORE.append(
+        deps.event_store.append(
             task_id,
             EventKind.LEDGER_PATCHED,
             _ledger_patch(previous, ledger),
             idempotency_key=f"agent-step:{ledger.iteration}",
         )
-        delivered = _STEERING_QUEUE.leased_by(task_id, owner)
+        delivered = deps.steering_queue.leased_by(task_id, owner)
         if delivered:
-            _STEERING_QUEUE.ack(
+            deps.steering_queue.ack(
                 [message.message_id for message in delivered],
                 owner,
             )
 
-        pending_steering = _STEERING_QUEUE.has_pending(task_id)
+        pending_steering = (
+            deps.steering_enabled
+            and deps.steering_at_work_batch_boundary
+            and deps.steering_queue.has_pending(task_id)
+        )
         if pending_steering:
             previous = ledger
             ledger = resume_for_steering(ledger)
-            _EVENT_STORE.append(
+            deps.event_store.append(
                 task_id,
                 EventKind.LEDGER_PATCHED,
                 _ledger_patch(previous, ledger),
@@ -801,6 +844,7 @@ async def _orchestrate_owned(
             pending_steering=pending_steering,
         )
         checkpoint = _save_checkpoint(
+            deps,
             task_id=task_id,
             ledger=ledger,
             session_id=session_id,
@@ -813,14 +857,14 @@ async def _orchestrate_owned(
                 "task_route": route.value,
                 "checkpoint_id": checkpoint.checkpoint_id,
                 "workspace_fingerprint": checkpoint.git_tree_hash,
-                "stable_instruction_sha256": _STATIC_PREFIX_HASH,
-                "static_prefix_tokens_estimate": _STATIC_PREFIX_TOKEN_ESTIMATE,
+                "stable_instruction_sha256": deps.static_prefix_hash,
+                "static_prefix_tokens_estimate": deps.static_prefix_tokens,
                 "dynamic_context_tokens_estimate": dynamic_tokens,
             })
         )
 
         if route == HarnessRoute.BLOCKED:
-            _EVENT_STORE.append(
+            deps.event_store.append(
                 task_id,
                 EventKind.TASK_BLOCKED,
                 {
@@ -833,6 +877,7 @@ async def _orchestrate_owned(
                 idempotency_key=f"blocked:{ledger.iteration}",
             )
             _record_outcome(
+                deps,
                 task_id=task_id,
                 ledger=ledger,
                 status="blocked",
@@ -845,7 +890,7 @@ async def _orchestrate_owned(
                     "task_id": task_id,
                     "questions": ledger.open_questions,
                     "blockers": ledger.blockers,
-                    "metrics": _METRICS_STORE.task_summary(task_id),
+                    "metrics": deps.metrics_store.task_summary(task_id),
                 },
                 sort_keys=True,
             )
@@ -854,13 +899,14 @@ async def _orchestrate_owned(
         if route == HarnessRoute.REPLAN:
             previous = ledger
             ledger = replan_ledger(ledger)
-            _EVENT_STORE.append(
+            deps.event_store.append(
                 task_id,
                 EventKind.LEDGER_PATCHED,
                 _ledger_patch(previous, ledger),
                 idempotency_key=f"replan:{ledger.iteration}",
             )
             _save_checkpoint(
+                deps,
                 task_id=task_id,
                 ledger=ledger,
                 session_id=session_id,
@@ -871,11 +917,13 @@ async def _orchestrate_owned(
         if route == HarnessRoute.COMPACT:
             snapshot = _prepare_compaction(
                 task_id,
+                event_store=deps.event_store,
+                recent_event_limit=deps.settings.recent_event_limit,
                 ledger=ledger,
                 tokens_before=total_context_estimate,
             )
             compaction_summary = snapshot.summary_markdown
-            event = _EVENT_STORE.append(
+            event = deps.event_store.append(
                 task_id,
                 EventKind.COMPACTION_CREATED,
                 {
@@ -887,6 +935,7 @@ async def _orchestrate_owned(
             )
             compaction_id = event.event_id
             _save_checkpoint(
+                deps,
                 task_id=task_id,
                 ledger=ledger,
                 session_id=session_id,
@@ -896,7 +945,7 @@ async def _orchestrate_owned(
 
         if route == HarnessRoute.VERIFY:
             verification = await ctx.run_node(
-                verify_task,
+                verify_node,
                 node_input={
                     "request": request.model_dump(mode="json"),
                     "ledger": ledger.model_dump(mode="json"),
@@ -913,7 +962,7 @@ async def _orchestrate_owned(
                 )
                 return
             report = verification["report"]
-            _EVENT_STORE.append(
+            deps.event_store.append(
                 task_id,
                 EventKind.VERIFICATION_COMPLETED,
                 verification,
@@ -921,10 +970,10 @@ async def _orchestrate_owned(
             )
             if report["passed"]:
                 review_result: dict[str, Any] | None = None
-                if SETTINGS.final_reviewer_enabled:
+                if settings.final_reviewer_enabled:
                     try:
                         review_result = await ctx.run_node(
-                            review_final_diff,
+                            review_node,
                             node_input={
                                 "task_id": task_id,
                                 "base_revision": ledger.base_revision,
@@ -942,16 +991,20 @@ async def _orchestrate_owned(
                             "distributed task lease expired during final review",
                         )
                         return
-                    _EVENT_STORE.append(
+                    deps.event_store.append(
                         task_id,
                         EventKind.REVIEW_COMPLETED,
                         review_result,
                         idempotency_key="final-diff-review",
                     )
-                if _STEERING_QUEUE.has_pending(task_id):
+                if (
+                    deps.steering_enabled
+                    and deps.steering_at_work_batch_boundary
+                    and deps.steering_queue.has_pending(task_id)
+                ):
                     previous = ledger
                     ledger = resume_for_steering(ledger)
-                    _EVENT_STORE.append(
+                    deps.event_store.append(
                         task_id,
                         EventKind.LEDGER_PATCHED,
                         _ledger_patch(previous, ledger),
@@ -960,13 +1013,14 @@ async def _orchestrate_owned(
                         ),
                     )
                     _save_checkpoint(
+                        deps,
                         task_id=task_id,
                         ledger=ledger,
                         session_id=session_id,
                         compaction_id=compaction_id,
                     )
                     continue
-                _EVENT_STORE.append(
+                deps.event_store.append(
                     task_id,
                     EventKind.TASK_FINISHED,
                     {"verification": report, "review": review_result},
@@ -977,12 +1031,14 @@ async def _orchestrate_owned(
                 data["status"] = "complete"
                 ledger = TaskLedger.model_validate(data)
                 _save_checkpoint(
+                    deps,
                     task_id=task_id,
                     ledger=ledger,
                     session_id=session_id,
                     compaction_id=compaction_id,
                 )
                 _record_outcome(
+                    deps,
                     task_id=task_id,
                     ledger=ledger,
                     status="complete",
@@ -998,7 +1054,7 @@ async def _orchestrate_owned(
                         "changed_paths": verification["changed_paths"],
                         "verification": report,
                         "review": review_result,
-                        "metrics": _METRICS_STORE.task_summary(task_id),
+                        "metrics": deps.metrics_store.task_summary(task_id),
                     },
                     sort_keys=True,
                 )
@@ -1010,26 +1066,28 @@ async def _orchestrate_owned(
             data["next_action"] = report.get("recommended_next_action")
             previous = ledger
             ledger = TaskLedger.model_validate(data)
-            _EVENT_STORE.append(
+            deps.event_store.append(
                 task_id,
                 EventKind.LEDGER_PATCHED,
                 _ledger_patch(previous, ledger),
                 idempotency_key=f"verification-failed:{ledger.iteration}",
             )
             _save_checkpoint(
+                deps,
                 task_id=task_id,
                 ledger=ledger,
                 session_id=session_id,
                 compaction_id=compaction_id,
             )
 
-    _EVENT_STORE.append(
+    deps.event_store.append(
         task_id,
         EventKind.TASK_BLOCKED,
         {"reason": f"Iteration limit {max_iterations} reached"},
         idempotency_key="iteration-limit",
     )
     _record_outcome(
+        deps,
         task_id=task_id,
         ledger=ledger,
         status="blocked",
@@ -1041,43 +1099,64 @@ async def _orchestrate_owned(
             "status": "blocked",
             "task_id": task_id,
             "reason": f"Iteration limit {max_iterations} reached",
-            "metrics": _METRICS_STORE.task_summary(task_id),
+            "metrics": deps.metrics_store.task_summary(task_id),
         },
         sort_keys=True,
     )
 
 
-@node(rerun_on_resume=True)
-async def orchestrate(
-    ctx: Context,
-    node_input: str | dict[str, Any],
-) -> AsyncGenerator[Event | str, None]:
-    request = parse_task_request(node_input)
-    session_id = _session_id(ctx)
-    task_id = SETTINGS.task_id_override or task_id_for(request, session_id)
-    lease_guard = _TaskLeaseGuard.acquire(
-        _TASK_LEASE_STORE,
-        task_id=task_id,
-        owner=SETTINGS.worker_id,
-        lease_seconds=SETTINGS.task_lease_seconds,
-    )
-    if not lease_guard.acquired:
-        yield _lease_blocked_result(
-            task_id,
-            "another worker owns the distributed task lease",
+def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
+    """Build closure-bound nodes so concurrent assemblies cannot share state."""
+
+    @node
+    async def verify_task(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any]:
+        return await _verify_task(deps, ctx, node_input)
+
+    @node
+    async def review_final_diff(
+        ctx: Context,
+        node_input: dict[str, Any],
+    ) -> dict[str, Any]:
+        return await _review_final_diff(deps, ctx, node_input)
+
+    @node(rerun_on_resume=True)
+    async def orchestrate(
+        ctx: Context,
+        node_input: str | dict[str, Any],
+    ) -> AsyncGenerator[Event | str, None]:
+        request = parse_task_request(node_input)
+        session_id = _session_id(ctx)
+        task_id = deps.settings.task_id_override or task_id_for(request, session_id)
+        lease_guard = _TaskLeaseGuard.acquire(
+            deps.task_lease_store,
+            task_id=task_id,
+            owner=deps.settings.worker_id,
+            lease_seconds=deps.settings.task_lease_seconds,
         )
-        return
+        if not lease_guard.acquired:
+            yield _lease_blocked_result(
+                task_id,
+                "another worker owns the distributed task lease",
+            )
+            return
 
-    try:
-        async for event in _orchestrate_owned(ctx, node_input, lease_guard):
-            yield event
-    finally:
-        lease_guard.release()
+        try:
+            async for event in _orchestrate_owned(
+                deps,
+                ctx,
+                node_input,
+                lease_guard,
+                verify_node=verify_task,
+                review_node=review_final_diff,
+            ):
+                yield event
+        finally:
+            lease_guard.release()
+
+    return Workflow(
+        name="coding_harness",
+        edges=[("START", orchestrate)],
+    )
 
 
-root_agent = Workflow(
-    name="coding_harness",
-    edges=[("START", orchestrate)],
-)
-
-__all__ = ["orchestrate", "review_final_diff", "root_agent", "verify_task"]
+__all__ = ["PiWorkflowDependencies", "build_root_agent"]

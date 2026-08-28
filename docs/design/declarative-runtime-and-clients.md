@@ -41,7 +41,7 @@ change without writing Python:
 - the registered harness/workflow key;
 - model references and retry behavior;
 - agent prompts, output contracts, and the fixed four-tool assignment;
-- workflow nodes, routes, iteration bounds, review, and verification policy;
+- workflow implementation, iteration bounds, review, and verification policy;
 - context, cache, compaction, repository search, skill, and learning budgets;
 - safety, sandbox, persistence, tracing, steering, and server settings.
 
@@ -53,6 +53,12 @@ Runtime identity does not belong in the behavior document. Workspace paths, stat
 roots, task and worker identifiers, base revisions, and ADK invocation identifiers
 are supplied as typed runtime bindings. This keeps volatile state out of the stable
 prompt and makes the same composition reusable across workspaces.
+
+The current `pi_coding_v1` factory deliberately rejects changes to its hard-coded
+node edges, routes, agent bindings, and prompt contracts instead of silently ignoring
+them. Its budgets, models, tools, safety, sandbox, steering, tracing, learning, and
+review behavior remain configurable. A different workflow topology is a different
+registered harness until a topology compiler is implemented and tested.
 
 ### Swap the harness implementation
 
@@ -143,21 +149,23 @@ ADK `Runner`, not once per harness.
 
 ## Delivery status
 
-Implemented contract scaffolding:
+Implemented:
 
 - strict, versioned composition and runtime-binding models;
 - side-effect-free YAML loading with deterministic normalization and hashing;
-- ADK `BaseLlm` provider-adapter and ADK `App` assembly interface stubs;
+- implementation-owned strict configuration schemas and a closed factory registry;
+- isolated configuration-driven assembly of the current Pi harness using ADK `App`,
+  workflow, agents, plugins, tools, state, sandbox, and resumability primitives;
+- a swappable test harness proving the common server/client boundary is independent
+  of the selected implementation;
+- ADK `BaseLlm` provider-adapter and ADK `App` assembly interfaces;
 - versioned WebSocket control and AG-UI event-envelope models.
 
 Pending executable integration:
 
-- replace import-time singleton wiring with a registered harness-factory assembly;
-- adapt the current ADK coding workflow to the common runtime contract;
 - implement the long-lived run registry and WebSocket/AG-UI server;
 - build the Bubble Tea protocol client;
 - add reconnect, replay, backpressure, cancellation, and end-to-end tests.
 
-Until those integrations land, the existing Agents CLI-compatible ADK entrypoint
-remains the executable path. The new contracts define its migration target without
-changing current runtime behavior.
+Until the transport integrations land, the Agents CLI-compatible bootstrap remains
+the executable path and delegates to the same registered factory.

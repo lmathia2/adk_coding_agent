@@ -32,6 +32,8 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert module.app.name == "pi_inspired_adk_coding_agent"
     assert module.root_agent.name == "coding_harness"
     assert module.app.root_agent is module.root_agent
+    application = importlib.import_module("app.agent.application")
+    assert module.coding_worker is application._ASSEMBLY.agents["coding_worker"]
     assert module.app.events_compaction_config.compaction_interval is None
     assert module.app.events_compaction_config.overlap_size is None
     assert module.app.events_compaction_config.token_threshold == 96_000
@@ -63,6 +65,8 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
         SimpleNamespace(state=state),
         task_id="task-1",
         dynamic_tokens=321,
+        stable_prefix_hash="coding-prefix",
+        static_prefix_tokens=99,
     )
     assert state["task_id"] == "task-1"
     assert state["dynamic_context_tokens_estimate"] == 321
@@ -158,15 +162,29 @@ def test_invalid_trace_mode_fails_closed(monkeypatch, tmp_path) -> None:
 def test_trace_initialization_failure_disables_optional_plugin(
     monkeypatch,
     caplog,
+    tmp_path,
 ) -> None:
-    application = importlib.import_module("app.agent.application")
+    factory = importlib.import_module("app.agent.factory")
+    harness_config = importlib.import_module("harness.config")
 
     def fail_trace_plugin(**_kwargs):
         raise OSError("trace volume unavailable")
 
-    monkeypatch.setattr(application, "HarnessTracePlugin", fail_trace_plugin)
+    monkeypatch.setattr(factory, "HarnessTracePlugin", fail_trace_plugin)
+    composition = harness_config.load_harness_composition(
+        config_models=factory.default_harness_registry().config_models()
+    )
+    assembly = factory.build_harness(
+        composition,
+        harness_config.RuntimeBindings(
+            workspace=tmp_path,
+            state_root=tmp_path / "state",
+        ),
+    )
 
-    assert application._build_trace_plugin() is None
+    assert not any(
+        isinstance(plugin, HarnessTracePlugin) for plugin in assembly.app.plugins
+    )
     assert "tracing is disabled" in caplog.text
 
 
@@ -237,19 +255,21 @@ def test_skill_root_symlink_is_preserved_for_registry_validation(
 
 def test_control_state_builder_forwards_settings_without_connecting() -> None:
     workflow = importlib.import_module("app.agent.workflow")
+    bootstrap = importlib.import_module("app.agent.bootstrap")
     settings = replace(
-        workflow.SETTINGS,
+        bootstrap.SETTINGS,
         control_database_url="postgresql://control.example/harness",
     )
     calls: list[tuple[object, object]] = []
+    expected_backend = object()
 
     def build_backend(*, state_root, database_url):
         calls.append((state_root, database_url))
-        return workflow._CONTROL_STATE
+        return expected_backend
 
     backend = workflow._build_control_state(settings, factory=build_backend)
 
-    assert backend is workflow._CONTROL_STATE
+    assert backend is expected_backend
     assert calls == [(settings.state_root, settings.control_database_url)]
 
 

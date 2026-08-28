@@ -8,7 +8,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    SerializeAsAny,
+    field_validator,
+    model_validator,
+)
 
 FOUR_CODING_TOOLS = ("read", "bash", "edit", "write")
 HarnessCapability = Literal[
@@ -294,7 +302,9 @@ class DockerSandboxConfig(FrozenModel):
 class KubernetesSandboxConfig(FrozenModel):
     kind: Literal["kubernetes"]
     namespace: str = Field(min_length=1, max_length=128)
+    pod: str = Field(min_length=1, max_length=253)
     container: str | None = Field(default=None, max_length=128)
+    remote_workspace: str = Field(pattern=r"^/")
     network_isolated: Literal[True]
 
 
@@ -302,6 +312,7 @@ class RemoteSandboxConfig(FrozenModel):
     kind: Literal["remote"]
     endpoint: str = Field(pattern=r"^https://")
     token: SecretRef
+    remote_workspace: str = Field(pattern=r"^/")
     max_response_bytes: int = Field(default=2_000_000, ge=1_024, le=64_000_000)
 
 
@@ -315,12 +326,22 @@ class SteeringConfig(FrozenModel):
     enabled: bool = True
     lease_seconds: int = Field(default=900, ge=30, le=86_400)
     batch_limit: int = Field(default=4, ge=1, le=20)
-    max_message_bytes: int = Field(default=4_096, ge=256, le=65_536)
+    max_message_bytes: int = Field(default=4_096, ge=256, le=4_096)
     safe_points: tuple[Literal["before_model", "before_tool", "work_batch_boundary"], ...] = (
         "before_model",
         "before_tool",
         "work_batch_boundary",
     )
+
+    @model_validator(mode="after")
+    def validate_safe_points(self) -> SteeringConfig:
+        if len(set(self.safe_points)) != len(self.safe_points):
+            raise ValueError("steering safe points must be unique")
+        if self.enabled and not self.safe_points:
+            raise ValueError("enabled steering requires at least one safe point")
+        if "before_tool" in self.safe_points and "before_model" not in self.safe_points:
+            raise ValueError("before_tool steering requires before_model delivery")
+        return self
 
 
 class ContextCacheConfig(FrozenModel):
@@ -401,17 +422,27 @@ class PiCodingConfig(FrozenModel):
 
 
 class HarnessSelectionConfig(FrozenModel):
-    """Closed implementation selection; future harnesses add a typed union variant."""
+    """Safe implementation key plus its registry-validated typed payload."""
 
-    implementation: Literal["pi_coding_v1"]
-    api_version: Literal[1] = 1
+    implementation: str = Field(pattern=r"^[a-z][a-z0-9_]{2,63}$")
+    api_version: int = Field(default=1, ge=1, le=1_000)
     required_capabilities: tuple[HarnessCapability, ...] = (
         "streaming",
         "steering",
-        "cancel",
-        "replay",
+        "tool_events",
+        "state_snapshots",
+        "artifacts",
     )
-    config: PiCodingConfig
+    config: SerializeAsAny[BaseModel]
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def require_registry_validated_config(cls, value: object) -> object:
+        if not isinstance(value, BaseModel):
+            raise ValueError(
+                "harness config must be validated through parse_harness_composition"
+            )
+        return value
 
     @model_validator(mode="after")
     def validate_capabilities(self) -> HarnessSelectionConfig:
@@ -528,6 +559,7 @@ class RuntimeBindings(FrozenModel):
     workspace_id: str | None = Field(default=None, max_length=256)
     worker_id: str | None = Field(default=None, max_length=256)
     invocation_id: str | None = Field(default=None, max_length=256)
+    control_database_url: SecretStr | None = Field(default=None)
 
 
 __all__ = [
@@ -539,8 +571,10 @@ __all__ = [
     "ModelConfig",
     "PiCodingConfig",
     "RuntimeBindings",
+    "SandboxConfig",
     "SecretRef",
     "ServerConfig",
+    "ToolSurfaceConfig",
     "WorkflowConfig",
     "WorkflowNodeConfig",
 ]

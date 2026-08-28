@@ -51,3 +51,19 @@ def test_quoted_shell_metacharacters_are_safe_literal_pattern_text() -> None:
 
     assert command is not None
     assert command.pattern == "left | right; still text"
+
+
+def test_search_parser_applies_configured_default_and_maximum() -> None:
+    command = parse_search_command(
+        "search find --pattern app",
+        default_limit=7,
+        max_limit=9,
+    )
+
+    assert command is not None and command.limit == 7
+    with pytest.raises(SearchCommandParseError, match="between 1 and 9"):
+        parse_search_command(
+            "search find --pattern app --limit 10",
+            default_limit=7,
+            max_limit=9,
+        )
