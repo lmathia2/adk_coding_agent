@@ -12,6 +12,7 @@ from google.genai import types
 from harness.config import ModelConfig, SecretRef
 
 from .contracts import AdkModelProvider
+from .function_call_ids import normalize_openai_compatible_model
 
 
 class _ModelFactory(Protocol):
@@ -87,9 +88,7 @@ class OpenAiCompatibleModelProvider:
             raise ValueError(
                 f"environment variable {secret_ref.env} is required for model authentication"
             )
-        model_name = (
-            config.name if config.name.startswith("openai/") else f"openai/{config.name}"
-        )
+        model_name = config.name if config.name.startswith("openai/") else f"openai/{config.name}"
         options: dict[str, Any] = {
             "api_base": config.base_url,
             "api_key": api_key,
@@ -98,7 +97,7 @@ class OpenAiCompatibleModelProvider:
         }
         if config.reasoning is not None:
             options["reasoning_effort"] = config.reasoning
-        return self._model_factory(model_name, **options)
+        return normalize_openai_compatible_model(self._model_factory(model_name, **options))
 
 
 class ClosedAdkModelProviderRegistry:

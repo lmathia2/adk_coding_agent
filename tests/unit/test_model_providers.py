@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from app.agent.factory import default_harness_registry
 from harness.ai import (
     ClosedAdkModelProviderRegistry,
+    FunctionCallIdNormalizingLlm,
     GoogleAdkModelProvider,
     OpenAiCompatibleModelProvider,
 )
@@ -80,7 +81,8 @@ def test_openai_compatible_provider_builds_adk_model_without_network() -> None:
         secrets={"api_key": cast(SecretRef, config.api_key)},
     )
 
-    assert isinstance(model, BaseLlm)
+    assert isinstance(model, FunctionCallIdNormalizingLlm)
+    assert model.delegate.model == "openai/local-coder"
     assert capture.model == "openai/local-coder"
     assert capture.options == {
         "api_base": "http://127.0.0.1:10100/inference/v1",
@@ -249,9 +251,7 @@ def test_factory_constructs_configured_reviewer_when_enabled(tmp_path: Path) -> 
         RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state"),
     )
 
-    assert cast(Any, assembly.agents["final_diff_reviewer"]).model.model == (
-        "openai/local-coder"
-    )
+    assert cast(Any, assembly.agents["final_diff_reviewer"]).model.model == ("openai/local-coder")
     assert capture.options["api_key"] == "magnitude-local"
 
 

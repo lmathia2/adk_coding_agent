@@ -17,6 +17,8 @@ complete.
 - [x] ADK `BaseLlm` provider-adapter and `App` assembly interfaces without a second model runtime.
 - [x] Closed native-Gemini and OpenAI-compatible ADK model adapters, including a
   credential-free tested Magnitude configuration example with environment-only secrets.
+- [x] Provider-scoped, deterministic tool-call ID normalization for OpenAI-compatible
+  models that reuse call IDs across turns, including repair of outbound ADK history.
 - [x] Repeatable lockfile-based checkout installer with full macOS prerequisite
   bootstrap, fresh uv environment creation, Bubble Tea TUI build, Magnitude
   service/model discovery, generated local-model composition, and an installed
