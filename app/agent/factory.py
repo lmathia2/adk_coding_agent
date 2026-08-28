@@ -22,6 +22,7 @@ from harness.agent import (
     RuntimeCapability,
     SteeringCommand,
 )
+from harness.ai import AdkModelProviderRegistry, default_adk_model_provider_registry
 from harness.config import (
     FOUR_CODING_TOOLS,
     HarnessComposition,
@@ -123,8 +124,10 @@ class PiCodingHarnessFactory:
         self,
         *,
         pricing: Mapping[str, ModelPricing] | None = None,
+        model_providers: AdkModelProviderRegistry | None = None,
     ) -> None:
         self._pricing = dict(pricing or {})
+        self._model_providers = model_providers or default_adk_model_provider_registry()
         self._descriptor = HarnessDescriptor(
             implementation="pi_coding_v1",
             api_version=1,
@@ -149,8 +152,7 @@ class PiCodingHarnessFactory:
     def config_model(self) -> type[BaseModel]:
         return PiCodingConfig
 
-    @staticmethod
-    def _validate_supported_shape(config: PiCodingConfig) -> None:
+    def _validate_supported_shape(self, config: PiCodingConfig) -> None:
         required_workflow = {
             "entry": "initialize",
             "nodes": {
@@ -222,12 +224,24 @@ class PiCodingHarnessFactory:
             raise ValueError("pi_coding_v1 requires the fixed final reviewer contract")
         if "coding" not in config.models:
             raise ValueError("pi_coding_v1 requires a coding model")
-        if any(model.provider != "google_adk" for model in config.models.values()):
-            raise ValueError("only google_adk model adapters are implemented")
+        unknown_providers = sorted(
+            {
+                model.provider
+                for model in config.models.values()
+                if model.provider not in self._model_providers.available()
+            }
+        )
+        if unknown_providers:
+            raise ValueError(f"unregistered model providers: {unknown_providers}")
 
     @staticmethod
     def _known_secrets(config: PiCodingConfig) -> list[str]:
         names = set(config.safety.redact_environment_names)
+        names.update(
+            model.api_key.env
+            for model in config.models.values()
+            if model.api_key is not None
+        )
         token = getattr(config.sandbox, "token", None)
         if token is not None:
             names.add(token.env)
@@ -270,9 +284,20 @@ class PiCodingHarnessFactory:
             search_default_page_size=config.tools.search.default_page_size,
             search_max_page_size=config.tools.search.max_page_size,
         )
+        models = {
+            name: self._model_providers.get(model_config.provider).build_model(
+                model_config,
+                secrets=(
+                    {"api_key": model_config.api_key}
+                    if model_config.api_key is not None
+                    else {}
+                ),
+            )
+            for name, model_config in sorted(config.models.items())
+        }
         worker = build_coding_worker(
             settings,
-            config.models["coding"],
+            models["coding"],
             tools=tools,
             tool_config=config.tools,
         )
@@ -280,7 +305,11 @@ class PiCodingHarnessFactory:
         reviewer_config = config.agents.get(reviewer_name)
         if reviewer_config is None:
             reviewer_config = config.agents["final_diff_reviewer"]
-        reviewer = build_final_diff_reviewer(config.models[reviewer_config.model])
+        reviewer_model_config = config.models[reviewer_config.model]
+        reviewer = build_final_diff_reviewer(
+            models[reviewer_config.model],
+            model_name=reviewer_model_config.name,
+        )
 
         control_state = create_control_state_backend(
             state_root=settings.state_root,
@@ -426,9 +455,12 @@ class PiCodingHarnessFactory:
         )
 
 
-def default_harness_registry() -> HarnessRegistry:
+def default_harness_registry(
+    *,
+    model_providers: AdkModelProviderRegistry | None = None,
+) -> HarnessRegistry:
     registry = HarnessRegistry()
-    registry.register(PiCodingHarnessFactory())
+    registry.register(PiCodingHarnessFactory(model_providers=model_providers))
     return registry
 
 

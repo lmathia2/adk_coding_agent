@@ -15,6 +15,8 @@ complete.
 - [x] Strict, versioned YAML composition and separately typed volatile runtime bindings.
 - [x] Closed-registry composition contract for selecting a harness without arbitrary imports.
 - [x] ADK `BaseLlm` provider-adapter and `App` assembly interfaces without a second model runtime.
+- [x] Closed native-Gemini and OpenAI-compatible ADK model adapters, including a
+  credential-free tested Magnitude configuration example with environment-only secrets.
 - [x] Registered Pi harness factory with implementation-owned strict configuration,
   explicit runtime bindings, isolated builds, and a swappable test harness behind the
   same public contract.

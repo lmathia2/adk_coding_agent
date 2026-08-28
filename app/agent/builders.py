@@ -8,11 +8,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from google.adk import Agent
-from google.adk.models import Gemini
+from google.adk.models import BaseLlm
 from google.adk.tools import ToolContext
-from google.genai import types
 
-from harness.config import ModelConfig, ToolSurfaceConfig
+from harness.config import ToolSurfaceConfig
 from harness.context import build_static_prefix
 from harness.review import DiffReviewPacket, FinalDiffReview
 from harness.tools.adk_adapter import AdkCodingTools, create_adk_tools
@@ -45,22 +44,9 @@ class ReviewerBundle:
     static_prefix: str
 
 
-def _gemini(config: ModelConfig) -> Gemini:
-    retry = config.retry
-    return Gemini(
-        model=config.name,
-        retry_options=types.HttpRetryOptions(
-            attempts=retry.attempts,
-            exp_base=retry.exponential_base,
-            initial_delay=retry.initial_delay_seconds,
-            http_status_codes=list(retry.retry_statuses),
-        ),
-    )
-
-
 def build_coding_worker(
     settings: HarnessSettings,
-    model: ModelConfig,
+    model: BaseLlm,
     *,
     tools: AdkCodingTools | None = None,
     tool_config: ToolSurfaceConfig | None = None,
@@ -147,7 +133,7 @@ def build_coding_worker(
 
     agent = Agent(
         name="coding_worker",
-        model=_gemini(model),
+        model=model,
         description="Executes one bounded coding work batch with four composable tools.",
         static_instruction=settings.static_instruction,
         instruction="",
@@ -157,11 +143,13 @@ def build_coding_worker(
 
 
 def build_final_diff_reviewer(
-    model: ModelConfig,
+    model: BaseLlm,
+    *,
+    model_name: str | None = None,
 ) -> ReviewerBundle:
     agent = Agent(
         name="final_diff_reviewer",
-        model=_gemini(model),
+        model=model,
         description="Advisory, bounded review of a deterministically verified final diff.",
         static_instruction=FINAL_REVIEW_INSTRUCTION,
         instruction="",
@@ -173,7 +161,7 @@ def build_final_diff_reviewer(
     return ReviewerBundle(
         agent=agent,
         static_prefix=build_static_prefix(
-            model_name=model.name,
+            model_name=model_name or model.model,
             tool_names=(),
             instruction=FINAL_REVIEW_INSTRUCTION,
         ),

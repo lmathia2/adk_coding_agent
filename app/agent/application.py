@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from pydantic import SecretStr
 
-from harness.config import RuntimeBindings, load_harness_composition
+from harness.config import (
+    DEFAULT_COMPOSITION_PATH,
+    RuntimeBindings,
+    load_harness_composition,
+)
 
 from .bootstrap import SETTINGS
 from .factory import build_harness
@@ -24,13 +29,16 @@ def _optional_int_env(name: str, *, minimum: int) -> int | None:
     return value
 
 
-_COMPOSITION = load_harness_composition()
+_COMPOSITION_PATH = Path(
+    os.getenv("ADK_CODING_CONFIG", str(DEFAULT_COMPOSITION_PATH))
+).expanduser().resolve()
+_COMPOSITION = load_harness_composition(_COMPOSITION_PATH)
 _ASSEMBLY = build_harness(
     _COMPOSITION,
     RuntimeBindings(
         workspace=SETTINGS.workspace,
         state_root=SETTINGS.state_root,
-        configuration_root=None,
+        configuration_root=_COMPOSITION_PATH.parent,
         source_repository=SETTINGS.source_repository,
         task_id=SETTINGS.task_id_override,
         base_revision=SETTINGS.base_revision_override,

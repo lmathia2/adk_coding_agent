@@ -16,9 +16,13 @@ dependencies = [
   "google-adk[gcp]>=2.7.1,<2.8.0",
   "pydantic>=2.10,<3.0",
   "PyYAML>=6.0,<7.0",
+  "uvicorn>=0.52,<1.0",
 ]
 
 [project.optional-dependencies]
+local-models = [
+  "litellm>=1.84,<2.0",
+]
 production = [
   "psycopg[binary]>=3.2,<4.0",
 ]

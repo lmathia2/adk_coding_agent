@@ -57,6 +57,27 @@ The repository lockfile pins the tested Google ADK 2.7 minor. Live credentialed
 Gemini runs remain an explicit deployment validation step; deterministic development
 and CI checks do not require cloud credentials.
 
+### Magnitude and other local OpenAI-compatible endpoints
+
+The harness can use a model selected and served by
+[Magnitude](https://github.com/magnitudedev/magnitude), or another
+OpenAI-compatible service, without adding a second model runtime. The provider
+adapter builds ADK's `LiteLlm`; requests, streaming, tools, and lifecycle events
+remain owned by Google ADK.
+
+```bash
+uv sync --all-groups --extra local-models
+export MAGNITUDE_API_KEY=magnitude-local
+export ADK_CODING_CONFIG="$PWD/examples/magnitude.yaml"
+```
+
+Set `harness.config.models.coding.name` in the example to the model id selected by
+Magnitude, then start Magnitude's local inference service and run the harness
+normally. The example targets `http://127.0.0.1:10100/inference/v1`. The token is an
+environment reference in YAML and is never serialized into the composition hash.
+This repository intentionally does not duplicate Magnitude's machine scan or model
+ranking.
+
 Launcher runs can be steered from another terminal without waiting for task
 completion. `adk-coding-agent steer --repository PATH --task-id ID "new guidance"`
 queues a bounded durable message that is injected at the next ADK model/tool safe

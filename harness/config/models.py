@@ -7,6 +7,7 @@ import json
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -60,6 +61,36 @@ class ModelConfig(FrozenModel):
     name: str = Field(min_length=1, max_length=128)
     reasoning: str | None = Field(default=None, max_length=32)
     retry: RetryConfig = RetryConfig()
+    base_url: str | None = Field(default=None, min_length=8, max_length=2_048)
+    api_key: SecretRef | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.rstrip("/")
+        parsed = urlsplit(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("model base_url must be an absolute HTTP(S) URL")
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise ValueError(
+                "model base_url cannot contain credentials, a query, or a fragment"
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_provider_options(self) -> ModelConfig:
+        if self.provider == "openai_compatible":
+            if self.base_url is None:
+                raise ValueError("openai_compatible models require base_url")
+            if self.api_key is None:
+                raise ValueError("openai_compatible models require an api_key env reference")
+        elif self.provider == "google_adk" and (
+            self.base_url is not None or self.api_key is not None
+        ):
+            raise ValueError("google_adk models cannot define base_url or api_key")
+        return self
 
 
 class PromptConfig(FrozenModel):

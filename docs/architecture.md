@@ -82,8 +82,11 @@ coding-specific deterministic context, tools, policy, ledger, workspace, routing
 and verification contracts.
 
 The provider seam builds ADK `BaseLlm` instances, and the shared server runtime wraps
-ADK `Runner`. These are intentionally thin interfaces around ADK rather than a second
-model or agent runtime; a multiprovider stack is not being implemented in this phase.
+ADK `Runner`. The built-in adapters support native ADK Gemini models and explicitly
+configured OpenAI-compatible endpoints through ADK `LiteLlm`. Endpoint credentials
+remain environment-variable references in YAML. These are intentionally thin
+interfaces around ADK rather than a second model or agent runtime; provider-specific
+request and streaming stacks are not implemented by the harness.
 
 ## Stable and dynamic context
 
