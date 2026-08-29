@@ -17,6 +17,7 @@ Start the ADK Coding Agent server or TUI with shared local configuration.
 Usage:
   adk-agent-start server [--workspace DIR] [--state-root DIR] [-- SERVER_ARGS...]
   adk-agent-start tui [--state-root DIR] [--server URL] [-- TUI_ARGS...]
+  adk-agent-start run [--workspace DIR] [--state-root DIR] [--model ID] [-- TUI_ARGS...]
 
 Aliases:
   adk-agent-start --server ...
@@ -36,6 +37,9 @@ Examples:
 
   # Forward an initial prompt to the TUI
   adk-agent-start tui -- --input "Inspect this repository and run its tests"
+
+  # Magnitude-compatible foreground handoff using one exact model
+  adk-agent-start run --workspace "$PWD" --model MODEL_ID
 EOF
 }
 
@@ -55,6 +59,16 @@ Usage: adk-agent-start tui [--state-root DIR] [--server URL] [-- TUI_ARGS...]
 
 Reads the server auth token from STATE_ROOT/server/auth-token, exports it only
 to the TUI process as ADK_CODING_AGENT_TOKEN, and connects to the WebSocket URL.
+EOF
+}
+
+run_usage() {
+  cat <<'EOF'
+Usage: adk-agent-start run [--workspace DIR] [--state-root DIR] [--model ID] [-- TUI_ARGS...]
+
+Starts the Magnitude-backed server as a managed child, waits for its local auth
+token, and runs the Bubble Tea TUI in the foreground. Server output is appended
+to STATE_ROOT/server/foreground.log. Exiting the TUI stops the child server.
 EOF
 }
 
@@ -86,6 +100,9 @@ case "$mode" in
     shift
     ;;
   tui|--tui)
+    shift
+    ;;
+  run)
     shift
     ;;
   -h|--help|'')
@@ -200,5 +217,111 @@ case "$mode" in
     ADK_CODING_AGENT_TOKEN=$token
     export ADK_CODING_AGENT_TOKEN
     exec adk-agent-tui --server "$server_url" "$@"
+    ;;
+
+  run)
+    workspace=$(pwd -P)
+    model=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --workspace)
+          [ "$#" -ge 2 ] || die '--workspace requires a directory' 2
+          workspace=$2
+          shift 2
+          ;;
+        --state-root)
+          [ "$#" -ge 2 ] || die '--state-root requires a directory' 2
+          state_root=$2
+          shift 2
+          ;;
+        --model)
+          [ "$#" -ge 2 ] || die '--model requires a Magnitude model ID' 2
+          model=$2
+          shift 2
+          ;;
+        -h|--help)
+          run_usage
+          exit 0
+          ;;
+        --)
+          shift
+          break
+          ;;
+        *)
+          die "unknown run launcher option: $1 (use -- before TUI options)" 2
+          ;;
+      esac
+    done
+
+    [ -d "$workspace" ] || die "workspace is not a directory: $workspace"
+    workspace=$(CDPATH= cd -- "$workspace" && pwd -P)
+    mkdir -p "$state_root/server"
+    state_root=$(CDPATH= cd -- "$state_root" && pwd -P)
+    token_file=$state_root/server/auth-token
+    server_log=$state_root/server/foreground.log
+    require_command adk-coding-agent
+    require_command adk-agent-tui
+
+    print_common_configuration "$state_root" "$server_url"
+    printf '%s\n' \
+      "  Workspace: $workspace" \
+      "  Magnitude model: ${model:-selected primary model}" \
+      "  Server log: $server_log" \
+      '  Lifecycle: this command owns and stops its harness server child' \
+      '  Environment read: ADK_CODING_AGENT_STATE_ROOT, ADK_CODING_AGENT_SERVER_URL' \
+      '  Environment set for TUI: ADK_CODING_AGENT_TOKEN (read from the auth token file)' \
+      '  The token value is never printed or passed on the command line.' \
+      '' \
+      'Starting managed server and TUI.'
+
+    if [ -n "$model" ]; then
+      adk-coding-agent serve-magnitude \
+        --workspace "$workspace" \
+        --state-root "$state_root" \
+        --model "$model" >>"$server_log" 2>&1 &
+    else
+      adk-coding-agent serve-magnitude \
+        --workspace "$workspace" \
+        --state-root "$state_root" >>"$server_log" 2>&1 &
+    fi
+    server_pid=$!
+
+    cleanup_run() {
+      trap - EXIT HUP INT TERM
+      if kill -0 "$server_pid" 2>/dev/null; then
+        kill "$server_pid" 2>/dev/null || true
+      fi
+      wait "$server_pid" 2>/dev/null || true
+    }
+    trap cleanup_run EXIT HUP INT TERM
+
+    attempts=0
+    while [ ! -r "$token_file" ]; do
+      if ! kill -0 "$server_pid" 2>/dev/null; then
+        wait "$server_pid" 2>/dev/null || true
+        die "managed server exited before authentication was ready; inspect $server_log"
+      fi
+      attempts=$((attempts + 1))
+      if [ "$attempts" -ge 300 ]; then
+        die "managed server did not become ready; inspect $server_log"
+      fi
+      sleep 0.1
+    done
+    sleep 0.2
+    if ! kill -0 "$server_pid" 2>/dev/null; then
+      wait "$server_pid" 2>/dev/null || true
+      die "managed server exited during startup; inspect $server_log"
+    fi
+
+    token=$(tr -d '\r\n' <"$token_file")
+    [ -n "$token" ] || die "auth token file is empty: $token_file"
+    ADK_CODING_AGENT_TOKEN=$token
+    export ADK_CODING_AGENT_TOKEN
+    set +e
+    adk-agent-tui --server "$server_url" "$@"
+    tui_status=$?
+    set -e
+    cleanup_run
+    exit "$tui_status"
     ;;
 esac

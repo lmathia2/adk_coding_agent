@@ -27,6 +27,30 @@ def _environment(fake_bin: Path, home: Path) -> dict[str, str]:
     return environment
 
 
+def _fake_managed_server(directory: Path) -> Path:
+    command = directory / "adk-coding-agent"
+    command.write_text(
+        "#!/bin/sh\n"
+        "state_root=\n"
+        "model=\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        "  case \"$1\" in\n"
+        "    --state-root) state_root=$2; shift 2 ;;\n"
+        "    --model) model=$2; shift 2 ;;\n"
+        "    *) shift ;;\n"
+        "  esac\n"
+        "done\n"
+        "mkdir -p \"$state_root/server\"\n"
+        "printf 'managed-test-token\\n' >\"$state_root/server/auth-token\"\n"
+        "printf 'model=%s\\n' \"$model\"\n"
+        "trap 'exit 0' TERM INT HUP\n"
+        "while :; do sleep 1; done\n",
+        encoding="utf-8",
+    )
+    command.chmod(0o755)
+    return command
+
+
 def test_start_script_is_executable_and_has_valid_help() -> None:
     root = Path(__file__).resolve().parents[2]
     script = root / "start.sh"
@@ -42,6 +66,7 @@ def test_start_script_is_executable_and_has_valid_help() -> None:
 
     assert "adk-agent-start server" in completed.stdout
     assert "adk-agent-start tui" in completed.stdout
+    assert "adk-agent-start run" in completed.stdout
     assert "ADK_CODING_AGENT_STATE_ROOT" in completed.stdout
     assert "ADK_CODING_AGENT_SERVER_URL" in completed.stdout
 
@@ -152,3 +177,48 @@ def test_tui_explains_missing_token(tmp_path: Path) -> None:
     assert completed.returncode == 1
     assert "auth token not found" in completed.stderr
     assert "start the server first" in completed.stderr
+
+
+def test_run_owns_server_and_forwards_exact_magnitude_model(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _fake_managed_server(fake_bin)
+    _fake_command(fake_bin, "adk-agent-tui")
+    home = tmp_path / "home"
+    home.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "managed-state"
+    model = "qwen/local-coder:q8"
+
+    completed = subprocess.run(
+        (
+            str(root / "start.sh"),
+            "run",
+            "--workspace",
+            str(workspace),
+            "--state-root",
+            str(state_root),
+            "--model",
+            model,
+            "--",
+            "--input",
+            "inspect this repository",
+        ),
+        env=_environment(fake_bin, home),
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert f"Workspace: {workspace}" in completed.stdout
+    assert f"Magnitude model: {model}" in completed.stdout
+    assert f"Server log: {state_root}/server/foreground.log" in completed.stdout
+    assert "Lifecycle: this command owns and stops its harness server child" in completed.stdout
+    assert "token-present=yes" in completed.stdout
+    assert "arg=--input" in completed.stdout
+    assert "arg=inspect this repository" in completed.stdout
+    assert model in (state_root / "server/foreground.log").read_text(encoding="utf-8")
+    assert "managed-test-token" not in completed.stdout

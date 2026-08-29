@@ -70,6 +70,19 @@ the TUI and may return `404 Not Found`.
 adk-agent-start tui
 ```
 
+For a single foreground lifecycle—used by Magnitude harness handoff—start the
+server and TUI together. The command passes an exact optional Magnitude model to
+the server and stops its managed server child when the TUI exits:
+
+```bash
+adk-agent-start run --workspace "$HOME/src/coding_tools" \
+  --model 'qwen3.8-27b:gguf:q8'
+```
+
+Server output for this mode is appended to
+`~/.local/state/adk-coding-agent/server/foreground.log`, leaving the terminal
+renderer exclusively owned by the TUI.
+
 Type a request in the TUI and press Enter. You can send additional guidance while
 the agent is running; the server delivers it at the next safe steering point.
 

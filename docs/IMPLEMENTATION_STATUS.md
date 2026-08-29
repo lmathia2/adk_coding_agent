@@ -22,7 +22,8 @@ complete.
 - [x] Repeatable lockfile-based checkout installer with full macOS prerequisite
   bootstrap, fresh uv environment creation, Bubble Tea TUI build, Magnitude
   service/model discovery, generated local-model composition, and an installed
-  two-command server/TUI launcher with shared state and secret-safe token handoff.
+  two-command server/TUI launcher plus a managed single-command handoff with exact
+  model selection, shared state, secret-safe token transfer, and child cleanup.
 - [x] Registered Pi harness factory with implementation-owned strict configuration,
   explicit runtime bindings, isolated builds, and a swappable test harness behind the
   same public contract.
