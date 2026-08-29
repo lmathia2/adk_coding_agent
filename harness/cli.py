@@ -244,6 +244,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Fail instead of running `magnitude server start` when unavailable",
     )
     magnitude.add_argument(
+        "--no-model-probe",
+        action="store_true",
+        help="Skip the real completion probe and announce discovery-only readiness",
+    )
+    magnitude.add_argument(
         "--print-config",
         action="store_true",
         help="Resolve and print server settings without starting the harness listener",
@@ -322,6 +327,7 @@ def _serve_magnitude(args: argparse.Namespace) -> int:
         MAGNITUDE_API_KEY,
         MagnitudeConnectionError,
         prepare_magnitude_connection,
+        probe_magnitude_model,
     )
 
     workspace = args.workspace.expanduser().resolve()
@@ -343,11 +349,23 @@ def _serve_magnitude(args: argparse.Namespace) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 1
 
+    probed = not args.no_model_probe
+    if probed:
+        try:
+            probe_magnitude_model(
+                endpoint=connection.endpoint,
+                model_id=connection.model_id,
+                reasoning=args.reasoning,
+            )
+        except MagnitudeConnectionError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+
     print(
         "Magnitude coding model:\n"
         f"  Model: {connection.model_id}\n"
         f"  Reasoning: {args.reasoning or 'model default'}\n"
-        "  Status: advertised by the local Magnitude service\n"
+        f"  Status: {'completion probe passed' if probed else 'discovery only (probe skipped)'}\n"
         f"  Endpoint: {connection.endpoint}",
         file=sys.stderr,
         flush=True,

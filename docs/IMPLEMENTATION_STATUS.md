@@ -101,6 +101,8 @@ complete.
   without exposing endpoints, credential references, or provider secrets.
 - [x] Explicit Magnitude reasoning-effort override in the CLI and generated,
   validated composition for controllable local-model speed/quality tradeoffs.
+- [x] Magnitude startup performs a real completion probe before announcing model
+  responsiveness, with an explicit discovery-only opt-out.
 - [x] Configurable first-event, idle, total-run, and cleanup deadlines with one
   bounded startup retry, classified durable failures, and same-task ADK generator
   shutdown.

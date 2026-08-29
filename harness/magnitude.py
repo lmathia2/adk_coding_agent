@@ -12,7 +12,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import yaml
 
@@ -36,6 +36,7 @@ class MagnitudeConnection:
 
 
 JsonFetcher = Callable[[str, float], object]
+JsonPoster = Callable[[str, Mapping[str, object], float], object]
 CommandRunner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
@@ -45,6 +46,56 @@ def _fetch_json(url: str, timeout_seconds: float) -> object:
             return json.load(response)
     except (OSError, URLError, ValueError) as error:
         raise MagnitudeConnectionError(f"Magnitude is not reachable at {url}: {error}") from error
+
+
+def _post_json(
+    url: str,
+    payload: Mapping[str, object],
+    timeout_seconds: float,
+) -> object:
+    request = Request(
+        url,
+        data=json.dumps(payload, separators=(",", ":")).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            return json.load(response)
+    except (OSError, URLError, ValueError) as error:
+        raise MagnitudeConnectionError(
+            f"Magnitude model probe failed at {url}: {error}"
+        ) from error
+
+
+def probe_magnitude_model(
+    *,
+    endpoint: str,
+    model_id: str,
+    reasoning: str | None = None,
+    timeout_seconds: float = 180,
+    post_json: JsonPoster = _post_json,
+) -> None:
+    """Require one real completion before announcing a local model as responsive."""
+
+    payload: dict[str, object] = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": "Reply OK"}],
+        "max_tokens": 8,
+        "stream": False,
+    }
+    if reasoning is not None:
+        payload["reasoning_effort"] = reasoning
+    response = post_json(
+        f"{endpoint.rstrip('/')}/chat/completions",
+        payload,
+        timeout_seconds,
+    )
+    if not isinstance(response, Mapping):
+        raise MagnitudeConnectionError("Magnitude model probe returned a non-object response")
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise MagnitudeConnectionError("Magnitude model probe returned no completion choice")
 
 
 def _model_ids(payload: object) -> tuple[str, ...]:
@@ -283,6 +334,7 @@ __all__ = [
     "MagnitudeConnection",
     "MagnitudeConnectionError",
     "prepare_magnitude_connection",
+    "probe_magnitude_model",
     "select_model_id",
     "write_magnitude_config",
 ]

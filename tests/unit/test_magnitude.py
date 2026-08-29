@@ -12,6 +12,7 @@ from harness.magnitude import (
     MAGNITUDE_API_KEY,
     MagnitudeConnectionError,
     prepare_magnitude_connection,
+    probe_magnitude_model,
     select_model_id,
 )
 
@@ -54,6 +55,43 @@ def test_prepare_magnitude_connection_uses_selected_model_and_writes_valid_confi
     assert coding.reasoning == "none"
     assert coding.base_url == "http://127.0.0.1:10100/inference/v1"
     assert MAGNITUDE_API_KEY not in connection.config_path.read_text(encoding="utf-8")
+
+
+def test_probe_magnitude_model_requires_real_completion_choice() -> None:
+    captured: dict[str, object] = {}
+
+    def post(url: str, payload, timeout: float) -> object:
+        captured.update(url=url, payload=payload, timeout=timeout)
+        return {"choices": [{"message": {"content": "OK"}}]}
+
+    probe_magnitude_model(
+        endpoint="http://127.0.0.1:10100/inference/v1",
+        model_id="local-model",
+        reasoning="none",
+        timeout_seconds=7,
+        post_json=post,
+    )
+
+    assert captured == {
+        "url": "http://127.0.0.1:10100/inference/v1/chat/completions",
+        "payload": {
+            "model": "local-model",
+            "messages": [{"role": "user", "content": "Reply OK"}],
+            "max_tokens": 8,
+            "stream": False,
+            "reasoning_effort": "none",
+        },
+        "timeout": 7,
+    }
+
+
+def test_probe_magnitude_model_rejects_catalog_only_response() -> None:
+    with pytest.raises(MagnitudeConnectionError, match="no completion choice"):
+        probe_magnitude_model(
+            endpoint="http://127.0.0.1:10100/inference/v1",
+            model_id="local-model",
+            post_json=lambda _url, _payload, _timeout: {"models": ["local-model"]},
+        )
 
 
 def test_prepare_magnitude_connection_starts_service_when_initial_probe_fails(

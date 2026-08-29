@@ -239,7 +239,9 @@ reported by Magnitude, and accepts `--model MODEL_ID` as an explicit override. U
 this makes speed versus deliberation an explicit harness choice instead of silently
 using the provider default. Use
 `--print-config` to inspect the resolved harness endpoint without starting its
-listener. After an install or upgrade, initial hardware and model assessment can take
+listener. Startup performs a real bounded completion probe before announcing the
+model as responding; `--no-model-probe` explicitly downgrades this to discovery-only
+readiness. After an install or upgrade, initial hardware and model assessment can take
 a few minutes; the launcher keeps probing the service through that startup window.
 
 The installer prints the complete launch sequence. Keep the harness in the first

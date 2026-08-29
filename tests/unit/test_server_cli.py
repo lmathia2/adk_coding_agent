@@ -137,8 +137,12 @@ def test_serve_magnitude_prepares_local_model_and_scopes_placeholder_token(
         captured["token"] = os.environ.get("MAGNITUDE_API_KEY")
         return 0
 
+    def probe(**kwargs) -> None:
+        captured["probe"] = kwargs
+
     monkeypatch.setenv("MAGNITUDE_API_KEY", "cloud-secret-must-not-be-forwarded")
     monkeypatch.setattr("harness.magnitude.prepare_magnitude_connection", prepare)
+    monkeypatch.setattr("harness.magnitude.probe_magnitude_model", probe)
     monkeypatch.setattr("harness.cli._serve", serve)
 
     result = main(
@@ -159,6 +163,11 @@ def test_serve_magnitude_prepares_local_model_and_scopes_placeholder_token(
     assert result == 0
     assert captured["requested_model"] == "local-model"
     assert captured["reasoning"] == "none"
+    assert captured["probe"] == {
+        "endpoint": "http://127.0.0.1:10100/inference/v1",
+        "model_id": "local-model",
+        "reasoning": "none",
+    }
     assert captured["start_service"] is False
     assert captured["config"] == generated
     assert captured["token"] == "magnitude-local"
@@ -166,5 +175,5 @@ def test_serve_magnitude_prepares_local_model_and_scopes_placeholder_token(
     announcement = capsys.readouterr().err
     assert "Model: local-model" in announcement
     assert "Reasoning: none" in announcement
-    assert "advertised by the local Magnitude service" in announcement
+    assert "Status: completion probe passed" in announcement
     assert "cloud-secret-must-not-be-forwarded" not in announcement
