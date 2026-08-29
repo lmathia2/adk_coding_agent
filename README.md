@@ -180,6 +180,11 @@ The repository lockfile pins the tested Google ADK 2.7 minor. Live credentialed
 Gemini runs remain an explicit deployment validation step; deterministic development
 and CI checks do not require cloud credentials.
 
+The YAML `context` section caps each model work packet and the aggregate estimated
+input for a task (`work_packet_tokens` and `max_task_input_tokens`). A JSON task
+request can set a lower `max_input_tokens` for a specific run. Exceeding the limit
+produces a durable blocked result rather than silently continuing an expensive loop.
+
 ### Magnitude on macOS
 
 The harness can use a model selected and served by

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from harness.context import estimate_tokens
 from harness.models.agent_step import AgentStep, CompletionClaim
 from harness.models.task import TaskRequest
 from harness.orchestration import (
@@ -75,7 +76,7 @@ def test_work_packet_is_deterministic_and_steering_is_last() -> None:
     ledger = _ledger()
     packet = build_work_packet(
         ledger,
-        project_instructions="Be careful",
+        selected_skills="Be careful",
         repository_manifest="Python project",
         repository_map="auth.py: login",
         recent_events=["read auth.py"],
@@ -83,6 +84,31 @@ def test_work_packet_is_deterministic_and_steering_is_last() -> None:
     )
     assert packet.index("## TASK") < packet.index("## REPOSITORY MAP")
     assert packet.rfind("## USER STEERING") > packet.index("## RECENT EVENTS")
+
+
+def test_work_packet_enforces_section_and_total_token_budgets() -> None:
+    packet = build_work_packet(
+        _ledger(),
+        selected_skills="instructions " * 10_000,
+        repository_manifest="manifest " * 10_000,
+        repository_map="map " * 10_000,
+        compaction_summary="history " * 10_000,
+        recent_events=["event " * 10_000],
+        steering_messages=["steer " * 10_000],
+        max_tokens=1_000,
+        section_token_limits={
+            "TASK": 100,
+            "SELECTED SKILLS": 100,
+            "REPOSITORY MANIFEST": 100,
+            "REPOSITORY MAP": 100,
+            "COMPACTED HISTORY": 100,
+            "RECENT EVENTS": 100,
+            "USER STEERING": 100,
+        },
+    )
+
+    assert estimate_tokens(packet) <= 1_000
+    assert "truncated to configured budget" in packet
 
 
 def test_adk_tool_adapter_exposes_four_working_tools(

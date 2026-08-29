@@ -7,6 +7,7 @@ replay-safe receipts without expanding the model-visible tool surface.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib.util
 import json
@@ -325,6 +326,81 @@ class _ManagedTools:
         normalized = _normalize_result(value)
         return self.redactor.redact(normalized)
 
+    def _post_write_diagnostic(
+        self,
+        path: str,
+        content: str | None = None,
+    ) -> dict[str, str] | None:
+        suffix = Path(path).suffix.lower()
+        if suffix not in {".py", ".json"}:
+            return None
+        if content is None:
+            candidate = (self.workspace / path).resolve(strict=True)
+            candidate.relative_to(self.workspace)
+            if candidate.stat().st_size > 2_000_000:
+                return {
+                    "check": "syntax",
+                    "status": "skipped",
+                    "message": "post-write syntax check skipped for file larger than 2 MB",
+                }
+            content = candidate.read_text(encoding="utf-8")
+        try:
+            if suffix == ".py":
+                ast.parse(content, filename=path)
+                language = "Python"
+            else:
+                json.loads(content)
+                language = "JSON"
+        except (SyntaxError, json.JSONDecodeError) as error:
+            line = getattr(error, "lineno", None)
+            column = getattr(error, "offset", None) or getattr(error, "colno", None)
+            location = (
+                f" at line {line}, column {column}"
+                if line is not None and column is not None
+                else ""
+            )
+            return {
+                "check": "syntax",
+                "status": "error",
+                "message": f"{type(error).__name__}{location}: {error.msg}",
+            }
+        return {
+            "check": "syntax",
+            "status": "ok",
+            "message": f"{language} syntax is valid",
+        }
+
+    def _with_post_write_diagnostic(
+        self,
+        path: str,
+        result: Any,
+        *,
+        content: str | None = None,
+    ) -> Any:
+        normalized = _normalize_result(result)
+        if normalized.get("status") != "ok":
+            return normalized
+        try:
+            diagnostic = self._post_write_diagnostic(path, content)
+        except (OSError, UnicodeError, ValueError) as error:
+            diagnostic = {
+                "check": "syntax",
+                "status": "skipped",
+                "message": f"post-write syntax check unavailable: {type(error).__name__}",
+            }
+        if diagnostic is None:
+            return normalized
+        normalized["diagnostics"] = [diagnostic]
+        normalized["model_text"] = (
+            str(normalized.get("model_text", ""))
+            + "\n\npost-write check: "
+            + diagnostic["message"]
+        ).strip()
+        ui_details = dict(normalized.get("ui_details") or {})
+        ui_details["post_write_check"] = diagnostic["status"]
+        normalized["ui_details"] = ui_details
+        return normalized
+
     def read(self, path: str, offset: int = 1, limit: int = 400) -> dict[str, Any]:
         if path.startswith(("artifact://", "file://")):
             return self._redact(self.artifacts.read(path, offset=offset, limit=limit))
@@ -591,11 +667,14 @@ class _ManagedTools:
         return self._mutate(
             "edit",
             arguments,
-            lambda: self.base.edit(
-                path=path,
-                old_text=old_text,
-                new_text=new_text,
-                expected_sha256=expected_sha256,
+            lambda: self._with_post_write_diagnostic(
+                path,
+                self.base.edit(
+                    path=path,
+                    old_text=old_text,
+                    new_text=new_text,
+                    expected_sha256=expected_sha256,
+                ),
             ),
             task_scope=task_scope,
             invocation_id=invocation_id,
@@ -620,11 +699,15 @@ class _ManagedTools:
         return self._mutate(
             "write",
             arguments,
-            lambda: self.base.write(
-                path=path,
+            lambda: self._with_post_write_diagnostic(
+                path,
+                self.base.write(
+                    path=path,
+                    content=content,
+                    expected_sha256=expected_sha256,
+                    expected_absent=expected_absent,
+                ),
                 content=content,
-                expected_sha256=expected_sha256,
-                expected_absent=expected_absent,
             ),
             task_scope=task_scope,
             invocation_id=invocation_id,

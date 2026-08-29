@@ -82,6 +82,8 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert composition.server.idle_timeout_seconds == 180
     assert composition.server.total_timeout_seconds == 1_800
     assert composition.server.first_event_retries == 1
+    assert composition.harness.config.context.work_packet_tokens == 20_000
+    assert composition.harness.config.context.max_task_input_tokens == 200_000
     assert "tui" not in type(composition.server).model_fields
     assert composition.harness.config.models["coding"].provider == "google_adk"
 
@@ -103,6 +105,17 @@ def test_server_total_deadline_cannot_be_shorter_than_first_event_deadline() -> 
     }
 
     with pytest.raises(ValidationError, match="total_timeout_seconds"):
+        parse_harness_composition(payload)
+
+
+def test_task_input_budget_cannot_be_smaller_than_one_work_packet() -> None:
+    payload = _composition_payload()
+    payload["harness"]["config"]["context"] = {
+        "work_packet_tokens": 10_000,
+        "max_task_input_tokens": 8_000,
+    }
+
+    with pytest.raises(ValidationError, match="max_task_input_tokens"):
         parse_harness_composition(payload)
 
 

@@ -17,6 +17,30 @@ def test_task_request_adds_default_acceptance_criterion() -> None:
     assert request.acceptance_criteria == ["The requested change is implemented and verified."]
 
 
+def test_task_control_contract_round_trips_into_ledger() -> None:
+    request = TaskRequest(
+        goal="Generate a parser",
+        permitted_paths=["parser.py"],
+        forbidden_paths=["tests/**"],
+        verification_requirements=["python held_out_verify.py"],
+        verification_level="behavioral",
+        max_input_tokens=12_000,
+    )
+
+    ledger = TaskLedger.from_request(
+        request,
+        task_id="task-controls",
+        workspace_id="workspace",
+        base_revision="abc",
+    )
+
+    assert ledger.permitted_paths == ["parser.py"]
+    assert ledger.forbidden_paths == ["tests/**"]
+    assert ledger.verification_requirements == ["python held_out_verify.py"]
+    assert ledger.verification_level == "behavioral"
+    assert ledger.max_input_tokens == 12_000
+
+
 def test_strict_models_reject_unknown_fields() -> None:
     with pytest.raises(ValidationError):
         TaskRequest(goal="Fix it", surprise=True)  # type: ignore[call-arg]

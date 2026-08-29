@@ -108,8 +108,7 @@ Stable prefix
 
 Dynamic suffix
   compact Task Ledger
-  project instructions
-  bounded skill catalog + selected skill bodies
+  bounded selected skill bodies
   repository manifest
   ranked repository map
   compaction summary
@@ -117,7 +116,12 @@ Dynamic suffix
   latest user steering
 ```
 
-The dynamic serializer is deterministic: stable field order, normalized paths, no timestamps, and no random identifiers. Every work batch emits a stable-instruction hash and an estimated dynamic token count.
+The dynamic serializer is deterministic: stable field order, normalized paths, no
+timestamps, and no random identifiers. It omits ledger/checkpoint events already
+represented in the Task Ledger, enforces per-section and whole-packet token caps, and
+records a stable-instruction hash plus estimated dynamic tokens for every work batch.
+A task-level aggregate input budget fails closed before another model call instead of
+allowing an unbounded repair loop.
 
 ## Work-batch loop
 
@@ -179,6 +183,10 @@ The model-visible surface is fixed:
 - `bash(command, timeout_seconds)`
 - `edit(path, old_text, new_text, expected_sha256)`
 - `write(path, content, expected_sha256, expected_absent)`
+
+Successful Python and JSON writes/edits include an immediate in-process syntax result
+in the existing tool response. A diagnostic does not roll back the atomic mutation;
+it gives the model a cheap repair signal before the broader verification ladder.
 
 Search, Git, compilers, formatters, linters, and test runners are composed through
 `bash`. The strict `search grep|find|health` grammar is intercepted in-process before

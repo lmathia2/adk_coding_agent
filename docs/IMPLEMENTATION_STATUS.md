@@ -34,6 +34,8 @@ complete.
 - [x] Cache-stable static instruction and deterministic dynamic work packets.
 - [x] Stable-prefix hashing and dynamic context token estimates.
 - [x] Token-bounded repository map and recent-event tail.
+- [x] Per-section and whole-work-packet caps, redundant ledger-event filtering, and a
+  configurable aggregate task input-token budget.
 - [x] Structured coding-aware compaction checkpoints.
 - [x] ADK context caching and event-compaction configuration.
 - [x] Recoverable, bounded artifact identifiers carried across compaction snapshots.
@@ -50,6 +52,7 @@ complete.
 - [x] Denial of destructive operations by default.
 - [x] Recursive secret redaction.
 - [x] Content-addressed mutation receipts for replay safety.
+- [x] Immediate Python/JSON syntax diagnostics after successful writes and edits.
 
 ### Repository understanding
 

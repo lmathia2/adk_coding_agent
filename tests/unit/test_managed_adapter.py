@@ -114,6 +114,46 @@ def test_exact_write_replay_uses_receipt_without_repeating_side_effect(
     assert (tmp_path / "result.txt").read_text(encoding="utf-8") == "stable\n"
 
 
+def test_python_writes_and_edits_return_immediate_syntax_feedback(tmp_path: Path) -> None:
+    tools = create_adk_tools(tmp_path, state_root=tmp_path / "state")
+
+    valid = tools.write(
+        "module.py",
+        "def answer():\n    return 42\n",
+        expected_absent=True,
+    )
+    invalid = tools.edit(
+        "module.py",
+        "return 42",
+        "return (",
+    )
+
+    assert valid["diagnostics"] == [
+        {
+            "check": "syntax",
+            "status": "ok",
+            "message": "Python syntax is valid",
+        }
+    ]
+    assert "post-write check: Python syntax is valid" in valid["model_text"]
+    assert invalid["status"] == "ok"
+    assert invalid["diagnostics"][0]["status"] == "error"
+    assert "SyntaxError at line 2" in invalid["model_text"]
+
+
+def test_json_write_returns_parse_location_without_reverting_mutation(
+    tmp_path: Path,
+) -> None:
+    tools = create_adk_tools(tmp_path, state_root=tmp_path / "state")
+
+    result = tools.write("config.json", '{"answer": }\n', expected_absent=True)
+
+    assert result["status"] == "ok"
+    assert result["diagnostics"][0]["status"] == "error"
+    assert "JSONDecodeError at line 1" in result["model_text"]
+    assert (tmp_path / "config.json").read_text(encoding="utf-8") == '{"answer": }\n'
+
+
 def test_mutation_receipts_are_scoped_to_the_active_task(
     tmp_path: Path,
 ) -> None:

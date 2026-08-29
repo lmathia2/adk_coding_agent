@@ -16,7 +16,7 @@ from google.adk.agents import BaseAgent
 from google.adk.events import EventActions
 from google.adk.workflow import BaseNode, node
 
-from harness.context import build_compaction_snapshot
+from harness.context import build_compaction_snapshot, estimate_tokens
 from harness.learning import TraceSkillLearningController
 from harness.models import CompactionSnapshot
 from harness.models.agent_step import AgentStep
@@ -100,6 +100,9 @@ class PiWorkflowDependencies:
     review_prefix_hash: str | None
     review_prefix_tokens: int
     repository_map_tokens: int
+    work_packet_tokens: int
+    max_task_input_tokens: int
+    work_packet_section_tokens: dict[str, int]
     steering_batch_limit: int
     steering_enabled: bool
     steering_at_work_batch_boundary: bool
@@ -228,9 +231,20 @@ def _workspace_fingerprint(deps: PiWorkflowDependencies, task_id: str) -> str:
     return _fallback_workspace_fingerprint(deps)
 
 
+_LEDGER_DUPLICATE_EVENT_KINDS = {
+    EventKind.TASK_CREATED,
+    EventKind.LEDGER_PATCHED,
+    EventKind.CHECKPOINT_CREATED,
+}
+
+
 def _render_recent_events(deps: PiWorkflowDependencies, task_id: str) -> list[str]:
     rendered: list[str] = []
-    events = deps.event_store.read(task_id)[-deps.settings.recent_event_limit :]
+    events = [
+        event
+        for event in deps.event_store.read(task_id)
+        if event.kind not in _LEDGER_DUPLICATE_EVENT_KINDS
+    ][-deps.settings.recent_event_limit :]
     for event in events:
         payload = json.dumps(event.payload, sort_keys=True, default=str)
         if len(payload) > 1_000:
@@ -360,6 +374,21 @@ def _consume_tool_action_fingerprints(ctx: Context) -> list[str]:
     if observed:
         ctx.state["workflow_tool_action_sequence"] = observed[-1][0]
     return [fingerprint for _, fingerprint in observed]
+
+
+def _reserve_task_input_budget(
+    state: Any,
+    *,
+    projected_tokens: int,
+    limit: int,
+) -> tuple[bool, int]:
+    """Atomically reserve an estimated model-call input budget in ADK state."""
+
+    used = int(state.get("estimated_task_input_tokens", 0) or 0)
+    if used + projected_tokens > limit:
+        return False, used
+    state["estimated_task_input_tokens"] = used + projected_tokens
+    return True, used
 
 
 def _save_checkpoint(
@@ -785,16 +814,58 @@ async def _orchestrate_owned(
         )
         packet = build_work_packet(
             ledger,
-            project_instructions=skill_runtime.text,
+            selected_skills=skill_runtime.text,
             repository_manifest=manifest.to_compact_text(),
             repository_map=repository_map,
             compaction_summary=compaction_summary,
             recent_events=_render_recent_events(deps, task_id),
             steering_messages=steering,
+            max_tokens=deps.work_packet_tokens,
+            section_token_limits=deps.work_packet_section_tokens,
         )
-        dynamic_tokens = len(packet) // 4
+        dynamic_tokens = estimate_tokens(packet)
         total_context_estimate = deps.static_prefix_tokens + dynamic_tokens
         should_compact = total_context_estimate >= settings.compact_at_tokens
+
+        task_input_budget = min(
+            deps.max_task_input_tokens,
+            request.max_input_tokens or deps.max_task_input_tokens,
+        )
+        budget_reserved, estimated_task_input = _reserve_task_input_budget(
+            ctx.state,
+            projected_tokens=total_context_estimate,
+            limit=task_input_budget,
+        )
+        if not budget_reserved:
+            reason = (
+                "Task input-token budget exhausted before the next model call "
+                f"({estimated_task_input} used, {total_context_estimate} projected, "
+                f"{task_input_budget} allowed)"
+            )
+            deps.event_store.append(
+                task_id,
+                EventKind.TASK_BLOCKED,
+                {"reason": reason, "kind": "input_token_budget"},
+                idempotency_key=f"input-budget:{ledger.iteration}",
+            )
+            _record_outcome(
+                deps,
+                task_id=task_id,
+                ledger=ledger,
+                status="blocked",
+                passed=False,
+                started=started,
+            )
+            yield json.dumps(
+                {
+                    "status": "blocked",
+                    "task_id": task_id,
+                    "blockers": [reason],
+                    "metrics": deps.metrics_store.task_summary(task_id),
+                },
+                sort_keys=True,
+            )
+            return
 
         _set_model_call_state(
             ctx,

@@ -6,6 +6,7 @@ import json
 from collections.abc import Iterable
 from enum import StrEnum
 
+from harness.context import estimate_tokens, truncate_to_tokens
 from harness.models.agent_step import AgentStep
 from harness.models.ledger import TaskLedger
 from harness.models.task import TaskRequest
@@ -34,6 +35,11 @@ def create_initial_ledger(
         acceptance_criteria=request.acceptance_criteria,
         constraints=request.constraints,
         non_goals=request.non_goals,
+        permitted_paths=request.permitted_paths,
+        forbidden_paths=request.forbidden_paths,
+        verification_requirements=request.verification_requirements,
+        verification_level=request.verification_level,
+        max_input_tokens=request.max_input_tokens,
         base_revision=base_revision,
         workspace_id=workspace_id,
         branch_id=branch_id,
@@ -109,26 +115,48 @@ def resume_for_steering(ledger: TaskLedger) -> TaskLedger:
 def build_work_packet(
     ledger: TaskLedger,
     *,
-    project_instructions: str = "",
+    selected_skills: str = "",
     repository_manifest: str = "",
     repository_map: str = "",
     compaction_summary: str = "",
     recent_events: Iterable[str] = (),
     steering_messages: Iterable[str] = (),
+    max_tokens: int = 20_000,
+    section_token_limits: dict[str, int] | None = None,
 ) -> str:
     """Build deterministic dynamic input after the cache-stable system prefix."""
 
+    limits = {
+        "TASK": 2_000,
+        "SELECTED SKILLS": 6_000,
+        "REPOSITORY MANIFEST": 800,
+        "REPOSITORY MAP": 1_200,
+        "COMPACTED HISTORY": 3_000,
+        "RECENT EVENTS": 3_500,
+        "USER STEERING": 1_000,
+    }
+    limits.update(section_token_limits or {})
     sections: list[tuple[str, str]] = [
         ("TASK", json.dumps(ledger.compact_projection(), sort_keys=True, indent=2)),
-        ("PROJECT INSTRUCTIONS", project_instructions.strip()),
+        ("SELECTED SKILLS", selected_skills.strip()),
         ("REPOSITORY MANIFEST", repository_manifest.strip()),
         ("REPOSITORY MAP", repository_map.strip()),
         ("COMPACTED HISTORY", compaction_summary.strip()),
         ("RECENT EVENTS", "\n".join(recent_events).strip()),
         ("USER STEERING", "\n".join(steering_messages).strip()),
     ]
-    rendered = [f"## {title}\n{body}" for title, body in sections if body]
-    return "\n\n".join(rendered)
+    rendered: list[str] = []
+    for title, body in sections:
+        if not body:
+            continue
+        bounded, truncated = truncate_to_tokens(body, max(limits[title], 0))
+        if truncated:
+            bounded += f"\n[{title.lower()} truncated to configured budget]"
+        rendered.append(f"## {title}\n{bounded}")
+    packet = "\n\n".join(rendered)
+    if estimate_tokens(packet) > max_tokens:
+        packet, _ = truncate_to_tokens(packet, max_tokens)
+    return packet
 
 
 def replan_ledger(ledger: TaskLedger) -> TaskLedger:

@@ -55,6 +55,7 @@ class TaskRequest(StrictModel):
     verification_requirements: list[str] = Field(default_factory=list)
     verification_level: Literal["auto", "syntax", "static", "behavioral"] = "auto"
     max_cost_usd: float | None = Field(default=None, gt=0)
+    max_input_tokens: int | None = Field(default=None, ge=1_000)
     max_iterations: int = Field(default=24, ge=1, le=500)
 
     @model_validator(mode="after")
@@ -114,6 +115,7 @@ class TaskLedger(StrictModel):
     forbidden_paths: list[str] = Field(default_factory=list)
     verification_requirements: list[str] = Field(default_factory=list)
     verification_level: Literal["auto", "syntax", "static", "behavioral"] = "auto"
+    max_input_tokens: int | None = Field(default=None, ge=1_000)
 
     base_revision: str
     workspace_id: str
@@ -163,6 +165,7 @@ class TaskLedger(StrictModel):
             forbidden_paths=request.forbidden_paths,
             verification_requirements=request.verification_requirements,
             verification_level=request.verification_level,
+            max_input_tokens=request.max_input_tokens,
             base_revision=base_revision,
             workspace_id=workspace_id,
             branch_id=branch_id,

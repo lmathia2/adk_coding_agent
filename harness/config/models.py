@@ -298,10 +298,25 @@ class ToolSurfaceConfig(FrozenModel):
 
 class ContextConfig(FrozenModel):
     compact_at_tokens: int = Field(default=80_000, ge=4_096, le=2_000_000)
+    work_packet_tokens: int = Field(default=20_000, ge=2_000, le=256_000)
+    max_task_input_tokens: int = Field(default=200_000, ge=8_000, le=20_000_000)
     recent_event_limit: int = Field(default=12, ge=1, le=100)
     repository_map_tokens: int = Field(default=1_200, ge=128, le=16_000)
     skill_context_bytes: int = Field(default=24_000, ge=0, le=1_000_000)
     max_selected_skills: int = Field(default=3, ge=0, le=20)
+    ledger_tokens: int = Field(default=2_000, ge=200, le=16_000)
+    manifest_tokens: int = Field(default=800, ge=100, le=8_000)
+    compaction_tokens: int = Field(default=3_000, ge=0, le=64_000)
+    recent_event_tokens: int = Field(default=3_500, ge=0, le=64_000)
+    steering_tokens: int = Field(default=1_000, ge=0, le=16_000)
+
+    @model_validator(mode="after")
+    def validate_work_packet_budget(self) -> ContextConfig:
+        if self.max_task_input_tokens < self.work_packet_tokens:
+            raise ValueError(
+                "max_task_input_tokens cannot be smaller than work_packet_tokens"
+            )
+        return self
 
 
 class SafetyConfig(FrozenModel):
