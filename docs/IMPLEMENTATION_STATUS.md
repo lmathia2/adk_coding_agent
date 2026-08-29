@@ -102,6 +102,8 @@ complete.
 - [x] Cheap-to-broad validation ladder.
 - [x] Criterion-level completion claims bound to typed, harness-produced validation
   references rather than model-authored evidence prose.
+- [x] Local-model structured-output normalization for scalar claim evidence and
+  completion decisions based on typed environmental evidence rather than model prose.
 - [x] Automatic behavioral-verifier requirement for executable-code changes, with
   explicit syntax/static opt-down for tasks whose acceptance contract is narrower.
 - [x] Scope and forbidden-path checks.

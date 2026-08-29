@@ -42,13 +42,14 @@ stop using tools, your final response MUST be exactly one JSON object with this 
   "completion_claims": [
     {
       "criterion": "exact acceptance criterion",
-      "evidence": ["test, command, path, or other concrete evidence"]
+      "evidence": ["test, command, path, or other concrete evidence; always an array"]
     }
   ]
 }
 
-Use status "verify" or "done" only when every acceptance criterion has concrete
-evidence. The outer workflow—not this response—decides whether the task is complete.
+Use status "verify" or "done" once the implementation is ready for the outer
+workflow's deterministic checks. Completion claims help diagnosis but never decide
+success; the outer workflow—not this response—decides whether the task is complete.
 Do not wrap the JSON in Markdown or add explanatory prose before or after it.
 """.strip()
 

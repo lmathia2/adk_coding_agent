@@ -179,14 +179,14 @@ def build_report(
         CriterionEvidence(
             criterion=criterion,
             satisfied=(
-                bool(evidence_map.get(criterion))
-                and required_commands_passed
+                required_commands_passed
                 and strength_satisfied
             ),
             claimed_evidence=list(evidence_map.get(criterion, [])),
             evidence=list(verified_references),
             notes=(
-                "No explicit completion claim recorded"
+                "No model completion claim recorded; satisfaction is bound to "
+                "environmental verification"
                 if not evidence_map.get(criterion)
                 else (
                     f"No successful {required} verification was executed"
@@ -218,7 +218,7 @@ def build_report(
     elif diagnostics:
         next_action = "Fix the first failing validation command and rerun verification"
     elif any(not row.satisfied for row in criteria_rows):
-        next_action = "Record concrete evidence for each unsatisfied acceptance criterion"
+        next_action = "Add environmental verification for each unsatisfied criterion"
 
     return VerificationReport(
         passed=passed,

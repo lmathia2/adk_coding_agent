@@ -42,6 +42,15 @@ def test_parse_agent_step_rejects_non_structured_final_text() -> None:
         parse_agent_step("I am done")
 
 
+def test_parse_agent_step_normalizes_scalar_claim_evidence_from_local_models() -> None:
+    step = parse_agent_step(
+        '{"status":"done","completion_claims":['
+        '{"criterion":"It works","evidence":"python test.py passed"}]}'
+    )
+
+    assert step.completion_claims[0].evidence == ["python test.py passed"]
+
+
 def test_changed_paths_include_staged_renamed_and_untracked(tmp_path: Path) -> None:
     root = _repository(tmp_path / "repository")
     base = subprocess.run(

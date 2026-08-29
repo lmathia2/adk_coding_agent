@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CompletionClaim(BaseModel):
@@ -12,6 +12,15 @@ class CompletionClaim(BaseModel):
 
     criterion: str
     evidence: list[str] = Field(default_factory=list)
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def normalize_single_evidence_string(cls, value: object) -> object:
+        """Accept a common local-model scalar while storing one canonical list."""
+
+        if isinstance(value, str):
+            return [value]
+        return value
 
 
 class AgentStep(BaseModel):

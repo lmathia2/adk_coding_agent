@@ -217,6 +217,36 @@ def test_successful_behavioral_check_binds_typed_evidence(tmp_path: Path) -> Non
     assert "arbitrary prose" not in reference.model_dump_json()
 
 
+def test_environmental_evidence_does_not_require_model_completion_prose(
+    tmp_path: Path,
+) -> None:
+    plan = ValidationPlan(
+        changed_paths=["solver.py"],
+        commands=[
+            ValidationCommand(
+                category="test",
+                command="python held_out_verify.py",
+                source="task verification requirement",
+            )
+        ],
+    )
+
+    report, _ = run_validation_plan(
+        tmp_path,
+        plan,
+        acceptance_criteria=["Solver behavior matches the specification"],
+        executor=lambda command: CommandResult(
+            category=command.category,
+            command=command.command,
+            exit_code=0,
+        ),
+    )
+
+    assert report.passed
+    assert report.criteria[0].claimed_evidence == []
+    assert report.criteria[0].evidence[0].strength == "behavioral"
+
+
 def test_syntax_only_completion_must_be_explicit(tmp_path: Path) -> None:
     plan = ValidationPlan(
         changed_paths=["generated.py"],

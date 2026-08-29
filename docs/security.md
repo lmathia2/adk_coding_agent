@@ -145,8 +145,9 @@ The model cannot authorize its own completion. The verifier independently checks
 - syntax/lint/type diagnostics
 - `git diff --check`
 - permitted and forbidden paths
-- explicit claims for every acceptance criterion, bound to typed references for
-  validation results the harness actually produced
+- typed references for validation results the harness actually produced for every
+  acceptance criterion; model claims remain diagnostic context and cannot grant or
+  prevent completion
 - at least one successful behavioral verifier for executable-code changes unless the
   caller explicitly requested a syntax-only or static-only contract
 
