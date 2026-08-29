@@ -7,6 +7,7 @@ import pytest
 
 from harness.models.checkpoint import Checkpoint
 from harness.models.ledger import TaskLedger
+from harness.orchestration import replan_ledger
 from harness.state import (
     CheckpointStore,
     EventKind,
@@ -16,6 +17,7 @@ from harness.state import (
     ToolReceiptStore,
     rebuild_ledger,
     register_action,
+    register_action_batch,
     route_for_progress,
 )
 
@@ -170,4 +172,17 @@ def test_no_progress_routes_to_replan_then_human() -> None:
             arguments={"path": "auth.py"},
             result_hash="same",
         )
+    assert route_for_progress(ledger) == ProgressRoute.NEEDS_INPUT
+
+
+def test_action_batches_detect_loops_across_replans() -> None:
+    ledger = register_action_batch(_ledger(), ["read-a", "bash-a"])
+    assert ledger.no_progress_count == 0
+    for expected_count in range(1, 5):
+        ledger = register_action_batch(ledger, ["read-a", "bash-a"])
+        assert ledger.no_progress_count == expected_count
+        if expected_count == 2:
+            ledger = replan_ledger(ledger)
+            assert ledger.no_progress_count == 2
+
     assert route_for_progress(ledger) == ProgressRoute.NEEDS_INPUT

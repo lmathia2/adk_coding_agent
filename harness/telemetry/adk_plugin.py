@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import os
 import threading
 import time
@@ -11,11 +13,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from google.adk.plugins.base_plugin import BasePlugin
 
-from .metrics import MetricsStore, ModelUsageSample
+from .metrics import MetricsStore, ModelUsageSample, ToolUsageSample
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +40,15 @@ class _PendingModelCall:
     static_prefix_hash: str
     static_prefix_tokens: int
     dynamic_suffix_tokens: int
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingToolCall:
+    started: float
+    task_id: str
+    invocation_id: str
+    tool_name: str
+    arguments_hash: str
 
 
 def _integer(value: Any) -> int:
@@ -169,6 +181,11 @@ def _context_value(context: Any, name: str, default: Any = None) -> Any:
     return default
 
 
+def _canonical_hash(value: Any) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
 class HarnessMetricsPlugin(BasePlugin):
     """Record one metrics row for every completed model call."""
 
@@ -190,6 +207,8 @@ class HarnessMetricsPlugin(BasePlugin):
         self.default_task_id = default_task_id
         self.pricing = dict(pricing or {})
         self._starts: dict[str, deque[_PendingModelCall]] = defaultdict(deque)
+        self._tool_starts: dict[str, deque[_PendingToolCall]] = defaultdict(deque)
+        self._action_sequences: dict[str, int] = defaultdict(int)
         self._lock = threading.RLock()
 
     @staticmethod
@@ -197,7 +216,8 @@ class HarnessMetricsPlugin(BasePlugin):
         value = _context_value(context, "invocation_id")
         if value:
             return str(value)
-        return uuid4().hex
+        session_id = _attribute(getattr(context, "session", None), "id")
+        return str(session_id or "unknown")
 
     def _task_id(self, context: Any) -> str:
         value = _context_value(context, "task_id")
@@ -219,6 +239,124 @@ class HarnessMetricsPlugin(BasePlugin):
             if not pending:
                 self._starts.pop(invocation_id, None)
             return started
+
+    @staticmethod
+    def _tool_name(tool: Any) -> str:
+        return str(_attribute(tool, "name", default=type(tool).__name__))
+
+    def _tool_key(self, context: Any, tool_name: str) -> str:
+        invocation_id = self._invocation_id(context)
+        call_id = _context_value(context, "function_call_id")
+        return f"{invocation_id}\0{call_id or tool_name}"
+
+    def _pop_tool_start(
+        self,
+        context: Any,
+        tool_name: str,
+    ) -> _PendingToolCall | None:
+        key = self._tool_key(context, tool_name)
+        with self._lock:
+            pending = self._tool_starts.get(key)
+            if not pending:
+                return None
+            started = pending.popleft()
+            if not pending:
+                self._tool_starts.pop(key, None)
+            return started
+
+    def _append_action_fingerprint(
+        self,
+        context: Any,
+        *,
+        task_id: str,
+        fingerprint: str,
+    ) -> None:
+        state = getattr(context, "state", None)
+        getter = getattr(state, "get", None)
+        setter = getattr(state, "__setitem__", None)
+        if not callable(getter) or not callable(setter):
+            return
+        with self._lock:
+            self._action_sequences[task_id] += 1
+            sequence = self._action_sequences[task_id]
+        raw_history = getter("tool_action_fingerprints", [])
+        history = list(raw_history) if isinstance(raw_history, list) else []
+        existing_sequence = max(
+            (
+                _integer(item.get("sequence"))
+                for item in history
+                if isinstance(item, Mapping)
+            ),
+            default=0,
+        )
+        with self._lock:
+            sequence = max(sequence, existing_sequence + 1)
+            self._action_sequences[task_id] = sequence
+        history.append({"sequence": sequence, "fingerprint": fingerprint})
+        setter("tool_action_fingerprints", history[-200:])
+
+    def _record_tool_result(
+        self,
+        *,
+        context: Any,
+        tool: Any,
+        tool_args: dict[str, Any],
+        result: Mapping[str, Any] | None,
+        error: Exception | None = None,
+    ) -> None:
+        tool_name = self._tool_name(tool)
+        pending = self._pop_tool_start(context, tool_name)
+        invocation_id = self._invocation_id(context)
+        task_id = self._task_id(context)
+        arguments_hash = _canonical_hash(tool_args)
+        started = time.monotonic()
+        if pending is not None:
+            invocation_id = pending.invocation_id
+            task_id = pending.task_id
+            arguments_hash = pending.arguments_hash
+            started = pending.started
+        payload = dict(result or {})
+        raw_status = str(payload.get("status", "error" if error else "ok")).lower()
+        status = (
+            raw_status
+            if raw_status in {"ok", "error", "blocked", "timeout"}
+            else "error"
+        )
+        result_hash = str(payload.get("result_hash") or "") or _canonical_hash(
+            payload if error is None else {"error_type": type(error).__name__}
+        )
+        canonical_result = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        self.store.record_tool_usage(
+            ToolUsageSample(
+                task_id=task_id,
+                invocation_id=invocation_id,
+                tool_name=tool_name,
+                status=status,  # type: ignore[arg-type]
+                arguments_hash=arguments_hash,
+                result_hash=result_hash,
+                duration_ms=max(int((time.monotonic() - started) * 1_000), 0),
+                model_visible_bytes=len(canonical_result.encode()),
+                omitted_bytes=_integer(payload.get("omitted_bytes")),
+                replayed=bool(payload.get("replayed", False)),
+            )
+        )
+        self._append_action_fingerprint(
+            context,
+            task_id=task_id,
+            fingerprint=_canonical_hash(
+                {
+                    "tool": tool_name,
+                    "arguments_hash": arguments_hash,
+                    "result_hash": result_hash,
+                    "status": status,
+                }
+            ),
+        )
 
     async def before_model_callback(
         self,
@@ -328,6 +466,69 @@ class HarnessMetricsPlugin(BasePlugin):
     ) -> None:
         del llm_request, error
         self._pop_start(self._invocation_id(callback_context))
+        return None
+
+    async def before_tool_callback(
+        self,
+        *,
+        tool: Any,
+        tool_args: dict[str, Any],
+        tool_context: Any,
+    ) -> None:
+        try:
+            tool_name = self._tool_name(tool)
+            pending = _PendingToolCall(
+                started=time.monotonic(),
+                task_id=self._task_id(tool_context),
+                invocation_id=self._invocation_id(tool_context),
+                tool_name=tool_name,
+                arguments_hash=_canonical_hash(tool_args),
+            )
+            with self._lock:
+                self._tool_starts[self._tool_key(tool_context, tool_name)].append(
+                    pending
+                )
+        except Exception:
+            LOGGER.exception("tool metrics start observation failed")
+        return None
+
+    async def after_tool_callback(
+        self,
+        *,
+        tool: Any,
+        tool_args: dict[str, Any],
+        tool_context: Any,
+        result: dict[str, Any],
+    ) -> None:
+        try:
+            self._record_tool_result(
+                context=tool_context,
+                tool=tool,
+                tool_args=tool_args,
+                result=result,
+            )
+        except Exception:
+            LOGGER.exception("tool metrics completion observation failed")
+        return None
+
+    async def on_tool_error_callback(
+        self,
+        *,
+        tool: Any,
+        tool_args: dict[str, Any],
+        tool_context: Any,
+        error: Exception,
+    ) -> None:
+        try:
+            self._record_tool_result(
+                context=tool_context,
+                tool=tool,
+                tool_args=tool_args,
+                result=None,
+                error=error,
+            )
+        except Exception:
+            LOGGER.exception("tool metrics error observation failed")
         return None
 
 

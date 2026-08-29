@@ -15,7 +15,13 @@ from .postgres import (
     PsycopgConnectionFactory,
     TaskLease,
 )
-from .progress import ProgressRoute, action_fingerprint, register_action, route_for_progress
+from .progress import (
+    ProgressRoute,
+    action_fingerprint,
+    register_action,
+    register_action_batch,
+    route_for_progress,
+)
 from .receipts import ToolReceipt, ToolReceiptStore
 from .steering import (
     MAX_STEERING_MESSAGE_BYTES,
@@ -52,5 +58,6 @@ __all__ = [
     "rebuild_ledger",
     "reduce_event",
     "register_action",
+    "register_action_batch",
     "route_for_progress",
 ]

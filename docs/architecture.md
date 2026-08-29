@@ -187,6 +187,13 @@ workspace indexing while the harness owns exact limits, grouped pagination,
 content-addressed cursors, confinement, redaction, and output artifacts. Rich
 operational details, full logs, and artifacts stay outside the model transcript.
 
+The metrics plugin observes the same ADK tool callbacks and records hashed arguments,
+hashed results, status, latency, visible bytes, omitted bytes, and replay state. It
+also emits a bounded monotonic fingerprint stream into invocation state. The workflow
+uses those environmental facts—not model-authored progress prose—to detect repeated
+action batches. Replanning preserves the stagnation count, so repeated reads or
+commands deterministically escalate from replan to human input.
+
 ## Safety boundary
 
 Tool calls pass through a managed adapter:

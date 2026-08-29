@@ -44,6 +44,7 @@ from harness.state import (
     EventStore,
     SteeringQueue,
     rebuild_ledger,
+    register_action_batch,
 )
 from harness.state.factory import (
     ControlStateBackend,
@@ -327,15 +328,38 @@ def _with_workspace_observations(
     ledger: TaskLedger,
     step: AgentStep,
     modified: list[str],
+    action_fingerprints: list[str],
 ) -> TaskLedger:
     data = ledger.model_dump(mode="python")
     data["files_modified"] = modified
     data["files_read"] = list(
         dict.fromkeys([*data.get("files_read", []), *step.files_in_focus])
     )
-    if not step.progress:
-        data["no_progress_count"] = int(data.get("no_progress_count", 0)) + 1
-    return TaskLedger.model_validate(data)
+    observed = TaskLedger.model_validate(data)
+    return register_action_batch(observed, action_fingerprints)
+
+
+def _consume_tool_action_fingerprints(ctx: Context) -> list[str]:
+    """Consume monotonic tool observations written by the metrics plugin."""
+
+    raw_history = ctx.state.get("tool_action_fingerprints", [])
+    last_sequence = int(ctx.state.get("workflow_tool_action_sequence", 0) or 0)
+    observed: list[tuple[int, str]] = []
+    if isinstance(raw_history, list):
+        for item in raw_history:
+            if not isinstance(item, dict):
+                continue
+            try:
+                sequence = int(item.get("sequence", 0))
+            except (TypeError, ValueError):
+                continue
+            fingerprint = item.get("fingerprint")
+            if sequence > last_sequence and isinstance(fingerprint, str):
+                observed.append((sequence, fingerprint))
+    observed.sort()
+    if observed:
+        ctx.state["workflow_tool_action_sequence"] = observed[-1][0]
+    return [fingerprint for _, fingerprint in observed]
 
 
 def _save_checkpoint(
@@ -811,10 +835,12 @@ async def _orchestrate_owned(
 
         previous = ledger
         ledger = reduce_agent_step(ledger, step)
+        action_fingerprints = _consume_tool_action_fingerprints(ctx)
         ledger = _with_workspace_observations(
             ledger,
             step,
             changed_paths(settings.workspace, ledger.base_revision),
+            action_fingerprints,
         )
         deps.event_store.append(
             task_id,

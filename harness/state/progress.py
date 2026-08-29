@@ -50,6 +50,28 @@ def register_action(
     return TaskLedger.model_validate(data)
 
 
+def register_action_batch(
+    ledger: TaskLedger,
+    fingerprints: list[str],
+    *,
+    history_limit: int = 40,
+) -> TaskLedger:
+    """Update stagnation from environment-observed actions, not model prose."""
+
+    data = ledger.model_dump(mode="python")
+    history = list(data.get("recent_action_fingerprints", []))
+    if not fingerprints:
+        data["no_progress_count"] = int(data.get("no_progress_count", 0)) + 1
+    else:
+        repeated = all(fingerprint in history for fingerprint in fingerprints)
+        data["no_progress_count"] = (
+            int(data.get("no_progress_count", 0)) + 1 if repeated else 0
+        )
+        history.extend(fingerprints)
+        data["recent_action_fingerprints"] = history[-history_limit:]
+    return TaskLedger.model_validate(data)
+
+
 def route_for_progress(
     ledger: TaskLedger,
     *,

@@ -67,7 +67,8 @@ complete.
 - [x] SQLite checkpoint persistence.
 - [x] Durable, bounded lease/ack user-steering queue with CLI ingress, ADK
   model/tool safe-point delivery, and completion fencing.
-- [x] No-progress fingerprints and replan/human-input routing.
+- [x] ADK-callback-derived tool/result fingerprints, objective no-progress detection,
+  and replan-to-human escalation that preserves stagnation across replans.
 - [x] Resumable ADK workflow.
 - [x] Isolated Git worktree creation, reattachment, fingerprinting, and guarded cleanup.
 - [x] Database/in-memory/Vertex session service configuration.
@@ -96,7 +97,8 @@ complete.
 - [x] Scope and forbidden-path checks.
 - [x] `git diff --check` completion gate.
 - [x] Deterministic evaluation case and grader contracts.
-- [x] Cost, cache, context, tool-output, replay, and task-outcome metrics.
+- [x] Cost, cache, context, live ADK tool-call/output/replay, verification-tool, and
+  task-outcome metrics.
 - [x] Fail-to-pass starter evaluation fixture.
 - [x] Interruption/replay integration scenario.
 - [x] GitHub Actions unit and integration workflows.

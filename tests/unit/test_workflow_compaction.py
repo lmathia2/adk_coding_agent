@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 
+from harness.models.agent_step import AgentStep
 from harness.models.ledger import TaskLedger
 from harness.models.task import TaskRequest
 from harness.state import EventKind, JsonlEventStore
@@ -33,6 +34,52 @@ def _ledger() -> TaskLedger:
         workspace_id="workspace",
         base_revision="abc123",
     )
+
+
+def test_workflow_consumes_monotonic_tool_actions_once() -> None:
+    workflow = importlib.import_module("app.agent.workflow")
+    context = type(
+        "Context",
+        (),
+        {
+            "state": {
+                "tool_action_fingerprints": [
+                    {"sequence": 2, "fingerprint": "second"},
+                    {"sequence": 1, "fingerprint": "first"},
+                ]
+            }
+        },
+    )()
+
+    assert workflow._consume_tool_action_fingerprints(context) == ["first", "second"]
+    assert workflow._consume_tool_action_fingerprints(context) == []
+
+
+def test_model_progress_prose_cannot_reset_objective_stagnation() -> None:
+    workflow = importlib.import_module("app.agent.workflow")
+    step = AgentStep(status="continue", progress=["claimed progress"])
+    ledger = workflow._with_workspace_observations(
+        _ledger(),
+        step,
+        [],
+        [],
+    )
+    assert ledger.no_progress_count == 1
+
+    ledger = workflow._with_workspace_observations(
+        ledger,
+        step,
+        [],
+        ["read-result"],
+    )
+    assert ledger.no_progress_count == 0
+    ledger = workflow._with_workspace_observations(
+        ledger,
+        step,
+        [],
+        ["read-result"],
+    )
+    assert ledger.no_progress_count == 1
 
 
 def test_workflow_compaction_uses_safe_suffix_and_chains_snapshot(

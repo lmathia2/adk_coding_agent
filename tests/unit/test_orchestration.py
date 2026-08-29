@@ -53,7 +53,7 @@ def test_reducer_and_routes() -> None:
 
     replanned = replan_ledger(ledger)
     assert replanned.phase == "plan"
-    assert replanned.no_progress_count == 0
+    assert replanned.no_progress_count == ledger.no_progress_count
 
 
 def test_pending_steering_preempts_terminal_routes_at_a_safe_point() -> None:

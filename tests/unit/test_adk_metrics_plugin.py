@@ -39,6 +39,11 @@ class _Request:
 
 
 @dataclass
+class _Tool:
+    name: str
+
+
+@dataclass
 class _Context:
     invocation_id: str = "invocation-1"
     state: Any = None
@@ -282,3 +287,106 @@ def test_model_error_discards_pending_call_metadata(tmp_path) -> None:
             "SELECT task_id, model FROM model_usage"
         ).fetchone()
     assert row == ("successful-task", "successful-model")
+
+
+def test_plugin_records_tool_usage_and_monotonic_action_fingerprints(tmp_path) -> None:
+    plugin = HarnessMetricsPlugin(
+        database=tmp_path / "metrics.db",
+        static_prefix_hash="prefix",
+        static_prefix_tokens=500,
+        default_model="test-model",
+        default_task_id="task-1",
+    )
+    context = _Context(
+        invocation_id="invocation-tools",
+        state={"task_id": "task-1"},
+    )
+    tool = _Tool(name="read")
+    arguments = {"path": "src/parser.py", "offset": 1, "limit": 20}
+    result = {
+        "status": "ok",
+        "model_text": "bounded output",
+        "omitted_bytes": 32,
+        "replayed": True,
+        "result_hash": "b" * 64,
+    }
+
+    asyncio.run(
+        plugin.before_tool_callback(
+            tool=tool,
+            tool_args=arguments,
+            tool_context=context,
+        )
+    )
+    asyncio.run(
+        plugin.after_tool_callback(
+            tool=tool,
+            tool_args=arguments,
+            tool_context=context,
+            result=result,
+        )
+    )
+    asyncio.run(
+        plugin.before_tool_callback(
+            tool=tool,
+            tool_args=arguments,
+            tool_context=context,
+        )
+    )
+    asyncio.run(
+        plugin.after_tool_callback(
+            tool=tool,
+            tool_args=arguments,
+            tool_context=context,
+            result=result,
+        )
+    )
+
+    summary = plugin.store.task_summary("task-1")
+    assert summary["tool_calls"] == 2
+    assert summary["omitted_bytes"] == 64
+    assert summary["replayed_calls"] == 2
+    actions = context.state["tool_action_fingerprints"]
+    assert [item["sequence"] for item in actions] == [1, 2]
+    assert actions[0]["fingerprint"] == actions[1]["fingerprint"]
+    assert "src/parser.py" not in str(actions)
+
+
+def test_tool_error_is_counted_without_persisting_error_content(tmp_path) -> None:
+    database = tmp_path / "metrics.db"
+    plugin = HarnessMetricsPlugin(
+        database=database,
+        static_prefix_hash="prefix",
+        static_prefix_tokens=500,
+        default_model="test-model",
+        default_task_id="task-1",
+    )
+    context = _Context(state={"task_id": "task-1"})
+    tool = _Tool(name="bash")
+    arguments = {"command": "secret command"}
+
+    asyncio.run(
+        plugin.before_tool_callback(
+            tool=tool,
+            tool_args=arguments,
+            tool_context=context,
+        )
+    )
+    asyncio.run(
+        plugin.on_tool_error_callback(
+            tool=tool,
+            tool_args=arguments,
+            tool_context=context,
+            error=RuntimeError("secret provider detail"),
+        )
+    )
+
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            "SELECT status, model_visible_bytes, arguments_hash, result_hash "
+            "FROM tool_usage"
+        ).fetchone()
+    assert row[0:2] == ("error", 2)
+    assert len(row[2]) == 64
+    assert len(row[3]) == 64
+    assert "secret" not in str(row)

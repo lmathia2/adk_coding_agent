@@ -48,8 +48,6 @@ def reduce_agent_step(ledger: TaskLedger, step: AgentStep) -> TaskLedger:
     data["iteration"] = int(data.get("iteration", 0)) + 1
     if step.next_action:
         data["next_action"] = step.next_action
-    if step.progress:
-        data["no_progress_count"] = 0
     if "constraints" in data:
         data["constraints"] = list(
             dict.fromkeys([*data.get("constraints", []), *step.discovered_constraints])
@@ -137,7 +135,6 @@ def replan_ledger(ledger: TaskLedger) -> TaskLedger:
     data = ledger.model_dump(mode="python")
     data["phase"] = "plan"
     data["status"] = "active"
-    data["no_progress_count"] = 0
     data["next_action"] = (
         "Reassess the current evidence and choose a materially different approach"
     )
