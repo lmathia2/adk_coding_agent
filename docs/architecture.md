@@ -233,7 +233,12 @@ The validation ladder is ordered from cheap to broad:
 6. `git diff --check`
 7. scope and forbidden-path checks
 
-A task passes only when required commands succeed, no scope violation exists, and every acceptance criterion has explicit evidence.
+A task passes only when required commands succeed, no scope violation exists, and
+every acceptance criterion has an explicit model claim bound to typed evidence from
+the validation results. For executable source changes, the default `auto` policy
+requires a successful behavioral check; syntax, lint, build, and diff checks cannot
+prove behavioral completion. A request may explicitly select `syntax` or `static`
+verification only when that weaker contract is the actual acceptance criterion.
 
 ## Persistence boundaries
 

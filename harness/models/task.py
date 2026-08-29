@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -52,6 +53,7 @@ class TaskRequest(StrictModel):
     permitted_paths: list[str] | None = None
     forbidden_paths: list[str] = Field(default_factory=list)
     verification_requirements: list[str] = Field(default_factory=list)
+    verification_level: Literal["auto", "syntax", "static", "behavioral"] = "auto"
     max_cost_usd: float | None = Field(default=None, gt=0)
     max_iterations: int = Field(default=24, ge=1, le=500)
 
@@ -111,6 +113,7 @@ class TaskLedger(StrictModel):
     permitted_paths: list[str] | None = None
     forbidden_paths: list[str] = Field(default_factory=list)
     verification_requirements: list[str] = Field(default_factory=list)
+    verification_level: Literal["auto", "syntax", "static", "behavioral"] = "auto"
 
     base_revision: str
     workspace_id: str
@@ -159,6 +162,7 @@ class TaskLedger(StrictModel):
             permitted_paths=request.permitted_paths,
             forbidden_paths=request.forbidden_paths,
             verification_requirements=request.verification_requirements,
+            verification_level=request.verification_level,
             base_revision=base_revision,
             workspace_id=workspace_id,
             branch_id=branch_id,

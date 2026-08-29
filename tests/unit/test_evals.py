@@ -11,7 +11,11 @@ from harness.evals import (
     write_evaluation_suite,
 )
 from harness.models.task import TaskRequest
-from harness.models.verification import CriterionEvidence, VerificationReport
+from harness.models.verification import (
+    CriterionEvidence,
+    EvidenceReference,
+    VerificationReport,
+)
 
 
 def _case() -> EvaluationCase:
@@ -40,7 +44,17 @@ def _verification() -> VerificationReport:
             CriterionEvidence(
                 criterion="Login succeeds",
                 satisfied=True,
-                evidence=["pytest tests/test_auth.py"],
+                claimed_evidence=["pytest tests/test_auth.py"],
+                evidence=[
+                    EvidenceReference(
+                        kind="command_result",
+                        reference="validation:0",
+                        command_sha256="a" * 64,
+                        validation_index=0,
+                        category="test",
+                        strength="behavioral",
+                    )
+                ],
             )
         ],
         commands_run=["pytest tests/test_auth.py", "git diff --check"],

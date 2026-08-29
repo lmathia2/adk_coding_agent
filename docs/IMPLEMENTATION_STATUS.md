@@ -86,7 +86,10 @@ complete.
 ### Verification and evaluation
 
 - [x] Cheap-to-broad validation ladder.
-- [x] Criterion-level evidence requirements.
+- [x] Criterion-level completion claims bound to typed, harness-produced validation
+  references rather than model-authored evidence prose.
+- [x] Automatic behavioral-verifier requirement for executable-code changes, with
+  explicit syntax/static opt-down for tasks whose acceptance contract is narrower.
 - [x] Scope and forbidden-path checks.
 - [x] `git diff --check` completion gate.
 - [x] Deterministic evaluation case and grader contracts.

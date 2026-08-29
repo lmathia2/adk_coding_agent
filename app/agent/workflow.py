@@ -536,6 +536,7 @@ async def _verify_task(
                 category="custom",
                 command=command,
                 source="task verification requirement",
+                strength="behavioral",
             )
         )
     evidence_map: dict[str, list[str]] = {
@@ -546,6 +547,7 @@ async def _verify_task(
         plan,
         acceptance_criteria=ledger.acceptance_criteria,
         criterion_evidence=evidence_map,
+        required_strength=request.verification_level,
     )
     return {
         "report": report.model_dump(mode="json"),

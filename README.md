@@ -164,6 +164,14 @@ export ADK_CODING_WORKSPACE=/absolute/path/to/repository
 agents-cli run '{"goal":"Fix the failing parser test","acceptance_criteria":["Relevant tests pass"]}'
 ```
 
+Executable-code changes require a passing behavioral check by default. Supply trusted
+task-level checks with `verification_requirements`; use `verification_level: "syntax"`
+only when syntax validity is itself the full acceptance contract:
+
+```bash
+agents-cli run '{"goal":"Fix the parser","acceptance_criteria":["Malformed input is rejected"],"verification_requirements":["pytest -q tests/test_parser.py"]}'
+```
+
 The local environment backend is a development adapter, not a security boundary.
 Production command execution can select Docker, a pre-provisioned Kubernetes task
 pod, or a pluggable enterprise remote sandbox with fail-closed configuration.

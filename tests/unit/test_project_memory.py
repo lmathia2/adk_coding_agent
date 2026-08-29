@@ -5,7 +5,11 @@ from pathlib import Path
 from harness.memory import ProjectMemoryStore, extract_verified_memories
 from harness.models.ledger import TaskLedger
 from harness.models.task import Decision
-from harness.models.verification import CriterionEvidence, VerificationReport
+from harness.models.verification import (
+    CriterionEvidence,
+    EvidenceReference,
+    VerificationReport,
+)
 from harness.repo import BuildCommand, RepositoryManifest
 
 
@@ -27,7 +31,21 @@ def _report(passed: bool = True) -> VerificationReport:
             CriterionEvidence(
                 criterion="Login succeeds",
                 satisfied=passed,
-                evidence=["pytest"] if passed else [],
+                claimed_evidence=["pytest"] if passed else [],
+                evidence=(
+                    [
+                        EvidenceReference(
+                            kind="command_result",
+                            reference="validation:0",
+                            command_sha256="a" * 64,
+                            validation_index=0,
+                            category="test",
+                            strength="behavioral",
+                        )
+                    ]
+                    if passed
+                    else []
+                ),
             )
         ],
         commands_run=["pytest"],

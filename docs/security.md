@@ -141,7 +141,10 @@ The model cannot authorize its own completion. The verifier independently checks
 - syntax/lint/type diagnostics
 - `git diff --check`
 - permitted and forbidden paths
-- explicit evidence for every acceptance criterion
+- explicit claims for every acceptance criterion, bound to typed references for
+  validation results the harness actually produced
+- at least one successful behavioral verifier for executable-code changes unless the
+  caller explicitly requested a syntax-only or static-only contract
 
 A final reviewer model, when enabled, is advisory unless its findings are translated into deterministic checks or an explicit human decision.
 

@@ -16,6 +16,7 @@ from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.models.ledger import TaskLedger
 from harness.models.verification import (
     CriterionEvidence,
+    EvidenceReference,
     VerificationReport,
 )
 from harness.state import EventKind, JsonlEventStore
@@ -70,7 +71,17 @@ def _record_verified_task(
             CriterionEvidence(
                 criterion="Tests pass",
                 satisfied=True,
-                evidence=["pytest"],
+                claimed_evidence=["pytest"],
+                evidence=[
+                    EvidenceReference(
+                        kind="command_result",
+                        reference="validation:0",
+                        command_sha256="a" * 64,
+                        validation_index=0,
+                        category="test",
+                        strength="behavioral",
+                    )
+                ],
             )
         ],
         commands_run=["pytest"],

@@ -6,6 +6,8 @@ from harness.repo.discovery import BuildCommand, RepositoryManifest
 from harness.sandbox import SandboxRequest, SandboxResult
 from harness.verification import (
     CommandResult,
+    ValidationCommand,
+    ValidationPlan,
     check_scope,
     discover_validation_plan,
     run_validation_plan,
@@ -134,3 +136,126 @@ def test_default_verifier_uses_configured_managed_sandbox(
     assert len(sandbox.requests) == 1
     assert sandbox.requests[0].command == "git diff --check"
     assert sandbox.requests[0].environment["UV_OFFLINE"] == "1"
+
+
+def test_executable_change_cannot_pass_with_syntax_and_diff_only(tmp_path: Path) -> None:
+    (tmp_path / "solver.py").write_text("print('wrong')\n", encoding="utf-8")
+    plan = ValidationPlan(
+        changed_paths=["solver.py"],
+        commands=[
+            ValidationCommand(
+                category="syntax",
+                command="python -m py_compile solver.py",
+                source="changed Python files",
+            ),
+            ValidationCommand(
+                category="diff",
+                command="git diff --check",
+                source="git",
+            ),
+        ],
+    )
+
+    def execute(command):
+        return CommandResult(
+            category=command.category,
+            command=command.command,
+            exit_code=0,
+        )
+
+    report, _ = run_validation_plan(
+        tmp_path,
+        plan,
+        acceptance_criteria=["Solver returns the correct result"],
+        criterion_evidence={"Solver returns the correct result": ["looks correct"]},
+        executor=execute,
+    )
+
+    assert not report.passed
+    assert report.required_strength == "behavioral"
+    assert report.achieved_strength == "static"
+    assert report.criteria[0].claimed_evidence == ["looks correct"]
+    assert report.criteria[0].evidence == []
+    assert "trusted behavioral" in (report.recommended_next_action or "")
+
+
+def test_successful_behavioral_check_binds_typed_evidence(tmp_path: Path) -> None:
+    plan = ValidationPlan(
+        changed_paths=["solver.py"],
+        commands=[
+            ValidationCommand(
+                category="test",
+                command="pytest -q tests/test_solver.py",
+                source="repository test configuration",
+            )
+        ],
+    )
+
+    def execute(command):
+        return CommandResult(
+            category=command.category,
+            command=command.command,
+            exit_code=0,
+            stdout="1 passed",
+        )
+
+    report, _ = run_validation_plan(
+        tmp_path,
+        plan,
+        acceptance_criteria=["Solver returns the correct result"],
+        criterion_evidence={"Solver returns the correct result": ["arbitrary prose"]},
+        executor=execute,
+    )
+
+    assert report.passed
+    assert report.achieved_strength == "behavioral"
+    reference = report.criteria[0].evidence[0]
+    assert reference.reference == "validation:0"
+    assert reference.category == "test"
+    assert reference.strength == "behavioral"
+    assert len(reference.command_sha256) == 64
+    assert "arbitrary prose" not in reference.model_dump_json()
+
+
+def test_syntax_only_completion_must_be_explicit(tmp_path: Path) -> None:
+    plan = ValidationPlan(
+        changed_paths=["generated.py"],
+        commands=[
+            ValidationCommand(
+                category="custom",
+                command="python -m py_compile generated.py",
+                source="task verification requirement",
+                strength="behavioral",
+            )
+        ],
+    )
+
+    def execute(command):
+        return CommandResult(
+            category=command.category,
+            command=command.command,
+            exit_code=0,
+        )
+
+    auto_report, _ = run_validation_plan(
+        tmp_path,
+        plan,
+        acceptance_criteria=["Generated module is syntactically valid"],
+        criterion_evidence={
+            "Generated module is syntactically valid": ["python -m py_compile"]
+        },
+        executor=execute,
+    )
+    syntax_report, _ = run_validation_plan(
+        tmp_path,
+        plan,
+        acceptance_criteria=["Generated module is syntactically valid"],
+        criterion_evidence={
+            "Generated module is syntactically valid": ["python -m py_compile"]
+        },
+        executor=execute,
+        required_strength="syntax",
+    )
+
+    assert not auto_report.passed
+    assert syntax_report.passed

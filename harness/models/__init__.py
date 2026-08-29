@@ -17,7 +17,7 @@ from .task import (
     ValidationResult,
 )
 from .tools import CommandClass, CommandResult, ToolEnvelope, ToolStatus
-from .verification import CriterionEvidence, VerificationReport
+from .verification import CriterionEvidence, EvidenceReference, VerificationReport
 
 __all__ = [
     "AgentStep",
@@ -31,6 +31,7 @@ __all__ = [
     "CriterionEvidence",
     "Decision",
     "EventType",
+    "EvidenceReference",
     "HarnessEvent",
     "PlanStep",
     "PlanStepStatus",
