@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -25,6 +26,7 @@ were introduced by the diff. Do not speculate about code that is not shown. Pref
 small number of actionable findings with exact paths and lines. Return `clear` when
 there are no material findings. This review is advisory and has no tools.
 """.strip()
+LOGGER = logging.getLogger(__name__)
 
 ToolFunction = Callable[..., dict[str, Any]]
 
@@ -51,10 +53,40 @@ def build_coding_worker(
     tools: AdkCodingTools | None = None,
     tool_config: ToolSurfaceConfig | None = None,
 ) -> CodingWorkerBundle:
-    active_tools = tools or create_adk_tools(settings.workspace)
+    active_tools = tools or create_adk_tools(
+        settings.workspace,
+        state_root=settings.state_root,
+    )
     active_tool_config = tool_config or ToolSurfaceConfig()
     read_default_lines = active_tool_config.read_default_lines
     bash_default_timeout = active_tool_config.bash_default_timeout_seconds
+
+    def _invoke_tool(operation: str, call: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        """Keep expected and unexpected tool failures inside the tool protocol."""
+
+        try:
+            return call()
+        except Exception as error:
+            LOGGER.info(
+                "model tool %s returned a recoverable %s",
+                operation,
+                type(error).__name__,
+            )
+            raw_message = " ".join(str(error).split())
+            message = raw_message[:1_000]
+            return {
+                "status": "error",
+                "model_text": f"{operation} failed: {type(error).__name__}: {message}",
+                "truncated": len(raw_message) > 1_000,
+                "omitted_bytes": max(
+                    0,
+                    len(raw_message.encode()) - len(message.encode()),
+                ),
+                "ui_details": {
+                    "error_type": type(error).__name__,
+                    "recoverable": True,
+                },
+            }
 
     def _runtime_identity(
         tool_context: ToolContext | None,
@@ -77,7 +109,10 @@ def build_coding_worker(
         """Read a bounded range from a workspace file or recoverable artifact URI."""
 
         del tool_context
-        return active_tools.read(path=path, offset=offset, limit=limit)
+        return _invoke_tool(
+            "read",
+            lambda: active_tools.read(path=path, offset=offset, limit=limit),
+        )
 
     def bash(
         command: str,
@@ -87,10 +122,13 @@ def build_coding_worker(
         """Run a bounded command or an in-process indexed search operation."""
 
         task_scope, _ = _runtime_identity(tool_context)
-        return active_tools.bash(
-            command=command,
-            timeout_seconds=timeout_seconds,
-            task_scope=task_scope,
+        return _invoke_tool(
+            "bash",
+            lambda: active_tools.bash(
+                command=command,
+                timeout_seconds=timeout_seconds,
+                task_scope=task_scope,
+            ),
         )
 
     def edit(
@@ -103,13 +141,16 @@ def build_coding_worker(
         """Atomically replace one exact, unique preimage in a workspace file."""
 
         task_scope, invocation_id = _runtime_identity(tool_context)
-        return active_tools.edit(
-            path=path,
-            old_text=old_text,
-            new_text=new_text,
-            expected_sha256=expected_sha256,
-            task_scope=task_scope,
-            invocation_id=invocation_id,
+        return _invoke_tool(
+            "edit",
+            lambda: active_tools.edit(
+                path=path,
+                old_text=old_text,
+                new_text=new_text,
+                expected_sha256=expected_sha256,
+                task_scope=task_scope,
+                invocation_id=invocation_id,
+            ),
         )
 
     def write(
@@ -122,13 +163,16 @@ def build_coding_worker(
         """Atomically write a complete file with optimistic concurrency."""
 
         task_scope, invocation_id = _runtime_identity(tool_context)
-        return active_tools.write(
-            path=path,
-            content=content,
-            expected_sha256=expected_sha256,
-            expected_absent=expected_absent,
-            task_scope=task_scope,
-            invocation_id=invocation_id,
+        return _invoke_tool(
+            "write",
+            lambda: active_tools.write(
+                path=path,
+                content=content,
+                expected_sha256=expected_sha256,
+                expected_absent=expected_absent,
+                task_scope=task_scope,
+                invocation_id=invocation_id,
+            ),
         )
 
     agent = Agent(

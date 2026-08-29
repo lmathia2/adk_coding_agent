@@ -12,8 +12,10 @@ from typing import Any, cast
 import pytest
 from google.adk.agents import LlmAgent
 from google.adk.apps import App
+from google.adk.models import BaseLlm
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
+from app.agent.builders import build_coding_worker
 from app.agent.config import settings_from_composition
 from app.agent.factory import (
     PiCodingHarnessFactory,
@@ -313,6 +315,29 @@ def test_composition_loads_project_instructions_only_after_explicit_trust(
     assert trusted.project_trusted
     assert "TRUSTED PROJECT INSTRUCTION" in trusted.static_instruction
     assert trusted.skill_roots == (workspace / ".agents" / "skills",)
+
+
+def test_model_tool_input_error_is_recoverable_instead_of_crashing_adk(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    composition = load_harness_composition()
+    settings = settings_from_composition(
+        composition,
+        RuntimeBindings(workspace=workspace, state_root=tmp_path / "state"),
+    )
+    worker = build_coding_worker(settings, cast(BaseLlm, "test-model"))
+
+    result = worker.read(str(tmp_path / "outside-verifier.py"))
+
+    assert result["status"] == "error"
+    assert result["ui_details"] == {
+        "error_type": "ValueError",
+        "recoverable": True,
+    }
+    assert "path escapes workspace" in result["model_text"]
+
 
 def test_importing_pi_factory_does_not_build_environment_singletons(
     tmp_path: Path,

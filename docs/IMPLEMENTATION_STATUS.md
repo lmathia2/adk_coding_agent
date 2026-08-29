@@ -56,6 +56,8 @@ complete.
 - [x] Recursive secret redaction.
 - [x] Content-addressed mutation receipts for replay safety.
 - [x] Immediate Python/JSON syntax diagnostics after successful writes and edits.
+- [x] Recoverable structured results for invalid or denied model tool inputs; expected
+  confinement and argument errors cannot crash the enclosing ADK run.
 - [x] Explicit server production mode that fails before startup when the selected
   command adapter is not an enforceable Docker, Kubernetes, or remote boundary.
 - [x] Per-launch project trust binding that gates repository instructions and
