@@ -37,6 +37,7 @@ def test_prepare_magnitude_connection_uses_selected_model_and_writes_valid_confi
     connection = prepare_magnitude_connection(
         state_root=tmp_path / "state",
         magnitude_state_path=magnitude_state,
+        reasoning="none",
         start_service=False,
         fetch_json=lambda _url, _timeout: {
             "models": [{"id": "other/local-q4"}, {"id": "qwen/local-q8"}]
@@ -50,6 +51,7 @@ def test_prepare_magnitude_connection_uses_selected_model_and_writes_valid_confi
     coding = composition.harness.config.models["coding"]
     assert coding.provider == "openai_compatible"
     assert coding.name == "qwen/local-q8"
+    assert coding.reasoning == "none"
     assert coding.base_url == "http://127.0.0.1:10100/inference/v1"
     assert MAGNITUDE_API_KEY not in connection.config_path.read_text(encoding="utf-8")
 

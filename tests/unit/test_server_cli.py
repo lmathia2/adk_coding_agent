@@ -150,17 +150,21 @@ def test_serve_magnitude_prepares_local_model_and_scopes_placeholder_token(
             str(tmp_path / "state"),
             "--model",
             "local-model",
+            "--reasoning",
+            "none",
             "--no-start-magnitude",
         ]
     )
 
     assert result == 0
     assert captured["requested_model"] == "local-model"
+    assert captured["reasoning"] == "none"
     assert captured["start_service"] is False
     assert captured["config"] == generated
     assert captured["token"] == "magnitude-local"
     assert os.environ["MAGNITUDE_API_KEY"] == "cloud-secret-must-not-be-forwarded"
     announcement = capsys.readouterr().err
     assert "Model: local-model" in announcement
+    assert "Reasoning: none" in announcement
     assert "advertised by the local Magnitude service" in announcement
     assert "cloud-secret-must-not-be-forwarded" not in announcement

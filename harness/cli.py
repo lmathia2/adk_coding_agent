@@ -218,6 +218,11 @@ def _parser() -> argparse.ArgumentParser:
     magnitude.add_argument("--state-root", type=Path)
     magnitude.add_argument("--model", help="Use this installed Magnitude model id")
     magnitude.add_argument(
+        "--reasoning",
+        choices=("none", "low", "medium", "high", "xhigh"),
+        help="Override local-model reasoning effort when the selected model supports it",
+    )
+    magnitude.add_argument(
         "--endpoint",
         default="http://127.0.0.1:10100/inference/v1",
         help="Magnitude's OpenAI-compatible base URL",
@@ -330,6 +335,7 @@ def _serve_magnitude(args: argparse.Namespace) -> int:
             state_root=state_root,
             endpoint=args.endpoint,
             requested_model=args.model,
+            reasoning=args.reasoning,
             magnitude_state_path=args.magnitude_state,
             start_service=not args.no_start_magnitude,
         )
@@ -340,6 +346,7 @@ def _serve_magnitude(args: argparse.Namespace) -> int:
     print(
         "Magnitude coding model:\n"
         f"  Model: {connection.model_id}\n"
+        f"  Reasoning: {args.reasoning or 'model default'}\n"
         "  Status: advertised by the local Magnitude service\n"
         f"  Endpoint: {connection.endpoint}",
         file=sys.stderr,

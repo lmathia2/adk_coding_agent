@@ -234,6 +234,10 @@ available. Magnitude 0.0.6 and earlier do not expose the fixed external-harness
 service and are rejected with an exact update command. The launcher prefers the
 primary model in `~/.magnitude/state/models.json`, falls back to the first model
 reported by Magnitude, and accepts `--model MODEL_ID` as an explicit override. Use
+`--reasoning none` (or `low`, `medium`, `high`, `xhigh`) with
+`adk-coding-agent serve-magnitude` when the selected model advertises that effort;
+this makes speed versus deliberation an explicit harness choice instead of silently
+using the provider default. Use
 `--print-config` to inspect the resolved harness endpoint without starting its
 listener. After an install or upgrade, initial hardware and model assessment can take
 a few minutes; the launcher keeps probing the service through that startup window.

@@ -99,6 +99,8 @@ complete.
   buffers/history, streaming tool/text rendering, and mid-run steering.
 - [x] Public, replayable coding-model identity and honest adapter/responding status
   without exposing endpoints, credential references, or provider secrets.
+- [x] Explicit Magnitude reasoning-effort override in the CLI and generated,
+  validated composition for controllable local-model speed/quality tradeoffs.
 - [x] Configurable first-event, idle, total-run, and cleanup deadlines with one
   bounded startup retry, classified durable failures, and same-task ADK generator
   shutdown.

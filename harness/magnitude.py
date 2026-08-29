@@ -178,6 +178,7 @@ def write_magnitude_config(
     *,
     endpoint: str,
     model_id: str,
+    reasoning: str | None = None,
     template_path: Path = DEFAULT_COMPOSITION_PATH,
 ) -> Path:
     """Atomically write a validated local-model composition derived from the default."""
@@ -199,6 +200,8 @@ def write_magnitude_config(
             },
         }
     )
+    if reasoning is not None:
+        coding["reasoning"] = reasoning
     parse_harness_composition(payload)
     rendered = yaml.safe_dump(payload, sort_keys=False)
     destination = destination.expanduser().resolve()
@@ -227,6 +230,7 @@ def prepare_magnitude_connection(
     state_root: Path,
     endpoint: str = MAGNITUDE_BASE_URL,
     requested_model: str | None = None,
+    reasoning: str | None = None,
     magnitude_state_path: Path | None = None,
     start_service: bool = True,
     fetch_json: JsonFetcher = _fetch_json,
@@ -263,6 +267,7 @@ def prepare_magnitude_connection(
         state_root / "server" / "magnitude.yaml",
         endpoint=endpoint,
         model_id=selected,
+        reasoning=reasoning,
     )
     return MagnitudeConnection(
         config_path=config_path,
