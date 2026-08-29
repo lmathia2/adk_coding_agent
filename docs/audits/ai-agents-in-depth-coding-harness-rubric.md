@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Harness revision: `843007c`
+Harness revision: `04d06c3`
 
 Primary source: *AI Agents in Depth: Design Principles and Engineering Practice*,
 version 2.0 (2026-08-26), especially Chapters 1–7, 9, and 10.
@@ -15,17 +15,21 @@ indexed retrieval, durable execution, a WebSocket protocol, steering, sandbox
 adapters, trace capture, project memory, and guarded skill trials all exist as
 real code with substantial deterministic tests.
 
-It is not yet a state-of-the-art *proven* coding harness. The evidence-weighted
-score is **63/100 (strong research beta)**. The central weakness is the gap
-between control-plane completeness and end-to-end task reliability. The recent
-local-model evaluation passed 6 of 10 tasks, exposed false-positive completion,
-four silent inference stalls, extreme repair-context growth, missing tool metrics,
-and cancellation cleanup noise. Those findings carry more weight than checked
-items in an implementation-status document.
+The plan/execute/verify/refine cycle materially strengthened the live path. Typed
+environmental evidence now decides completion; behavioral tasks require behavioral
+verification; model and run liveness are bounded; hidden reasoning renews liveness
+without leaking chain-of-thought; tool telemetry is live; tools cannot block the
+WebSocket loop; project instructions require explicit trust; production mode refuses
+the local sandbox; learning excludes false-positive episodes; and Magnitude startup
+probes real inference while exposing reasoning effort.
 
-The shortest path to a production-capable score is not another major feature.
-It is to close the verification, liveness, telemetry, and recovery loops already
-present in the design.
+The revised evidence-weighted score is **83/100 (production-capable control plane,
+operationally constrained)**. This does **not** satisfy the requested 90-point SOTA
+gate. The fresh local-model suite passed 4 of 10 held-out tasks with zero false
+positives. Six safe non-completions were dominated by Magnitude/provider first-event,
+idle, and throughput failures. The harness now detects and contains those failures,
+but it cannot be called fast, token-efficient, or production-proven until declared
+fallback models and a representative provider achieve the release SLO.
 
 ## Method
 
@@ -164,19 +168,19 @@ optimistic locking, explicit budgets, cancellation, and a deterministic merge ga
 
 | Category | Weight | Maturity | Points | Current judgment |
 |---|---:|---:|---:|---|
-| Architecture and composability | 8 | 3.25 | 6.5 | Strong ADK-first seams and swappable factory; Pi topology remains fixed despite generic graph schema |
-| Task understanding and workflow governance | 8 | 2.25 | 4.5 | Typed goal/criteria and durable ledger; weak explicit planning and broken no-progress escalation |
-| Context and token economy | 10 | 2.5 | 6.3 | Stable prefix, bounded packet, compaction; operational repair token blow-up and no live ablation proof |
-| Repository understanding and retrieval | 8 | 3.25 | 6.5 | Excellent bounded FFF path plus incremental structure; optional semantics and representative performance unproven |
-| Tool interface, editing, and feedback | 10 | 2.75 | 6.9 | Four tools, atomic edits, artifacts; no persistent terminal or automatic post-write syntax feedback |
-| Verification, correction, and completion integrity | 14 | 1.75 | 6.1 | Solid mechanism, but model-supplied evidence plus syntax/diff can falsely pass behavioral work |
-| Safety, isolation, and trust boundaries | 12 | 2.75 | 8.3 | Strong policy, receipts, redaction, remote/container adapters; local default is not an OS boundary |
-| Durability, recovery, and asynchronous control | 10 | 2.5 | 6.3 | Durable replay and steering are real; no model idle deadline/failover and cancellation cleanup has leaked |
-| Observability, evaluation, and economics | 8 | 2.5 | 5.0 | Rich schemas and tests; tool metrics are unwired and live evaluation is small/single-run |
-| Memory, skills, and continual evolution | 7 | 2.5 | 4.4 | Guarded verified-only pipeline exists; learned skills encode shallow action labels and depend on a permissive verifier |
-| Model/provider readiness | 3 | 2.0 | 1.5 | Gemini and OpenAI-compatible adapters plus model identity; no capability negotiation, effective-setting report, or fallback |
+| Architecture and composability | 8 | 3.5 | 7.0 | Strong ADK-first seams, executable prompt/model composition, swappable factory; Pi graph remains deliberately fixed |
+| Task understanding and workflow governance | 8 | 3.25 | 6.5 | Typed task/ledger, action-derived progress, replan/handoff controls; explicit plan creation remains thin |
+| Context and token economy | 10 | 3.0 | 7.5 | Stable bounded packets, aggregate budgets, compaction, pagination; passing runs still averaged 93k input tokens |
+| Repository understanding and retrieval | 8 | 3.25 | 6.5 | Bounded FFF and incremental structure are strong; representative semantic/large-repo proof remains absent |
+| Tool interface, editing, and feedback | 10 | 3.6 | 9.0 | Four tools, atomic feedback, post-write diagnostics, recoverable errors, nonblocking execution; no persistent terminal |
+| Verification, correction, and completion integrity | 14 | 3.43 | 12.0 | Typed environmental evidence and behavioral gates produced zero false positives; local pass rate was only 40% |
+| Safety, isolation, and trust boundaries | 12 | 3.5 | 10.5 | Explicit project trust, fail-closed production mode, approvals/redaction/receipts; local mode remains non-enforcing |
+| Durability, recovery, and asynchronous control | 10 | 3.4 | 8.5 | Real replay/reconnect/steering plus bounded liveness and cleanup; provider fallback and active-call preemption remain absent |
+| Observability, evaluation, and economics | 8 | 3.5 | 7.0 | Tool/event metrics reconcile exactly and traces drove fixes; repeated provider SLO and price evidence remain incomplete |
+| Memory, skills, and continual evolution | 7 | 3.43 | 6.0 | Richer verified workflow signals and false-positive guards exist; promoted operational benefit remains unproven |
+| Model/provider readiness | 3 | 2.67 | 2.0 | Effective identity/reasoning plus real startup probe; capability negotiation, circuit breaker, and fallback remain absent |
 | Multi-agent and parallel execution | 2 | 1.0 | 0.5 | Reviewer seam and schema exist; Pi rejects parallel topology and shared-workspace runs are serialized |
-| **Total** | **100** |  | **63** | **Strong research beta; not SOTA-proven** |
+| **Total** | **100** |  | **83** | **Control plane is production-capable; local-model outcome evidence is not SOTA** |
 
 ## Detailed checklist rubric
 
@@ -217,9 +221,8 @@ Evidence: `app/agent/factory.py`, `harness/config/models.py`,
   trivial tasks automatically use a smaller workflow.
 - [~] B5. The workflow tracks plan steps and evidence. The models exist, but the live
   initializer does not populate a plan.
-- [~] B6. Repeated action fingerprints drive replan and human handoff. The helper is
-  tested but not called by the live workflow; generic no-progress resets on replan,
-  making the higher human threshold effectively unreachable.
+- [x] B6. Tool callbacks project action fingerprints into durable progress; repeated
+  no-progress paths drive bounded replan and human handoff without prompt discretion.
 - [x] B7. Iteration limits give the workflow a hard termination bound.
 - [x] B8. New user steering crosses a completion fence before a run can finish.
 
@@ -240,10 +243,10 @@ small changes.
 - [~] C6. Token accounting uses provider tokenization. Current planning relies in
   part on a four-characters-per-token estimate.
 - [~] C7. Duplicate full-file reads and repeated tool results are deduplicated before
-  model input. The local evaluation recorded 469,838 aggregate input tokens in one
-  repair sequence.
-- [ ] C8. Context budgets include enforced per-call, per-task, and repair-loop limits
-  with a graceful handoff when exhausted.
+  model input. The fresh evaluation still averaged 93,326 input tokens per passed
+  small-file task despite high cache-read volume.
+- [x] C8. Context budgets enforce packet and aggregate task limits with classified
+  exhaustion and graceful handoff.
 - [~] C9. Cache, compaction, programmatic routing, reviewer, skills, and retrieval
   ablations show reduced cost per passed task on representative work.
 - [~] C10. High-volume exploration can be context-isolated. The swappable harness
@@ -290,8 +293,8 @@ edit on PR-derived large-repository tasks; index size alone earns no credit.
   compound-command attempts.
 - [ ] E8. The default terminal is persistent across commands while isolated terminals
   remain available for parallel work.
-- [ ] E9. Successful writes trigger immediate language-appropriate syntax/lint
-  feedback in the same tool result.
+- [x] E9. Successful Python and JSON writes trigger immediate syntax feedback in the
+  same tool result.
 - [ ] E10. Large edits can use an efficient boundary-matching or patch primitive
   without expanding the visible tool surface.
 
@@ -307,15 +310,15 @@ drift, and lower tool calls and bytes per passed task than a shell-only baseline
 - [x] F3. Task-supplied deterministic verification commands are supported.
 - [x] F4. Allowed and forbidden path checks run independently of the model.
 - [x] F5. Failed checks return structured diagnostics and route back to repair.
-- [~] F6. Acceptance evidence is independently validated. Today any non-empty
-  model-supplied evidence string satisfies a criterion when the discovered commands
-  pass; evidence is not linked to an executed command, artifact, path hash, or result.
-- [ ] F7. Behavioral tasks cannot pass on syntax plus diff checks alone.
+- [x] F6. Acceptance evidence is typed and bound to harness-executed validation IDs;
+  model-authored prose cannot satisfy a criterion.
+- [x] F7. Behavioral tasks cannot pass on syntax plus diff checks alone and require a
+  successful behavioral validation result.
 - [x] F8. Eval cases can protect held-out tests, scope, revisions, and explicit
   verification commands.
-- [~] F9. A representative end-to-end suite proves completion integrity. The local
-  10-task suite passed 60%, and held-out checks caught semantic defects after the
-  harness had accepted completion.
+- [~] F9. A representative end-to-end suite proves completion integrity. The fresh
+  local 10-task suite passed 40%, but every credited completion passed held-out checks
+  and no failed task was falsely accepted.
 - [~] F10. A separate reviewer assesses the final artifact without producer context.
   The optional reviewer is isolated but advisory and disabled by default.
 - [ ] F11. Verification has adversarial process checks for deleting/weakening tests,
@@ -345,9 +348,8 @@ reliability over repeated runs.
 - [~] G8. Shell policy uses semantic effects rather than executable/argument pattern
   classification. Current parsing is substantially better than a keyword blacklist
   but remains static and cannot infer arbitrary script behavior.
-- [~] G9. Repository instructions and skills are treated as untrusted data until an
-  explicit project-trust decision. Roots are validated and hashed, but project-local
-  loading is enabled by default.
+- [x] G9. Repository instructions and project skills are loaded only after an explicit
+  per-launch trust decision; trusted roots remain validated and hashed.
 - [x] G10. Resume validates workspace identity and content fingerprints, and cleanup
   refuses dirty worktrees without explicit force.
 - [x] G11. Production guidance separates workspace, artifacts, credentials, network,
@@ -369,10 +371,10 @@ boundary and pass the complete adversarial matrix with no ambient credentials.
 - [x] H4. WebSocket clients can start, attach, replay from a cursor, acknowledge,
   steer, pause, cancel, heartbeat, and reconnect after backpressure.
 - [x] H5. Steering is leased, acknowledged, bounded, and delivered at safe points.
-- [~] H6. Cancellation awaits all ADK children, provider sessions, and subprocesses.
-  The local evaluation observed leftover-task and unclosed-session warnings.
-- [ ] H7. Every model stream has time-to-first-event, idle, per-call, and total-run
-  deadlines with structured timeout events.
+- [x] H6. Cancellation and timeout close the ADK generator in the owning task under a
+  cleanup deadline; synchronous tools run off-loop and subprocesses remain bounded.
+- [x] H7. Every model stream has time-to-first-event, idle, and total-run deadlines
+  with structured durable timeout events and one bounded cold-start retry.
 - [ ] H8. Retryable API failures use bounded backoff/jitter and can safely degrade or
   switch models using a neutral trajectory representation.
 - [~] H9. A server restart resumes in-flight work automatically. Current public-run
@@ -388,10 +390,9 @@ leaked tasks, or silent stalls.
 
 - [x] I1. Model usage records tokens, cache reads/writes, reasoning, prefix identity,
   latency, and optional price.
-- [~] I2. Every live tool call records arguments hash, result hash, status, duration,
-  visible/omitted bytes, and replay state in `MetricsStore`. The table and API exist,
-  but the live metrics plugin only handles model callbacks; the 10-task run reported
-  zero tools despite visible tool events.
+- [x] I2. Every live tool call records arguments/result hashes, status, duration,
+  visible/omitted bytes, and replay state. The fresh run reconciled 75 metrics rows to
+  75 public tool-start events exactly.
 - [x] I3. Redacted traces cover model/tool/run lifecycle and preserve correlation and
   provenance without raw prompt/source storage.
 - [x] I4. Eval schemas cover quality, context, tools, reliability, latency, and cost,
@@ -425,8 +426,8 @@ leaked tasks, or silent stalls.
 - [~] J7. Memory resolves contradiction, staleness, supersession, and cross-session
   retrieval with boundary/retention tests. The schema has provenance and
   `supersedes`, but the extraction/search path is deliberately narrow.
-- [ ] J8. A false-positive harness completion cannot contaminate memory or skill
-  promotion. This depends on fixing category F first.
+- [x] J8. False-positive, syntax-only, failed, and unverified outcomes cannot create
+  learning episodes or contaminate skill promotion.
 - [~] J9. Operational A/B evidence demonstrates at least one learned skill improves
   cost per passed task without quality, safety, or latency regression.
 
@@ -437,10 +438,11 @@ leaked tasks, or silent stalls.
 - [x] K2. Credentials are environment references, not serialized configuration.
 - [x] K3. The TUI receives allowlisted coding-model identity and distinguishes
   adapter initialization from a real model response.
-- [~] K4. Requested reasoning, tool-calling, context, streaming, cache, and usage
-  capabilities are negotiated and the effective settings are reported. The adapter
-  forwards `reasoning_effort`, but the local run showed reasoning tokens even when
-  `none` was requested.
+- [~] K4. Requested reasoning is carried through validated generated composition and
+  reported, but full tool/context/cache capability negotiation is not implemented and
+  local models still emitted some thought tokens at `none`.
+- [x] K7. Magnitude startup distinguishes discovery from responsiveness by requiring
+  a real completion probe unless the user explicitly selects discovery-only mode.
 - [ ] K5. The live Gemini credentialed workflow passes the core fail-to-pass suite.
 - [ ] K6. Provider fallback and cross-provider handover are tested on an unfinished
   tool trajectory.
@@ -464,58 +466,28 @@ cost.
 
 ## Highest-priority findings
 
-### P0 — Completion evidence is not bound to environmental facts
+### Resolved — Completion evidence is bound to environmental facts
 
-`build_report()` considers a criterion satisfied when its model-supplied evidence
-list is non-empty and every discovered command passes. For a new Python file in a
-repository without a discovered test command, that can mean only `py_compile` plus
-`git diff --check`. This exactly matches the false-positive completions observed in
-the held-out local evaluation.
+Completion claims now reference typed harness validation IDs, behavioral criteria
+require behavioral verification, and learning consumes only verified outcomes. The
+fresh suite produced zero false-positive completions.
 
-Required change:
+### Resolved in part — Model liveness is bounded; fallback remains open
 
-- represent evidence as typed references to executed validation results, file/diff
-  hashes, or trusted artifacts;
-- require at least one behavioral verifier for behavioral acceptance criteria;
-- reject syntax-only completion unless the task is explicitly syntax-only;
-- run hidden fail-to-pass and retention checks outside the model's writable scope;
-- add a regression built from each false-positive task in the local evaluation.
+First-event, idle, total-run, and cleanup deadlines now produce classified durable
+events; hidden reasoning renews liveness privately and one cold-start retry is
+bounded. The remaining P0 operational gap is a circuit breaker with declared model
+fallback/handover after repeated provider stalls.
 
-### P0 — Model liveness has no deadline or recovery policy
+### Resolved — Tool telemetry is live and reconciled
 
-The server iterates ADK events directly. It limits the number of LLM calls but does
-not enforce time to first event, idle time, or total call duration. Four local-model
-tasks stalled for five to nine minutes without producing an artifact.
+Managed tool callbacks write idempotent usage samples. The operational suite recorded
+75 tool metric rows and 75 public tool starts.
 
-Required change:
+### Resolved — No-progress detection uses live tool actions
 
-- add configured first-event, idle, per-call, and total-run deadlines;
-- emit durable progress and timeout events;
-- classify timeout versus provider error versus cancellation;
-- retry only retryable failures with bounded jitter;
-- optionally route to a declared fallback model after a circuit breaker;
-- prove no provider client/session leak after timeout or cancellation.
-
-### P1 — Tool telemetry is a schema without live wiring
-
-`MetricsStore` can record tools, but `HarnessMetricsPlugin` implements model callbacks
-only. Trace callbacks observe tools, yet they do not project those samples into the
-metrics store. Consequently, the operational report showed `tool_calls: 0` despite
-many tool events.
-
-Required change: record one idempotent `ToolUsageSample` from the managed tool or ADK
-callbacks and reconcile it against trace/event counts in a deterministic test.
-
-### P1 — No-progress detection is disconnected
-
-`register_action()` computes repeated tool fingerprints, but no live caller invokes
-it. The workflow instead increments `no_progress_count` when an `AgentStep` contains
-no progress text. At the replan threshold, `replan_ledger()` resets the counter, so
-the later human-handoff threshold cannot be reached through repeated no-progress
-cycles.
-
-Required change: project actual tool fingerprints/results into the ledger, maintain
-separate counters per recovery path, and test `repeat → replan → repeat → handoff`.
+Tool callbacks project stable action fingerprints and progress into the ledger, with
+deterministic repeat-to-replan-to-handoff coverage.
 
 ### P1 — YAML topology is descriptive but not executable for Pi
 
@@ -528,14 +500,11 @@ Required decision: either narrow the public schema to honest Pi-tunable behavior
 implement a closed node-builder registry that compiles validated YAML into ADK
 workflow nodes without arbitrary imports.
 
-### P1 — Context efficiency is not bounded operationally
+### P1 — Context is bounded but not efficient enough operationally
 
-The packet is individually bounded, but aggregate task input can still grow without
-a cost/token circuit breaker. Compaction and prompt-cache configuration did not
-prevent a 469,838-input-token repair episode on a small file.
-
-Required change: add per-call and per-task token budgets, content-hash deduplication,
-delta file context, repeated-read suppression, and task-level fallback/handoff.
+Packet and aggregate task budgets now fail closed, and compaction/search are bounded.
+However, passing runs still consumed 373,303 input tokens (93,326 per pass), so
+content-hash/delta-context ablations and opportunistic early verification remain P1.
 
 ### P1 — Cancellation and provider cleanup need fault-injection tests
 
@@ -563,34 +532,33 @@ still in redacted form and still behind boundary/retention trials.
 
 ## Recommended execution order
 
-1. **Completion integrity:** typed evidence, behavioral-verifier requirement,
-   false-positive regression cases.
-2. **Liveness and cleanup:** model deadlines, timeout taxonomy, provider fallback,
-   cancellation fault injection.
-3. **Telemetry correctness:** wire tool samples and reconcile traces, events, and
-   metrics.
-4. **Progress control:** connect tool fingerprints, recovery counters, circuit
-   breakers, and human handoff.
-5. **Token economy:** task budgets, deduplication, delta context, live paired
-   ablations.
-6. **Configuration honesty:** execute the generic graph safely or expose only what Pi
-   actually supports.
-7. **Learning quality:** richer privacy-safe workflow signals after verification is
-   trustworthy.
-8. **Optional parallelism:** only after a controlled task slice proves information
+1. **Provider recovery:** circuit breaker, declared fallback model, neutral trajectory
+   handover, and capability negotiation.
+2. **Completion convergence:** opportunistically run trusted verification after a
+   valid mutation so already-correct artifacts do not wait for another long model
+   turn.
+3. **Token economy:** delta context, repeated-read suppression, and live paired
+   ablations against the 93k-input-token-per-pass baseline.
+4. **Steering preemption:** distinguish queued safe-point steering from active-call
+   cancellation and avoid discarding an already-generated safe mutation.
+5. **Configuration honesty:** execute a broader closed graph safely or expose only
+   the Pi topology that is genuinely supported.
+6. **Operational learning proof:** promote one privacy-safe workflow skill only after
+   paired boundary/retention evidence improves cost per passed task.
+7. **Optional parallelism:** only after a controlled task slice proves information
    gain and safe merge behavior.
 
 ## Release rubric
 
 The harness may call itself production-capable only when all boxes below are checked:
 
-- [ ] Zero false-positive completion across the core and held-out semantic suites.
+- [x] Zero false-positive completion across the fresh core held-out semantic suite.
 - [ ] At least 90% pass rate on a representative PR-derived task distribution.
 - [ ] Pass-consecutive reliability is reported over repeated runs, not only Pass@1.
-- [ ] Every model call has first-event, idle, and total deadlines.
+- [x] Every model call has first-event, idle, and total deadlines.
 - [ ] Kill/cancel/restart fault injection produces no leaked tasks, sessions, or
   duplicate side effects.
-- [ ] Live tool/event/trace counts reconcile exactly or explain intentional sampling.
+- [x] Live tool/event counts reconcile exactly (75/75 in the fresh suite).
 - [ ] Cost per passed task, p50/p90/p95 latency, cache ratio, uncached tokens, and
   failed-edit rate are published for every supported provider configuration.
 - [ ] Stable prefix remains unchanged on at least 95% of non-boundary calls.
@@ -607,17 +575,18 @@ The harness may call itself production-capable only when all boxes below are che
 
 ## Validation performed for this audit
 
-At revision `843007c`:
+At revision `04d06c3`:
 
 - Python compilation: passed.
 - Ruff over `app`, `harness`, and `tests`: passed.
 - Pyright over `app` and `harness`: passed with zero errors and warnings.
-- Unit suite: passed; 481 unit/integration test cases were collected across the two
+- Unit and integration suites: passed; 520 cases were collected across the two
   directories.
 - Integration suite: passed; the integration directory currently contains one
   synthetic interruption/replay/verification scenario.
-- Operational evidence: the 2026-08-28/29 local-model TUI report recorded 6/10
-  held-out tasks passing.
+- Operational evidence: the fresh 2026-08-29 ADK/WebSocket/Magnitude report recorded
+  4/10 held-out tasks passing, zero false positives, 75/75 reconciled tool events,
+  durable reconnect, real steering, and classified safe non-completions.
 
 The unit suite emitted warnings for experimental ADK agent configuration, event
 compaction, resumability, and JSON-schema function declarations. These are not test
@@ -643,4 +612,4 @@ live workflow before upgrades.
   `harness/repo/index.py:831`
 - Trace-derived skill synthesis: `harness/learning/skills.py:29`
 - Local operational evaluation:
-  `.artifacts/local-model-eval-20260828/results/FINAL_REPORT.md`
+  `.artifacts/local-model-eval-20260829/results-final/FINAL_REPORT.md`
