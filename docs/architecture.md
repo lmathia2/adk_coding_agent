@@ -61,6 +61,14 @@ adds start, attach/replay, steering, pause, cancel, acknowledgement, and heartbe
 The TUI speaks only this public protocol: it does not import ADK, parse the YAML, or
 know which harness factory is active.
 
+The server also owns model liveness independently of the selected harness. YAML
+configures time-to-first-event, between-event idle, total-run, retry, and cleanup
+deadlines. A startup stall receives one bounded retry by default; partial-progress
+idle and total deadlines fail without replaying side effects. Retries, cleanup
+warnings, and classified timeout errors are durable protocol events. ADK event
+generators are advanced and closed in the same asyncio task to preserve provider and
+OpenTelemetry context-local cleanup.
+
 The declarative models, implementation-specific strict schemas, closed factory
 registry, and configuration-driven ADK `App` assembly are implemented. Application
 imports are lazy, and each factory build receives explicit runtime bindings and

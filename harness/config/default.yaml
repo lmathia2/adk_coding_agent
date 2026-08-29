@@ -173,3 +173,8 @@ server:
   protocol: ag_ui_websocket_v1
   max_connections: 32
   outbound_queue_size: 256
+  first_event_timeout_seconds: 120
+  idle_timeout_seconds: 180
+  total_timeout_seconds: 1800
+  first_event_retries: 1
+  close_timeout_seconds: 15

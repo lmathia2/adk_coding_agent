@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
+from contextlib import suppress
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from google.adk import Runner
@@ -55,6 +56,7 @@ from harness.server.runtime import (
     RunCoordinator,
     RunExecution,
     RunInitializationError,
+    RunLivenessPolicy,
 )
 
 
@@ -95,6 +97,9 @@ class _QueueExecution:
         self.steering: list[SteeringCommand] = []
         self.pauses: list[ControlCommand] = []
         self.closed = False
+        self.close_error: BaseException | None = None
+        self.events_task: asyncio.Task[Any] | None = None
+        self.events_finally_task: asyncio.Task[Any] | None = None
 
     @property
     def coding_model_status(self) -> PublicModelStatus | None:
@@ -110,14 +115,18 @@ class _QueueExecution:
         self._items.put_nowait(None)
 
     async def events(self) -> AsyncIterator[PublicEventBatch]:
+        self.events_task = asyncio.current_task()
         self.entered.set()
-        while True:
-            item = await self._items.get()
-            if item is None:
-                return
-            if isinstance(item, BaseException):
-                raise item
-            yield item
+        try:
+            while True:
+                item = await self._items.get()
+                if item is None:
+                    return
+                if isinstance(item, BaseException):
+                    raise item
+                yield item
+        finally:
+            self.events_finally_task = asyncio.current_task()
 
     async def steer(self, command: SteeringCommand) -> ControlReceipt:
         self.steering.append(command)
@@ -144,6 +153,8 @@ class _QueueExecution:
 
     async def aclose(self) -> None:
         self.closed = True
+        if self.close_error is not None:
+            raise self.close_error
 
 
 class _FakeExecutionFactory:
@@ -189,6 +200,7 @@ def _coordinator(
     *,
     factory: _FakeExecutionFactory | None = None,
     redactor: SecretRedactor | None = None,
+    liveness: RunLivenessPolicy | None = None,
 ) -> tuple[RunCoordinator, _FakeExecutionFactory]:
     resolved_factory = factory or _FakeExecutionFactory()
     return (
@@ -197,6 +209,7 @@ def _coordinator(
             broker=RunEventBroker(queue_capacity=32),
             execution_factory=resolved_factory,
             redactor=redactor,
+            liveness=liveness,
         ),
         resolved_factory,
     )
@@ -585,6 +598,153 @@ async def test_run_failure_is_redacted_and_durably_terminal(tmp_path: Path) -> N
     assert events[-1].event.message == "tool failed with <redacted>"
     assert execution.closed is True
     assert secret not in "".join(event.model_dump_json() for event in events)
+
+
+@pytest.mark.asyncio
+async def test_first_event_timeout_is_durable_and_closes_execution(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(
+        tmp_path,
+        liveness=RunLivenessPolicy(
+            first_event_timeout=0.02,
+            idle_timeout=1,
+            total_timeout=1,
+            first_event_retries=0,
+            close_timeout=1,
+        ),
+    )
+    record, _ = await coordinator.start(_start(), user_id="user-1")
+    execution = factory.executions[record.run_id]
+    await _wait_entered(execution)
+
+    finished = await coordinator.wait(record.run_id)
+    events = coordinator.store.replay(record.run_id)
+
+    assert finished.status == "failed"
+    assert finished.error == "model did not produce an event before the startup deadline"
+    assert events[-1].event.code == "model_first_event_timeout"
+    assert execution.closed is True
+    assert execution.events_task is execution.events_finally_task
+
+
+@pytest.mark.asyncio
+async def test_first_event_timeout_retries_once_before_success(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(
+        tmp_path,
+        liveness=RunLivenessPolicy(
+            first_event_timeout=0.03,
+            idle_timeout=1,
+            total_timeout=1,
+            first_event_retries=1,
+            close_timeout=1,
+        ),
+    )
+    record, _ = await coordinator.start(_start(), user_id="user-1")
+    first = factory.executions[record.run_id]
+    await _wait_entered(first)
+    for _ in range(100):
+        if len(factory.created) == 2:
+            break
+        await asyncio.sleep(0.005)
+    assert len(factory.created) == 2
+    second = factory.executions[record.run_id]
+    await _wait_entered(second)
+    second.emit("fake:recovered", _custom_event(record, {"recovered": True}))
+    second.finish()
+
+    finished = await coordinator.wait(record.run_id)
+    events = [envelope.event for envelope in coordinator.store.replay(record.run_id)]
+
+    assert finished.status == "completed"
+    assert first.closed is True
+    assert second.closed is True
+    retry = next(event for event in events if event.name == "coding.run.liveness_retry")
+    assert retry.value == {"attempt": 1, "reason": "model_first_event_timeout"}
+
+
+@pytest.mark.asyncio
+async def test_idle_timeout_fails_after_partial_progress_without_retry(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(
+        tmp_path,
+        liveness=RunLivenessPolicy(
+            first_event_timeout=0.1,
+            idle_timeout=0.02,
+            total_timeout=1,
+            first_event_retries=2,
+            close_timeout=1,
+        ),
+    )
+    record, _ = await coordinator.start(_start(), user_id="user-1")
+    execution = factory.executions[record.run_id]
+    await _wait_entered(execution)
+    execution.emit("fake:partial", _custom_event(record, {"partial": True}))
+
+    finished = await coordinator.wait(record.run_id)
+    events = coordinator.store.replay(record.run_id)
+
+    assert finished.status == "failed"
+    assert len(factory.created) == 1
+    assert events[-1].event.code == "model_idle_timeout"
+
+
+@pytest.mark.asyncio
+async def test_total_timeout_applies_even_while_events_keep_arriving(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(
+        tmp_path,
+        liveness=RunLivenessPolicy(
+            first_event_timeout=0.03,
+            idle_timeout=0.05,
+            total_timeout=0.06,
+            first_event_retries=0,
+            close_timeout=1,
+        ),
+    )
+    record, _ = await coordinator.start(_start(), user_id="user-1")
+    execution = factory.executions[record.run_id]
+    await _wait_entered(execution)
+
+    async def keep_active() -> None:
+        index = 0
+        while not execution.closed:
+            execution.emit(f"fake:{index}", _custom_event(record, {"index": index}))
+            index += 1
+            await asyncio.sleep(0.01)
+
+    producer = asyncio.create_task(keep_active())
+    try:
+        finished = await coordinator.wait(record.run_id)
+    finally:
+        producer.cancel()
+        with suppress(asyncio.CancelledError):
+            await producer
+
+    assert finished.status == "failed"
+    assert coordinator.store.replay(record.run_id)[-1].event.code == "run_total_timeout"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_failure_is_durable_and_does_not_mask_success(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(tmp_path)
+    record, _ = await coordinator.start(_start(), user_id="user-1")
+    execution = factory.executions[record.run_id]
+    execution.close_error = RuntimeError("provider cleanup failed")
+    await _wait_entered(execution)
+    execution.emit("fake:done", _custom_event(record, {"done": True}))
+    execution.finish()
+
+    finished = await coordinator.wait(record.run_id)
+    events = [envelope.event for envelope in coordinator.store.replay(record.run_id)]
+
+    assert finished.status == "completed"
+    warning_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.name == "coding.run.cleanup_warning"
+    )
+    assert events[warning_index].value == {
+        "attempt": 1,
+        "detail": "provider cleanup failed",
+    }
+    assert events[-1].type == AgUiEventType.RUN_FINISHED
 
 
 @pytest.mark.asyncio

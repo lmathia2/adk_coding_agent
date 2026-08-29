@@ -513,6 +513,20 @@ class ServerConfig(FrozenModel):
     protocol: Literal["ag_ui_websocket_v1"] = "ag_ui_websocket_v1"
     max_connections: int = Field(default=32, ge=1, le=10_000)
     outbound_queue_size: int = Field(default=256, ge=1, le=100_000)
+    first_event_timeout_seconds: float = Field(default=120, gt=0, le=3_600)
+    idle_timeout_seconds: float = Field(default=180, gt=0, le=3_600)
+    total_timeout_seconds: float = Field(default=1_800, gt=0, le=86_400)
+    first_event_retries: int = Field(default=1, ge=0, le=3)
+    close_timeout_seconds: float = Field(default=15, gt=0, le=300)
+
+    @model_validator(mode="after")
+    def validate_liveness_deadlines(self) -> ServerConfig:
+        if self.total_timeout_seconds < self.first_event_timeout_seconds:
+            raise ValueError(
+                "server total_timeout_seconds cannot be shorter than "
+                "first_event_timeout_seconds"
+            )
+        return self
 
 
 class HarnessComposition(FrozenModel):

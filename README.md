@@ -277,6 +277,11 @@ During execution, ordinary input steers the active run at the next safe point.
 Disconnecting the TUI does not cancel the run; reconnect replays durable events after
 the highest sequence already applied.
 
+Model stalls do not block indefinitely. The checked-in YAML defaults to a 120-second
+first-event deadline, 180-second idle deadline, 30-minute total deadline, and one
+startup retry. These are deployment settings under `server` and can be tuned without
+changing the harness or TUI; timeout and cleanup outcomes are persisted for replay.
+
 ## Google Agents CLI skills
 
 This project follows the upstream Google skills and `long-horizon-harness` recipe:

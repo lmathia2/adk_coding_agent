@@ -78,6 +78,10 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert composition.schema_version == 1
     assert composition.harness.config.tools.visible == FOUR_CODING_TOOLS
     assert composition.server.protocol == "ag_ui_websocket_v1"
+    assert composition.server.first_event_timeout_seconds == 120
+    assert composition.server.idle_timeout_seconds == 180
+    assert composition.server.total_timeout_seconds == 1_800
+    assert composition.server.first_event_retries == 1
     assert "tui" not in type(composition.server).model_fields
     assert composition.harness.config.models["coding"].provider == "google_adk"
 
@@ -88,6 +92,17 @@ def test_server_rejects_settings_without_runtime_semantics(removed_field: str) -
     payload["server"] = {removed_field: 20}
 
     with pytest.raises(ValidationError, match=removed_field):
+        parse_harness_composition(payload)
+
+
+def test_server_total_deadline_cannot_be_shorter_than_first_event_deadline() -> None:
+    payload = _composition_payload()
+    payload["server"] = {
+        "first_event_timeout_seconds": 60,
+        "total_timeout_seconds": 30,
+    }
+
+    with pytest.raises(ValidationError, match="total_timeout_seconds"):
         parse_harness_composition(payload)
 
 

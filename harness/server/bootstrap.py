@@ -22,7 +22,7 @@ from harness.config import (
 from harness.persistence import build_service_bundle, settings_from_composition
 
 from .registry import RunEventBroker, SqliteRunEventStore
-from .runtime import AdkRunExecutionFactory, RunCoordinator
+from .runtime import AdkRunExecutionFactory, RunCoordinator, RunLivenessPolicy
 from .websocket import (
     LocalBearerAuthenticator,
     WebSocketServerSettings,
@@ -154,6 +154,13 @@ def build_server_assembly(
             bindings=bindings,
             registry=registry,
             services=services,
+        ),
+        liveness=RunLivenessPolicy(
+            first_event_timeout=composition.server.first_event_timeout_seconds,
+            idle_timeout=composition.server.idle_timeout_seconds,
+            total_timeout=composition.server.total_timeout_seconds,
+            first_event_retries=composition.server.first_event_retries,
+            close_timeout=composition.server.close_timeout_seconds,
         ),
     )
     app = create_websocket_app(

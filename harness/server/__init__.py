@@ -50,6 +50,8 @@ from .runtime import (
     RunExecution,
     RunExecutionFactory,
     RunInitializationError,
+    RunLivenessError,
+    RunLivenessPolicy,
 )
 from .websocket import (
     AgentWebSocketServer,
@@ -94,6 +96,8 @@ __all__ = [
     "RunExecution",
     "RunExecutionFactory",
     "RunInitializationError",
+    "RunLivenessError",
+    "RunLivenessPolicy",
     "RunRecord",
     "RunStatus",
     "ServerAssembly",

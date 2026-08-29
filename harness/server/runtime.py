@@ -86,6 +86,39 @@ class RunInitializationError(RuntimeError):
     """A run could not be assembled; its public detail is intentionally generic."""
 
 
+class RunLivenessError(RuntimeError):
+    """A run stopped producing observable progress within its configured budget."""
+
+    def __init__(self, *, code: str, message: str, retryable: bool) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
+
+
+@dataclass(frozen=True, slots=True)
+class RunLivenessPolicy:
+    """Server-owned deadlines; values are seconds and independent of model prompts."""
+
+    first_event_timeout: float = 120
+    idle_timeout: float = 180
+    total_timeout: float = 1_800
+    first_event_retries: int = 1
+    close_timeout: float = 15
+
+    def __post_init__(self) -> None:
+        if min(
+            self.first_event_timeout,
+            self.idle_timeout,
+            self.total_timeout,
+            self.close_timeout,
+        ) <= 0:
+            raise ValueError("run liveness timeouts must be positive")
+        if self.first_event_retries < 0:
+            raise ValueError("first_event_retries cannot be negative")
+        if self.total_timeout < self.first_event_timeout:
+            raise ValueError("total_timeout cannot be shorter than first_event_timeout")
+
+
 class AdkRunExecution:
     """Thin ADK Runner adapter for one durable run."""
 
@@ -325,12 +358,14 @@ class RunCoordinator:
         broker: RunEventBroker,
         execution_factory: RunExecutionFactory,
         redactor: SecretRedactor | None = None,
+        liveness: RunLivenessPolicy | None = None,
     ) -> None:
         self.store = store
         self.broker = broker
         self.journal = DurableRunEventJournal(store, broker)
         self.execution_factory = execution_factory
         self.redactor = redactor or SecretRedactor()
+        self.liveness = liveness or RunLivenessPolicy()
         self._active: dict[str, _ActiveRun] = {}
         self._workspace_lock = asyncio.Lock()
         self._lifecycle_lock = asyncio.Lock()
@@ -417,9 +452,101 @@ class RunCoordinator:
                 )
         return record, created
 
+    async def _bounded_events(
+        self,
+        execution: RunExecution,
+        *,
+        total_deadline: float,
+    ) -> AsyncIterator[PublicEventBatch]:
+        """Iterate in the caller task so ADK contextvars are detached safely."""
+
+        iterator = execution.events()
+        received = False
+        try:
+            while True:
+                remaining = total_deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    raise RunLivenessError(
+                        code="run_total_timeout",
+                        message="run exceeded its total execution deadline",
+                        retryable=False,
+                    )
+                phase_timeout = (
+                    self.liveness.idle_timeout
+                    if received
+                    else self.liveness.first_event_timeout
+                )
+                timeout = min(remaining, phase_timeout)
+                try:
+                    async with asyncio.timeout(timeout):
+                        batch = await anext(iterator)
+                except StopAsyncIteration:
+                    return
+                except TimeoutError:
+                    total_expired = remaining <= phase_timeout
+                    raise RunLivenessError(
+                        code=(
+                            "run_total_timeout"
+                            if total_expired
+                            else (
+                                "model_idle_timeout"
+                                if received
+                                else "model_first_event_timeout"
+                            )
+                        ),
+                        message=(
+                            "run exceeded its total execution deadline"
+                            if total_expired
+                            else (
+                                "model stopped producing events before the idle deadline"
+                                if received
+                                else "model did not produce an event before the startup deadline"
+                            )
+                        ),
+                        retryable=not received and not total_expired,
+                    ) from None
+                received = True
+                yield batch
+        finally:
+            close = getattr(iterator, "aclose", None)
+            if close is not None:
+                with suppress(Exception):
+                    await close()
+
+    async def _close_execution(self, execution: RunExecution) -> str | None:
+        """Bound cleanup and convert provider cleanup defects into durable warnings."""
+
+        try:
+            async with asyncio.timeout(self.liveness.close_timeout):
+                await execution.aclose()
+        except TimeoutError:
+            return "runtime cleanup exceeded its deadline"
+        except Exception as error:
+            return self.redactor.redact_text(str(error))[:1_000] or type(error).__name__
+        return None
+
+    def _record_cleanup_warning(self, record: RunRecord, detail: str, attempt: int) -> None:
+        self.journal.append_event(
+            record.run_id,
+            AgUiEvent(
+                type=AgUiEventType.CUSTOM,
+                thread_id=record.thread_id,
+                run_id=record.run_id,
+                name="coding.run.cleanup_warning",
+                value={"attempt": attempt, "detail": detail},
+            ),
+            source_key=f"server:cleanup-warning:{attempt}",
+        )
+
     async def _drive(self, record: RunRecord, execution: RunExecution) -> None:
+        current_execution = execution
+        current_execution_closed = False
+        attempt = 0
         try:
             async with self._workspace_lock:
+                total_deadline = (
+                    asyncio.get_running_loop().time() + self.liveness.total_timeout
+                )
                 self.store.update_status(
                     record.run_id,
                     "running",
@@ -430,14 +557,14 @@ class RunCoordinator:
                     thread_id=record.thread_id,
                     run_id=record.run_id,
                 )
-                if execution.coding_model_status is not None:
+                if current_execution.coding_model_status is not None:
                     run_started = AgUiEvent(
                         type=AgUiEventType.RUN_STARTED,
                         thread_id=record.thread_id,
                         run_id=record.run_id,
                         metadata={
                             "coding.model": self.redactor.redact(
-                                execution.coding_model_status.model_dump(mode="json")
+                                current_execution.coding_model_status.model_dump(mode="json")
                             )
                         },
                     )
@@ -448,27 +575,68 @@ class RunCoordinator:
                 )
                 result: object | None = None
                 runtime_error: str | None = None
-                async for batch in execution.events():
-                    durable_events = tuple(
-                        event for event in batch.events if event.type != AgUiEventType.RUN_ERROR
-                    )
-                    source_keys = tuple(
-                        f"{batch.source_key}:{index}" for index in range(len(durable_events))
-                    )
-                    if durable_events:
-                        self.journal.append_events(
-                            record.run_id,
-                            durable_events,
-                            source_keys=source_keys,
-                        )
-                    for event in batch.events:
-                        if event.type == AgUiEventType.RUN_ERROR:
-                            runtime_error = event.message or "ADK run failed"
-                        elif (
-                            event.type == AgUiEventType.CUSTOM
-                            and event.name == "coding.workflow.output"
+                while True:
+                    try:
+                        async for batch in self._bounded_events(
+                            current_execution,
+                            total_deadline=total_deadline,
                         ):
-                            result = event.value
+                            durable_events = tuple(
+                                event
+                                for event in batch.events
+                                if event.type != AgUiEventType.RUN_ERROR
+                            )
+                            source_keys = tuple(
+                                f"{batch.source_key}:{index}"
+                                for index in range(len(durable_events))
+                            )
+                            if durable_events:
+                                self.journal.append_events(
+                                    record.run_id,
+                                    durable_events,
+                                    source_keys=source_keys,
+                                )
+                            for event in batch.events:
+                                if event.type == AgUiEventType.RUN_ERROR:
+                                    runtime_error = event.message or "ADK run failed"
+                                elif (
+                                    event.type == AgUiEventType.CUSTOM
+                                    and event.name == "coding.workflow.output"
+                                ):
+                                    result = event.value
+                        break
+                    except RunLivenessError as error:
+                        if not error.retryable or attempt >= self.liveness.first_event_retries:
+                            raise
+                        attempt += 1
+                        self.journal.append_event(
+                            record.run_id,
+                            AgUiEvent(
+                                type=AgUiEventType.CUSTOM,
+                                thread_id=record.thread_id,
+                                run_id=record.run_id,
+                                name="coding.run.liveness_retry",
+                                value={"attempt": attempt, "reason": error.code},
+                            ),
+                            source_key=f"server:liveness-retry:{attempt}",
+                        )
+                        cleanup_warning = await self._close_execution(current_execution)
+                        current_execution_closed = True
+                        if cleanup_warning:
+                            self._record_cleanup_warning(record, cleanup_warning, attempt)
+                        current_execution = await self.execution_factory.create(record)
+                        current_execution_closed = False
+                        active = self._active.get(record.run_id)
+                        if active is not None:
+                            active.execution = current_execution
+                cleanup_warning = await self._close_execution(current_execution)
+                current_execution_closed = True
+                if cleanup_warning:
+                    self._record_cleanup_warning(
+                        record,
+                        cleanup_warning,
+                        attempt + 1,
+                    )
                 if runtime_error is not None:
                     self.journal.terminalize(
                         record.run_id,
@@ -498,6 +666,15 @@ class RunCoordinator:
                         expected_status="running",
                     )
         except asyncio.CancelledError:
+            if not current_execution_closed:
+                cleanup_warning = await self._close_execution(current_execution)
+                current_execution_closed = True
+                if cleanup_warning:
+                    self._record_cleanup_warning(
+                        record,
+                        cleanup_warning,
+                        attempt + 1,
+                    )
             current = self.store.get_run(record.run_id)
             if current is not None and current.status in {"queued", "running"}:
                 self.journal.append_event(
@@ -524,8 +701,45 @@ class RunCoordinator:
                     expected_status=("queued" if current.status == "queued" else "running"),
                 )
             raise
+        except RunLivenessError as error:
+            if not current_execution_closed:
+                cleanup_warning = await self._close_execution(current_execution)
+                current_execution_closed = True
+                if cleanup_warning:
+                    self._record_cleanup_warning(
+                        record,
+                        cleanup_warning,
+                        attempt + 1,
+                    )
+            current = self.store.get_run(record.run_id)
+            if current is not None and current.status in {"queued", "running"}:
+                self.journal.terminalize(
+                    record.run_id,
+                    status="failed",
+                    event=AgUiEvent(
+                        type=AgUiEventType.RUN_ERROR,
+                        thread_id=record.thread_id,
+                        run_id=record.run_id,
+                        code=error.code,
+                        message=str(error),
+                    ),
+                    source_key="server:run-error",
+                    expected_status=(
+                        "queued" if current.status == "queued" else "running"
+                    ),
+                    error=str(error),
+                )
         except Exception as error:
             safe_error = self.redactor.redact_text(str(error))[:4_096]
+            if not current_execution_closed:
+                cleanup_warning = await self._close_execution(current_execution)
+                current_execution_closed = True
+                if cleanup_warning:
+                    self._record_cleanup_warning(
+                        record,
+                        cleanup_warning,
+                        attempt + 1,
+                    )
             current = self.store.get_run(record.run_id)
             if current is not None and current.status in {"queued", "running"}:
                 self.journal.terminalize(
@@ -544,7 +758,8 @@ class RunCoordinator:
                 )
         finally:
             try:
-                await execution.aclose()
+                if not current_execution_closed:
+                    await self._close_execution(current_execution)
             finally:
                 self._active.pop(record.run_id, None)
 
@@ -720,4 +935,6 @@ __all__ = [
     "RunExecution",
     "RunExecutionFactory",
     "RunInitializationError",
+    "RunLivenessError",
+    "RunLivenessPolicy",
 ]
