@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,7 +29,7 @@ there are no material findings. This review is advisory and has no tools.
 """.strip()
 LOGGER = logging.getLogger(__name__)
 
-ToolFunction = Callable[..., dict[str, Any]]
+ToolFunction = Callable[..., Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,7 +101,7 @@ def build_coding_worker(
             str(invocation_id) if invocation_id else None,
         )
 
-    def read(
+    async def read(
         path: str,
         offset: int = 1,
         limit: int = read_default_lines,
@@ -109,12 +110,13 @@ def build_coding_worker(
         """Read a bounded range from a workspace file or recoverable artifact URI."""
 
         del tool_context
-        return _invoke_tool(
+        return await asyncio.to_thread(
+            _invoke_tool,
             "read",
             lambda: active_tools.read(path=path, offset=offset, limit=limit),
         )
 
-    def bash(
+    async def bash(
         command: str,
         timeout_seconds: int = bash_default_timeout,
         tool_context: ToolContext | None = None,
@@ -122,7 +124,8 @@ def build_coding_worker(
         """Run a bounded command or an in-process indexed search operation."""
 
         task_scope, _ = _runtime_identity(tool_context)
-        return _invoke_tool(
+        return await asyncio.to_thread(
+            _invoke_tool,
             "bash",
             lambda: active_tools.bash(
                 command=command,
@@ -131,7 +134,7 @@ def build_coding_worker(
             ),
         )
 
-    def edit(
+    async def edit(
         path: str,
         old_text: str,
         new_text: str,
@@ -141,7 +144,8 @@ def build_coding_worker(
         """Atomically replace one exact, unique preimage in a workspace file."""
 
         task_scope, invocation_id = _runtime_identity(tool_context)
-        return _invoke_tool(
+        return await asyncio.to_thread(
+            _invoke_tool,
             "edit",
             lambda: active_tools.edit(
                 path=path,
@@ -153,7 +157,7 @@ def build_coding_worker(
             ),
         )
 
-    def write(
+    async def write(
         path: str,
         content: str,
         expected_sha256: str | None = None,
@@ -163,7 +167,8 @@ def build_coding_worker(
         """Atomically write a complete file with optimistic concurrency."""
 
         task_scope, invocation_id = _runtime_identity(tool_context)
-        return _invoke_tool(
+        return await asyncio.to_thread(
+            _invoke_tool,
             "write",
             lambda: active_tools.write(
                 path=path,

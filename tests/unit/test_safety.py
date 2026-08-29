@@ -36,6 +36,8 @@ def test_classifier_uses_highest_risk_shell_segment() -> None:
     assert classify_command("git commit -am 'change'") == CommandRisk.GIT_HISTORY_MUTATION
     assert classify_command("git push origin main") == CommandRisk.PUBLISH_OR_DEPLOY
     assert classify_command("sudo rm -rf /") == CommandRisk.DESTRUCTIVE
+    assert classify_command("find / -name '*.py'") == CommandRisk.UNKNOWN
+    assert classify_command("find /workspace -name '*.py'") == CommandRisk.READ_ONLY
 
 
 def test_policy_requires_approval_and_never_auto_allows_destructive() -> None:

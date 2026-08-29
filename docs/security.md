@@ -32,6 +32,10 @@ Repository files can contain prompt injection. They are treated as data unless t
 The four tools resolve paths against the task worktree. Absolute paths and traversal outside that root are rejected. Mutations use temporary files and atomic replacement. Expected hashes provide optimistic concurrency when the agent edits a file it previously read.
 Rejected model tool inputs return bounded structured errors so the model can recover;
 they do not weaken confinement and do not escape as fatal ADK workflow exceptions.
+Read-only shell classification is intentionally conservative for host-root traversal:
+commands such as `find /` require approval even in the local adapter. Model tool work
+runs outside the async server loop so a bounded command cannot prevent cancellation,
+steering, or WebSocket keepalives while it executes.
 
 Every managed task should run in a container or remote sandbox in addition to the Git worktree. The worktree prevents task-to-task code interference; the sandbox must enforce operating-system, process, network, and secret boundaries.
 

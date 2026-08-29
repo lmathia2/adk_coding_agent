@@ -58,6 +58,10 @@ complete.
 - [x] Immediate Python/JSON syntax diagnostics after successful writes and edits.
 - [x] Recoverable structured results for invalid or denied model tool inputs; expected
   confinement and argument errors cannot crash the enclosing ADK run.
+- [x] Model-facing tools execute off the async server loop so bounded commands cannot
+  starve WebSocket heartbeat, replay, cancellation, or steering traffic.
+- [x] Obvious host-root traversal commands such as `find /` are never automatic in
+  the local adapter and require explicit approval.
 - [x] Explicit server production mode that fails before startup when the selected
   command adapter is not an enforceable Docker, Kubernetes, or remote boundary.
 - [x] Per-launch project trust binding that gates repository instructions and

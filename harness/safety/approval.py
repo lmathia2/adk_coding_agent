@@ -122,6 +122,7 @@ _DESTRUCTIVE_PATTERNS = (
     re.compile(r"(?:^|\s)git\s+push\s+.*(?:--force|-f)(?:\s|$)"),
 )
 _SHELL_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\n)\s*")
+_HOST_ROOT_READ = re.compile(r"(?:^|\s)(?:du|find|ls)\s+/(?:\s|$)")
 
 
 def _tokens(segment: str) -> list[str]:
@@ -201,6 +202,8 @@ def classify_command(command: str) -> CommandRisk:
     for pattern in _DESTRUCTIVE_PATTERNS:
         if pattern.search(normalized):
             return CommandRisk.DESTRUCTIVE
+    if _HOST_ROOT_READ.search(normalized):
+        return CommandRisk.UNKNOWN
 
     risks: list[CommandRisk] = []
     for segment in _SHELL_SPLIT.split(normalized):

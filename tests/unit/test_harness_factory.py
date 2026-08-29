@@ -5,6 +5,7 @@ import inspect
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -41,6 +42,7 @@ from harness.config import (
 )
 from harness.server import PROTOCOL_VERSION, ServerHello
 from harness.state import JsonlEventStore
+from harness.tools.adk_adapter import AdkCodingTools
 
 
 class _FakeHarnessConfig(BaseModel):
@@ -317,7 +319,8 @@ def test_composition_loads_project_instructions_only_after_explicit_trust(
     assert trusted.skill_roots == (workspace / ".agents" / "skills",)
 
 
-def test_model_tool_input_error_is_recoverable_instead_of_crashing_adk(
+@pytest.mark.asyncio
+async def test_model_tool_input_error_is_recoverable_instead_of_crashing_adk(
     tmp_path: Path,
 ) -> None:
     workspace = tmp_path / "workspace"
@@ -329,7 +332,7 @@ def test_model_tool_input_error_is_recoverable_instead_of_crashing_adk(
     )
     worker = build_coding_worker(settings, cast(BaseLlm, "test-model"))
 
-    result = worker.read(str(tmp_path / "outside-verifier.py"))
+    result = await worker.read(str(tmp_path / "outside-verifier.py"))
 
     assert result["status"] == "error"
     assert result["ui_details"] == {
@@ -337,6 +340,45 @@ def test_model_tool_input_error_is_recoverable_instead_of_crashing_adk(
         "recoverable": True,
     }
     assert "path escapes workspace" in result["model_text"]
+
+
+@pytest.mark.asyncio
+async def test_model_tools_do_not_block_the_server_event_loop(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    composition = load_harness_composition()
+    settings = settings_from_composition(
+        composition,
+        RuntimeBindings(workspace=workspace, state_root=tmp_path / "state"),
+    )
+
+    def slow_bash(**_: Any) -> dict[str, Any]:
+        time.sleep(0.08)
+        return {"status": "ok", "model_text": "done"}
+
+    def unavailable(**_: Any) -> dict[str, Any]:
+        return {"status": "error", "model_text": "unused"}
+
+    tools = AdkCodingTools(
+        read=unavailable,
+        bash=slow_bash,
+        edit=unavailable,
+        write=unavailable,
+    )
+    worker = build_coding_worker(
+        settings,
+        cast(BaseLlm, "test-model"),
+        tools=tools,
+    )
+
+    started = time.monotonic()
+    task = asyncio.create_task(worker.bash("python3 -m py_compile target.py"))
+    await asyncio.sleep(0.02)
+    event_loop_delay = time.monotonic() - started
+    result = await task
+
+    assert event_loop_delay < 0.06
+    assert result["status"] == "ok"
 
 
 def test_importing_pi_factory_does_not_build_environment_singletons(
@@ -418,7 +460,8 @@ def test_pi_factory_rejects_ignored_workflow_edge_changes(tmp_path: Path) -> Non
         )
 
 
-def test_pi_factory_wires_tool_defaults_limits_and_dynamic_task_scope(
+@pytest.mark.asyncio
+async def test_pi_factory_wires_tool_defaults_limits_and_dynamic_task_scope(
     tmp_path: Path,
 ) -> None:
     registry = default_harness_registry()
@@ -452,7 +495,7 @@ def test_pi_factory_wires_tool_defaults_limits_and_dynamic_task_scope(
 
     assert inspect.signature(tools["read"]).parameters["limit"].default == 123
     assert inspect.signature(tools["bash"]).parameters["timeout_seconds"].default == 17
-    first = tools["write"](
+    first = await tools["write"](
         "result.txt",
         "stable\n",
         expected_absent=True,
@@ -462,7 +505,7 @@ def test_pi_factory_wires_tool_defaults_limits_and_dynamic_task_scope(
         ),
     )
     (tmp_path / "result.txt").unlink()
-    second = tools["write"](
+    second = await tools["write"](
         "result.txt",
         "stable\n",
         expected_absent=True,
