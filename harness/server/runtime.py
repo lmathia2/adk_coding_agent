@@ -161,7 +161,10 @@ class AdkRunExecution:
         )
         async with aclosing(generator) as adk_events:
             responding_reported = False
+            event_id_occurrences: dict[str, int] = {}
             async for event in adk_events:
+                occurrence = event_id_occurrences.get(event.id, 0)
+                event_id_occurrences[event.id] = occurrence + 1
                 normalized = normalizer.push(event)
                 if (
                     not responding_reported
@@ -184,7 +187,7 @@ class AdkRunExecution:
                     )
                 if normalized:
                     yield PublicEventBatch(
-                        source_key=f"adk:{event.id}",
+                        source_key=f"adk:{event.id}:{occurrence}",
                         events=normalized,
                     )
         trailing = normalizer.finish()

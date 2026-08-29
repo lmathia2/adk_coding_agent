@@ -619,6 +619,22 @@ class _CredentialFreeAgent(BaseAgent):
         )
 
 
+class _RepeatedEventIdAgent(BaseAgent):
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
+        for text in ("Hello", ", world!"):
+            yield Event(
+                id="provider-reused-event-id",
+                invocation_id=ctx.invocation_id,
+                author=self.name,
+                model_version="test-local-model",
+                partial=True,
+                content=types.Content(
+                    role="assistant",
+                    parts=[types.Part(text=text)],
+                ),
+            )
+
+
 class _BlockingTestLlm(BaseLlm):
     async def generate_content_async(
         self,
@@ -713,6 +729,51 @@ async def test_real_adk_runner_creates_session_and_maps_output_without_credentia
         "readiness": "responding",
     }
     assert events[2].delta == "credential-free output"
+
+
+@pytest.mark.asyncio
+async def test_real_adk_runner_disambiguates_reused_stream_event_ids(
+    tmp_path: Path,
+) -> None:
+    store = SqliteRunEventStore(tmp_path / "record.db")
+    record, _ = store.create_run(
+        request_id="request-reused-event-id",
+        idempotency_key="start-reused-event-id",
+        thread_id="thread-reused-event-id",
+        user_id="user-reused-event-id",
+        input="Stream repeated event ids",
+    )
+    service = InMemorySessionService()
+    app = App(
+        name="reused_event_id_app",
+        root_agent=_RepeatedEventIdAgent(name="worker"),
+    )
+    runner = Runner(app=app, session_service=service, auto_create_session=False)
+    execution = AdkRunExecution(
+        record=record,
+        runner=runner,
+        app_name=app.name,
+        session_service=service,
+        controls=None,
+        max_llm_calls=1,
+    )
+
+    try:
+        batches = [batch async for batch in execution.events()]
+    finally:
+        await execution.aclose()
+
+    assert [batch.source_key for batch in batches] == [
+        "adk:provider-reused-event-id:0",
+        "adk:provider-reused-event-id:1",
+        "server:normalizer-finish",
+    ]
+    assert [
+        event.delta
+        for batch in batches
+        for event in batch.events
+        if event.type == AgUiEventType.TEXT_MESSAGE_CONTENT
+    ] == ["Hello", ", world!"]
 
 
 @pytest.mark.asyncio
