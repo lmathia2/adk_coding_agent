@@ -116,6 +116,7 @@ def build_server_assembly(
     state_root: Path,
     config_path: Path = DEFAULT_COMPOSITION_PATH,
     production: bool = False,
+    trust_project: bool = False,
 ) -> ServerAssembly:
     """Build the configured harness behind the protocol-only WebSocket app."""
 
@@ -144,6 +145,7 @@ def build_server_assembly(
         state_root=resolved_state_root,
         configuration_root=resolved_config.parent,
         source_repository=resolved_workspace,
+        project_trusted=trust_project,
     )
     services = build_service_bundle(
         settings_from_composition(

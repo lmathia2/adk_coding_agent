@@ -200,6 +200,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Refuse the host-local sandbox and require an enforceable adapter",
     )
     serve.add_argument(
+        "--trust-project",
+        action="store_true",
+        help="Load workspace AGENTS.md files and project-local skills as instructions",
+    )
+    serve.add_argument(
         "--print-config",
         action="store_true",
         help="Resolve and print server settings without starting the network listener",
@@ -222,6 +227,11 @@ def _parser() -> argparse.ArgumentParser:
         "--production",
         action="store_true",
         help="Refuse the host-local sandbox and require an enforceable adapter",
+    )
+    magnitude.add_argument(
+        "--trust-project",
+        action="store_true",
+        help="Load workspace AGENTS.md files and project-local skills as instructions",
     )
     magnitude.add_argument(
         "--no-start-magnitude",
@@ -259,6 +269,7 @@ def _serve(args: argparse.Namespace) -> int:
         state_root=state_root,
         config_path=config_path,
         production=args.production,
+        trust_project=args.trust_project,
     )
     server = assembly.composition.server
     sandbox_kind = str(
@@ -279,6 +290,7 @@ def _serve(args: argparse.Namespace) -> int:
                     "port": server.port,
                     "production_mode": bool(args.production),
                     "sandbox": sandbox_kind,
+                    "project_trusted": bool(args.trust_project),
                     "state_root": assembly.state_root.as_posix(),
                     "websocket_url": (f"ws://{server.host}:{server.port}{server.websocket_path}"),
                     "workspace": assembly.workspace.as_posix(),

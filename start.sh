@@ -15,9 +15,9 @@ usage() {
 Start the ADK Coding Agent server or TUI with shared local configuration.
 
 Usage:
-  adk-agent-start server [--workspace DIR] [--state-root DIR] [-- SERVER_ARGS...]
+  adk-agent-start server [--workspace DIR] [--state-root DIR] [--trust-project] [-- SERVER_ARGS...]
   adk-agent-start tui [--state-root DIR] [--server URL] [-- TUI_ARGS...]
-  adk-agent-start run [--workspace DIR] [--state-root DIR] [--model ID] [-- TUI_ARGS...]
+  adk-agent-start run [--workspace DIR] [--state-root DIR] [--model ID] [--trust-project] [-- TUI_ARGS...]
 
 Aliases:
   adk-agent-start --server ...
@@ -30,7 +30,7 @@ Defaults:
 
 Examples:
   # Terminal 1
-  adk-agent-start server --workspace "$HOME/src/coding_tools"
+  adk-agent-start server --workspace "$HOME/src/coding_tools" --trust-project
 
   # Terminal 2
   adk-agent-start tui
@@ -39,13 +39,13 @@ Examples:
   adk-agent-start tui -- --input "Inspect this repository and run its tests"
 
   # Magnitude-compatible foreground handoff using one exact model
-  adk-agent-start run --workspace "$PWD" --model MODEL_ID
+  adk-agent-start run --workspace "$PWD" --model MODEL_ID --trust-project
 EOF
 }
 
 server_usage() {
   cat <<'EOF'
-Usage: adk-agent-start server [--workspace DIR] [--state-root DIR] [-- SERVER_ARGS...]
+Usage: adk-agent-start server [--workspace DIR] [--state-root DIR] [--trust-project] [-- SERVER_ARGS...]
 
 Starts the Magnitude-backed harness server. The workspace defaults to the
 current directory. The server writes its auth token beneath the shared state
@@ -64,7 +64,7 @@ EOF
 
 run_usage() {
   cat <<'EOF'
-Usage: adk-agent-start run [--workspace DIR] [--state-root DIR] [--model ID] [-- TUI_ARGS...]
+Usage: adk-agent-start run [--workspace DIR] [--state-root DIR] [--model ID] [--trust-project] [-- TUI_ARGS...]
 
 Starts the Magnitude-backed server as a managed child, waits for its local auth
 token, and runs the Bubble Tea TUI in the foreground. Server output is appended
@@ -122,6 +122,7 @@ server_url=$(default_server_url)
 case "$mode" in
   server|--server)
     workspace=$(pwd -P)
+    trust_project=0
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --workspace)
@@ -133,6 +134,10 @@ case "$mode" in
           [ "$#" -ge 2 ] || die '--state-root requires a directory' 2
           state_root=$2
           shift 2
+          ;;
+        --trust-project)
+          trust_project=1
+          shift
           ;;
         -h|--help)
           server_usage
@@ -159,11 +164,19 @@ case "$mode" in
       "  Workspace: $workspace" \
       '  Environment read: ADK_CODING_AGENT_STATE_ROOT (unless --state-root is supplied)' \
       '  Environment set: none (workspace and state root are passed as server flags)' \
+      "  Project instructions/skills trusted: $trust_project" \
       '  ADK_CODING_AGENT_SERVER_URL configures the companion TUI, not this listener.' \
       '  Server writes the token file; its value is never printed.' \
       '' \
       'Starting server. Keep this terminal running.'
 
+    if [ "$trust_project" -eq 1 ]; then
+      exec adk-coding-agent serve-magnitude \
+        --workspace "$workspace" \
+        --state-root "$state_root" \
+        --trust-project \
+        "$@"
+    fi
     exec adk-coding-agent serve-magnitude \
       --workspace "$workspace" \
       --state-root "$state_root" \
@@ -222,6 +235,7 @@ case "$mode" in
   run)
     workspace=$(pwd -P)
     model=
+    trust_project=0
     while [ "$#" -gt 0 ]; do
       case "$1" in
         --workspace)
@@ -238,6 +252,10 @@ case "$mode" in
           [ "$#" -ge 2 ] || die '--model requires a Magnitude model ID' 2
           model=$2
           shift 2
+          ;;
+        --trust-project)
+          trust_project=1
+          shift
           ;;
         -h|--help)
           run_usage
@@ -266,6 +284,7 @@ case "$mode" in
     printf '%s\n' \
       "  Workspace: $workspace" \
       "  Magnitude model: ${model:-selected primary model}" \
+      "  Project instructions/skills trusted: $trust_project" \
       "  Server log: $server_log" \
       '  Lifecycle: this command owns and stops its harness server child' \
       '  Environment read: ADK_CODING_AGENT_STATE_ROOT, ADK_CODING_AGENT_SERVER_URL' \
@@ -274,11 +293,22 @@ case "$mode" in
       '' \
       'Starting managed server and TUI.'
 
-    if [ -n "$model" ]; then
+    if [ -n "$model" ] && [ "$trust_project" -eq 1 ]; then
+      adk-coding-agent serve-magnitude \
+        --workspace "$workspace" \
+        --state-root "$state_root" \
+        --model "$model" \
+        --trust-project >>"$server_log" 2>&1 &
+    elif [ -n "$model" ]; then
       adk-coding-agent serve-magnitude \
         --workspace "$workspace" \
         --state-root "$state_root" \
         --model "$model" >>"$server_log" 2>&1 &
+    elif [ "$trust_project" -eq 1 ]; then
+      adk-coding-agent serve-magnitude \
+        --workspace "$workspace" \
+        --state-root "$state_root" \
+        --trust-project >>"$server_log" 2>&1 &
     else
       adk-coding-agent serve-magnitude \
         --workspace "$workspace" \

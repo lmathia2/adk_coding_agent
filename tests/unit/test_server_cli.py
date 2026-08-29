@@ -39,10 +39,31 @@ def test_serve_print_config_resolves_composition_without_listening(
     assert payload["state_root"] == state_root.resolve().as_posix()
     assert payload["sandbox"] == "local"
     assert payload["production_mode"] is False
+    assert payload["project_trusted"] is False
     assert (
         payload["auth_token_source"] == (state_root.resolve() / "server" / "auth-token").as_posix()
     )
     assert len(payload["config_sha256"]) == 64
+
+
+def test_serve_print_config_announces_explicit_project_trust(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    result = main(
+        [
+            "serve",
+            "--workspace",
+            str(tmp_path),
+            "--state-root",
+            str(tmp_path / "state"),
+            "--trust-project",
+            "--print-config",
+        ]
+    )
+
+    assert result == 0
+    assert json.loads(capsys.readouterr().out)["project_trusted"] is True
 
 
 def test_production_server_refuses_local_sandbox_before_creating_state(

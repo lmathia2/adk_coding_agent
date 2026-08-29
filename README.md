@@ -57,7 +57,7 @@ did not finish; rerun `magnitude setup` in an interactive terminal.
 ### 2. Start the coding-agent server in Terminal 1
 
 ```bash
-adk-agent-start server --workspace "$HOME/src/coding_tools"
+adk-agent-start server --workspace "$HOME/src/coding_tools" --trust-project
 ```
 
 Leave Terminal 1 running. The server listens locally and exposes the agent at
@@ -76,6 +76,7 @@ the server and stops its managed server child when the TUI exits:
 
 ```bash
 adk-agent-start run --workspace "$HOME/src/coding_tools" \
+  --trust-project \
   --model 'qwen3.8-27b:gguf:q8'
 ```
 
@@ -99,7 +100,7 @@ The server workspace defaults to the current directory, so this also works:
 
 ```bash
 # Terminal 1, from the repository to edit
-adk-agent-start server
+adk-agent-start server --trust-project
 
 # Terminal 2, from any directory
 adk-agent-start tui
@@ -198,6 +199,14 @@ a registered `HarnessFactory` implementation to introduce another topology. Beca
 the WebSocket/AG-UI contract is shared, the Bubble Tea TUI does not change when the
 harness implementation changes.
 
+Repository `AGENTS.md` files and `.agents/skills` are untrusted data by default.
+Pass `--trust-project` to `adk-agent-start server`, `adk-agent-start run`,
+`adk-coding-agent serve`, or `serve-magnitude` only after reviewing that workspace.
+The server's `--print-config` output announces the effective decision. Legacy
+Agents CLI startup uses the equivalent `ADK_CODING_TRUST_PROJECT=1` opt-in. External
+skill roots explicitly configured by the harness and guarded learned-skill roots do
+not inherit project trust.
+
 ### Magnitude on macOS
 
 The harness can use a model selected and served by
@@ -217,7 +226,7 @@ server:
 ./install.sh
 magnitude setup
 
-adk-agent-start server --workspace /absolute/path/to/repository
+adk-agent-start server --workspace /absolute/path/to/repository --trust-project
 ```
 
 `serve-magnitude` runs `magnitude server start` when the endpoint is not already

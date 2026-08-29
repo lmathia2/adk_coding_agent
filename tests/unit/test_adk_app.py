@@ -128,6 +128,7 @@ def test_control_state_settings_are_environment_driven(monkeypatch, tmp_path) ->
     monkeypatch.setenv("ADK_CODING_LEARNING_ENABLED", "false")
     monkeypatch.setenv("ADK_CODING_LEARNING_MIN_SUPPORT", "4")
     monkeypatch.setenv("ADK_CODING_LEARNING_TRIAL_PERCENT", "25")
+    monkeypatch.setenv("ADK_CODING_TRUST_PROJECT", "1")
 
     settings = config.load_settings()
 
@@ -153,6 +154,7 @@ def test_invalid_trace_mode_fails_closed(monkeypatch, tmp_path) -> None:
     config = importlib.import_module("app.agent.config")
     monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ADK_CODING_TRUST_PROJECT", "1")
     monkeypatch.setenv("ADK_CODING_TRACE_MODE", "raw")
 
     with pytest.raises(ValueError, match="off, metadata, redacted"):
@@ -247,10 +249,31 @@ def test_skill_root_symlink_is_preserved_for_registry_validation(
     (workspace / ".agents" / "skills").symlink_to(external, target_is_directory=True)
     monkeypatch.setenv("ADK_CODING_WORKSPACE", str(workspace))
     monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ADK_CODING_TRUST_PROJECT", "1")
 
     settings = config.load_settings()
 
     assert settings.skill_roots[0].is_symlink()
+
+
+def test_legacy_settings_do_not_load_project_instructions_without_trust(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    config = importlib.import_module("app.agent.config")
+    (tmp_path / "AGENTS.md").write_text(
+        "UNTRUSTED PROJECT INSTRUCTION",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("ADK_CODING_TRUST_PROJECT", raising=False)
+
+    settings = config.load_settings()
+
+    assert not settings.project_trusted
+    assert "UNTRUSTED PROJECT INSTRUCTION" not in settings.static_instruction
+    assert tmp_path / ".agents" / "skills" not in settings.skill_roots
 
 
 def test_control_state_builder_forwards_settings_without_connecting() -> None:

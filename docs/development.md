@@ -148,6 +148,7 @@ agents-cli run "Fix the failing authentication tests"
 | `ADK_CODING_TRACE_MODE` | `metadata` | Lifecycle trace mode: `off`, `metadata`, or `redacted`; raw storage is unsupported |
 | `ADK_CODING_TRACE_MAX_CONTENT_BYTES` | `8192` | Maximum already-redacted JSON bytes per trace span |
 | `ADK_CODING_SKILL_DIRS` | unset | Additional trusted Agent Skills roots, separated by the platform path separator |
+| `ADK_CODING_TRUST_PROJECT` | `0` | Legacy Agents CLI opt-in to load workspace `AGENTS.md` and `.agents/skills`; the server uses `--trust-project` |
 | `ADK_CODING_SKILL_MAX_SELECTED` | `3` | Maximum enabled skill bodies in one work packet |
 | `ADK_CODING_SKILL_CONTEXT_BYTES` | `24000` | Total catalog and selected-skill byte budget |
 | `ADK_CODING_LEARNING_ENABLED` | `1` | Learn candidates from verified traces and run guarded trials |

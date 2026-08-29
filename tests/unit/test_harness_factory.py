@@ -281,6 +281,39 @@ def test_pi_factory_executes_file_prompt_and_agent_model_bindings(
         "primary": models["coding"]["name"],
     }
 
+
+def test_composition_loads_project_instructions_only_after_explicit_trust(
+    tmp_path: Path,
+) -> None:
+    registry = default_harness_registry()
+    composition = load_harness_composition(config_models=registry.config_models())
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "AGENTS.md").write_text(
+        "TRUSTED PROJECT INSTRUCTION",
+        encoding="utf-8",
+    )
+
+    untrusted = settings_from_composition(
+        composition,
+        RuntimeBindings(workspace=workspace, state_root=tmp_path / "state-untrusted"),
+    )
+    trusted = settings_from_composition(
+        composition,
+        RuntimeBindings(
+            workspace=workspace,
+            state_root=tmp_path / "state-trusted",
+            project_trusted=True,
+        ),
+    )
+
+    assert not untrusted.project_trusted
+    assert "TRUSTED PROJECT INSTRUCTION" not in untrusted.static_instruction
+    assert untrusted.skill_roots == ()
+    assert trusted.project_trusted
+    assert "TRUSTED PROJECT INSTRUCTION" in trusted.static_instruction
+    assert trusted.skill_roots == (workspace / ".agents" / "skills",)
+
 def test_importing_pi_factory_does_not_build_environment_singletons(
     tmp_path: Path,
 ) -> None:

@@ -697,6 +697,7 @@ class RuntimeBindings(FrozenModel):
     worker_id: str | None = Field(default=None, max_length=256)
     invocation_id: str | None = Field(default=None, max_length=256)
     control_database_url: SecretStr | None = Field(default=None)
+    project_trusted: bool = False
 
 
 __all__ = [

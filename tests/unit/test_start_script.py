@@ -127,6 +127,34 @@ def test_server_accepts_flag_alias_and_state_environment_override(tmp_path: Path
     assert f"arg={workspace}" in completed.stdout
 
 
+def test_server_forwards_and_announces_explicit_project_trust(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _fake_command(fake_bin, "adk-coding-agent")
+    home = tmp_path / "home"
+    home.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    completed = subprocess.run(
+        (
+            str(root / "start.sh"),
+            "server",
+            "--workspace",
+            str(workspace),
+            "--trust-project",
+        ),
+        env=_environment(fake_bin, home),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Project instructions/skills trusted: 1" in completed.stdout
+    assert "arg=--trust-project" in completed.stdout
+
+
 def test_tui_reads_token_and_does_not_expose_it(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     fake_bin = tmp_path / "bin"

@@ -162,6 +162,13 @@ Project instructions, skills, scripts, and extensions are executable supply-chai
 4. scan scripts before execution;
 5. prevent a project skill from silently broadening tool or network permissions.
 
+The built-in server implements the first boundary explicitly: project instructions
+and project-local skills are omitted unless that launch supplies `--trust-project`.
+The choice is a volatile runtime binding rather than portable YAML, so cloning or
+reusing a composition cannot silently trust a different workspace. The server and
+launcher announce the effective choice. Explicit external roots remain operator
+configuration and learned roots remain governed by their promotion lifecycle.
+
 ## Logging and privacy
 
 Audit logs should contain operation hashes, classifications, approval decisions, paths, exit status, byte counts, and redacted diagnostics. Avoid storing source bodies, complete prompts, secrets, or customer data in centralized telemetry unless retention and access controls explicitly allow it.

@@ -83,6 +83,7 @@ class HarnessSettings:
     learning_enabled: bool
     learning_min_support: int
     learning_trial_percent: int
+    project_trusted: bool
 
 
 def _state_root(workspace: Path) -> Path:
@@ -109,8 +110,8 @@ def _trace_mode() -> str:
     return value
 
 
-def _skill_roots(workspace: Path) -> tuple[Path, ...]:
-    roots = [workspace / ".agents" / "skills"]
+def _skill_roots(workspace: Path, *, project_trusted: bool) -> tuple[Path, ...]:
+    roots = [workspace / ".agents" / "skills"] if project_trusted else []
     configured = os.getenv("ADK_CODING_SKILL_DIRS", "").strip()
     if configured:
         roots.extend(
@@ -162,7 +163,10 @@ def load_settings() -> HarnessSettings:
     worker_id = os.getenv("ADK_CODING_WORKER_ID", "").strip()
     if not worker_id:
         worker_id = f"{socket.gethostname()}:{os.getpid()}"
-    project_instructions = collect_project_instructions(workspace)
+    project_trusted = _enabled("ADK_CODING_TRUST_PROJECT")
+    project_instructions = (
+        collect_project_instructions(workspace) if project_trusted else ""
+    )
     if len(project_instructions) > 16_000:
         project_instructions = (
             project_instructions[:16_000]
@@ -214,7 +218,7 @@ def load_settings() -> HarnessSettings:
             64,
             int(os.getenv("ADK_CODING_TRACE_MAX_CONTENT_BYTES", "8192")),
         ),
-        skill_roots=_skill_roots(workspace),
+        skill_roots=_skill_roots(workspace, project_trusted=project_trusted),
         learned_skill_root=state_root / "learned-skills",
         skill_max_selected=max(
             0,
@@ -233,6 +237,7 @@ def load_settings() -> HarnessSettings:
             100,
             max(0, int(os.getenv("ADK_CODING_LEARNING_TRIAL_PERCENT", "20"))),
         ),
+        project_trusted=project_trusted,
     )
 
 
@@ -255,7 +260,9 @@ def settings_from_composition(
         builtin_name="coding_worker_v1",
         builtin_text=_BASE_INSTRUCTION,
     )
-    project_instructions = collect_project_instructions(workspace)
+    project_instructions = (
+        collect_project_instructions(workspace) if bindings.project_trusted else ""
+    )
     if len(project_instructions) > 16_000:
         project_instructions = (
             project_instructions[:16_000]
@@ -271,7 +278,7 @@ def settings_from_composition(
         config.models[review_agent.model].name if review_agent is not None else coding_model
     )
     skill_roots: list[Path] = []
-    if config.skills.project_root_enabled:
+    if config.skills.project_root_enabled and bindings.project_trusted:
         skill_roots.append(workspace / ".agents" / "skills")
     for configured in config.skills.additional_roots:
         path = configured.expanduser()
@@ -321,6 +328,7 @@ def settings_from_composition(
         learning_enabled=config.learning.enabled,
         learning_min_support=config.learning.minimum_support,
         learning_trial_percent=config.learning.trial_percent,
+        project_trusted=bindings.project_trusted,
     )
 
 
