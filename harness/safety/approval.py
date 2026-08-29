@@ -73,6 +73,7 @@ _BUILD_COMMANDS = {
     "pyright",
     "pytest",
     "python",
+    "python3",
     "ruff",
     "tox",
     "uv",
