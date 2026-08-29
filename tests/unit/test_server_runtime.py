@@ -687,6 +687,37 @@ async def test_idle_timeout_fails_after_partial_progress_without_retry(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_nonpublic_model_activity_renews_idle_deadline(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(
+        tmp_path,
+        liveness=RunLivenessPolicy(
+            first_event_timeout=0.1,
+            idle_timeout=0.03,
+            total_timeout=1,
+            first_event_retries=0,
+            close_timeout=1,
+        ),
+    )
+    record, _ = await coordinator.start(_start(), user_id="user-1")
+    execution = factory.executions[record.run_id]
+    await _wait_entered(execution)
+
+    for index in range(3):
+        await asyncio.sleep(0.02)
+        execution.emit(f"model-activity:{index}")
+    execution.finish()
+
+    finished = await coordinator.wait(record.run_id)
+    events = [envelope.event for envelope in coordinator.store.replay(record.run_id)]
+
+    assert finished.status == "completed"
+    assert [event.type for event in events] == [
+        AgUiEventType.RUN_STARTED,
+        AgUiEventType.RUN_FINISHED,
+    ]
+
+
+@pytest.mark.asyncio
 async def test_total_timeout_applies_even_while_events_keep_arriving(tmp_path: Path) -> None:
     coordinator, factory = _coordinator(
         tmp_path,
@@ -793,6 +824,32 @@ class _RepeatedEventIdAgent(BaseAgent):
                     parts=[types.Part(text=text)],
                 ),
             )
+
+
+class _ReasoningThenOutputAgent(BaseAgent):
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
+        for index in range(2):
+            yield Event(
+                id=f"reasoning-{index}",
+                invocation_id=ctx.invocation_id,
+                author=self.name,
+                model_version="test-local-model",
+                partial=True,
+                content=types.Content(
+                    role="assistant",
+                    parts=[types.Part(text=f"hidden-{index}", thought=True)],
+                ),
+            )
+        yield Event(
+            id="answer",
+            invocation_id=ctx.invocation_id,
+            author=self.name,
+            model_version="test-local-model",
+            content=types.Content(
+                role="assistant",
+                parts=[types.Part(text="visible")],
+            ),
+        )
 
 
 class _BlockingTestLlm(BaseLlm):
@@ -934,6 +991,54 @@ async def test_real_adk_runner_disambiguates_reused_stream_event_ids(
         for event in batch.events
         if event.type == AgUiEventType.TEXT_MESSAGE_CONTENT
     ] == ["Hello", ", world!"]
+
+
+@pytest.mark.asyncio
+async def test_real_adk_runner_counts_hidden_reasoning_as_nonpublic_activity(
+    tmp_path: Path,
+) -> None:
+    store = SqliteRunEventStore(tmp_path / "record.db")
+    record, _ = store.create_run(
+        request_id="request-reasoning",
+        idempotency_key="start-reasoning",
+        thread_id="thread-reasoning",
+        user_id="user-reasoning",
+        input="Think, then answer",
+    )
+    service = InMemorySessionService()
+    app = App(
+        name="reasoning_app",
+        root_agent=_ReasoningThenOutputAgent(name="worker"),
+    )
+    runner = Runner(app=app, session_service=service, auto_create_session=False)
+    execution = AdkRunExecution(
+        record=record,
+        runner=runner,
+        app_name=app.name,
+        session_service=service,
+        controls=None,
+        max_llm_calls=1,
+        coding_model_status=PublicModelStatus(
+            provider="openai_compatible",
+            name="test-local-model",
+            readiness=ModelReadiness.ADAPTER_INITIALIZED,
+        ),
+    )
+
+    try:
+        batches = [batch async for batch in execution.events()]
+    finally:
+        await execution.aclose()
+
+    public = [event for batch in batches for event in batch.events]
+    assert [event.name for event in public[:2]] == [
+        "coding.model.status",
+        "coding.model.activity",
+    ]
+    assert public[1].value == {"phase": "reasoning"}
+    assert any(batch.events == () for batch in batches)
+    assert all("hidden" not in event.model_dump_json() for event in public)
+    assert any(event.delta == "visible" for event in public)
 
 
 @pytest.mark.asyncio

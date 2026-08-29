@@ -194,11 +194,18 @@ class AdkRunExecution:
         )
         async with aclosing(generator) as adk_events:
             responding_reported = False
+            reasoning_activity_reported = False
             event_id_occurrences: dict[str, int] = {}
             async for event in adk_events:
                 occurrence = event_id_occurrences.get(event.id, 0)
                 event_id_occurrences[event.id] = occurrence + 1
                 normalized = normalizer.push(event)
+                has_reasoning_activity = any(
+                    getattr(part, "thought", False)
+                    for part in (
+                        (event.content.parts or ()) if event.content is not None else ()
+                    )
+                )
                 if (
                     not responding_reported
                     and self.coding_model_status is not None
@@ -218,10 +225,30 @@ class AdkRunExecution:
                         ),
                         *normalized,
                     )
+                if has_reasoning_activity and not reasoning_activity_reported:
+                    reasoning_activity_reported = True
+                    normalized = (
+                        *normalized,
+                        AgUiEvent(
+                            type=AgUiEventType.CUSTOM,
+                            thread_id=self.record.thread_id,
+                            run_id=self.record.run_id,
+                            name="coding.model.activity",
+                            value={"phase": "reasoning"},
+                        ),
+                    )
                 if normalized:
                     yield PublicEventBatch(
                         source_key=f"adk:{event.id}:{occurrence}",
                         events=normalized,
+                    )
+                elif event.model_version and not event.error_code:
+                    # Hidden reasoning and provider bookkeeping are still proof
+                    # of activity. Renew liveness without persisting or
+                    # broadcasting one event per private model token.
+                    yield PublicEventBatch(
+                        source_key=f"adk-activity:{event.id}:{occurrence}",
+                        events=(),
                     )
         trailing = normalizer.finish()
         if trailing:

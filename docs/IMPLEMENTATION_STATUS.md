@@ -98,6 +98,8 @@ complete.
 - [x] Configurable first-event, idle, total-run, and cleanup deadlines with one
   bounded startup retry, classified durable failures, and same-task ADK generator
   shutdown.
+- [x] Hidden model-reasoning events renew liveness without exposing chain-of-thought
+  or persisting token-level heartbeat noise; one bounded reasoning state is public.
 
 ### Verification and evaluation
 
