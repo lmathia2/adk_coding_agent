@@ -8,7 +8,12 @@ import socket
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness.config import HarnessComposition, PiCodingConfig, RuntimeBindings
+from harness.config import (
+    HarnessComposition,
+    PiCodingConfig,
+    PromptConfig,
+    RuntimeBindings,
+)
 from harness.context import build_static_prefix
 from harness.repo import collect_project_instructions
 
@@ -116,6 +121,39 @@ def _skill_roots(workspace: Path) -> tuple[Path, ...]:
     return tuple(dict.fromkeys(path.absolute() for path in roots))
 
 
+def resolve_prompt_text(
+    prompt: PromptConfig,
+    *,
+    configuration_root: Path,
+    builtin_name: str,
+    builtin_text: str,
+    max_bytes: int = 128_000,
+) -> str:
+    """Resolve one portable prompt without allowing path or symlink escape."""
+
+    if prompt.source == "builtin":
+        if prompt.name != builtin_name:
+            raise ValueError(
+                f"unsupported builtin prompt {prompt.name!r}; expected {builtin_name!r}"
+            )
+        return builtin_text
+    assert prompt.path is not None
+    if prompt.path.is_absolute():
+        raise ValueError("file prompt paths must be relative to the configuration root")
+    root = configuration_root.expanduser().resolve()
+    resolved = (root / prompt.path).resolve(strict=True)
+    try:
+        resolved.relative_to(root)
+    except ValueError as error:
+        raise ValueError("file prompt escapes the configuration root") from error
+    if not resolved.is_file():
+        raise ValueError("file prompt must resolve to a regular file")
+    content = resolved.read_bytes()
+    if len(content) > max_bytes:
+        raise ValueError(f"file prompt exceeds {max_bytes} bytes")
+    return content.decode("utf-8").strip()
+
+
 def load_settings() -> HarnessSettings:
     workspace = Path(os.getenv("ADK_CODING_WORKSPACE", os.getcwd())).resolve()
     source_value = os.getenv("ADK_CODING_SOURCE_REPOSITORY")
@@ -210,17 +248,23 @@ def settings_from_composition(
     workspace = bindings.workspace.expanduser().resolve()
     state_root = bindings.state_root.expanduser().resolve()
     configuration_root = (bindings.configuration_root or workspace).expanduser().resolve()
+    worker_config = config.agents["coding_worker"]
+    instruction = resolve_prompt_text(
+        worker_config.prompt,
+        configuration_root=configuration_root,
+        builtin_name="coding_worker_v1",
+        builtin_text=_BASE_INSTRUCTION,
+    )
     project_instructions = collect_project_instructions(workspace)
     if len(project_instructions) > 16_000:
         project_instructions = (
             project_instructions[:16_000]
             + "\n[project instructions truncated; read the source files when needed]"
         )
-    instruction = _BASE_INSTRUCTION
     if project_instructions:
         instruction += "\n\nStable project instructions:\n" + project_instructions
 
-    coding_model = config.models["coding"].name
+    coding_model = config.models[worker_config.model].name
     review_agent_name = config.reviewer.agent or "final_diff_reviewer"
     review_agent = config.agents.get(review_agent_name)
     review_model = (

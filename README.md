@@ -185,6 +185,16 @@ input for a task (`work_packet_tokens` and `max_task_input_tokens`). A JSON task
 request can set a lower `max_input_tokens` for a specific run. Exceeding the limit
 produces a durable blocked result rather than silently continuing an expensive loop.
 
+Agent model keys and prompts are also executable YAML configuration. To replace the
+worker instruction, set `harness.config.agents.coding_worker.prompt` to
+`{source: file, path: prompts/coding.md}`. The path is resolved relative to the YAML
+file's directory; absolute paths, escapes, symlink escapes, oversized files, and
+invalid UTF-8 fail before a run. The resolved prompt content is included in the
+behavior hash. The built-in Pi graph and agent contracts are deliberately fixed—use
+a registered `HarnessFactory` implementation to introduce another topology. Because
+the WebSocket/AG-UI contract is shared, the Bubble Tea TUI does not change when the
+harness implementation changes.
+
 ### Magnitude on macOS
 
 The harness can use a model selected and served by

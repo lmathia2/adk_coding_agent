@@ -146,12 +146,13 @@ def build_final_diff_reviewer(
     model: BaseLlm,
     *,
     model_name: str | None = None,
+    instruction: str = FINAL_REVIEW_INSTRUCTION,
 ) -> ReviewerBundle:
     agent = Agent(
         name="final_diff_reviewer",
         model=model,
         description="Advisory, bounded review of a deterministically verified final diff.",
-        static_instruction=FINAL_REVIEW_INSTRUCTION,
+        static_instruction=instruction,
         instruction="",
         tools=[],
         include_contents="none",
@@ -163,7 +164,7 @@ def build_final_diff_reviewer(
         static_prefix=build_static_prefix(
             model_name=model_name or model.model,
             tool_names=(),
-            instruction=FINAL_REVIEW_INSTRUCTION,
+            instruction=instruction,
         ),
     )
 

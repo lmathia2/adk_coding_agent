@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from harness.config import (
     FOUR_CODING_TOOLS,
+    PiCodingConfig,
     RuntimeBindings,
     load_harness_composition,
     parse_harness_composition,
@@ -42,14 +43,34 @@ def _composition_payload() -> dict[str, Any]:
         "workflow": {
             "entry": "initialize",
             "nodes": {
-                "initialize": {"kind": "initialize", "next": "verify"},
+                "initialize": {"kind": "initialize", "next": "compile"},
+                "compile": {"kind": "compile_context", "next": "code"},
+                "code": {
+                    "kind": "invoke_agent",
+                    "agent": "coding_worker",
+                    "next": "reduce",
+                },
+                "reduce": {"kind": "reduce_step", "next": "route"},
+                "route": {
+                    "kind": "route",
+                    "routes": {
+                        "continue": "compile",
+                        "compact": "compact",
+                        "replan": "replan",
+                        "verify": "verify",
+                        "blocked": "blocked",
+                    },
+                },
+                "compact": {"kind": "compact", "next": "compile"},
+                "replan": {"kind": "replan", "next": "compile"},
                 "verify": {
                     "kind": "verify",
-                    "routes": {"passed": "review", "failed": "blocked"},
+                    "routes": {"passed": "review", "failed": "compile"},
                 },
                 "review": {
                     "kind": "review",
                     "agent": "final_diff_reviewer",
+                    "enabled": False,
                     "next": "finish",
                 },
                 "finish": {"kind": "finish"},
@@ -74,18 +95,20 @@ def _composition_payload() -> dict[str, Any]:
 
 def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     composition = load_harness_composition()
+    config = composition.harness.config
+    assert isinstance(config, PiCodingConfig)
 
     assert composition.schema_version == 1
-    assert composition.harness.config.tools.visible == FOUR_CODING_TOOLS
+    assert config.tools.visible == FOUR_CODING_TOOLS
     assert composition.server.protocol == "ag_ui_websocket_v1"
     assert composition.server.first_event_timeout_seconds == 120
     assert composition.server.idle_timeout_seconds == 180
     assert composition.server.total_timeout_seconds == 1_800
     assert composition.server.first_event_retries == 1
-    assert composition.harness.config.context.work_packet_tokens == 20_000
-    assert composition.harness.config.context.max_task_input_tokens == 200_000
+    assert config.context.work_packet_tokens == 20_000
+    assert config.context.max_task_input_tokens == 200_000
     assert "tui" not in type(composition.server).model_fields
-    assert composition.harness.config.models["coding"].provider == "google_adk"
+    assert config.models["coding"].provider == "google_adk"
 
 
 @pytest.mark.parametrize("removed_field", ["inbound_queue_size", "heartbeat_seconds"])
@@ -143,10 +166,12 @@ def test_loader_preserves_portable_relative_resource_paths(tmp_path: Path) -> No
     config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
 
     composition = load_harness_composition(config_path)
+    config = composition.harness.config
+    assert isinstance(config, PiCodingConfig)
 
-    prompt_path = composition.harness.config.agents["coding_worker"].prompt.path
+    prompt_path = config.agents["coding_worker"].prompt.path
     assert prompt_path == Path("prompts/coding.md")
-    assert composition.harness.config.skills.additional_roots == (Path("skills"),)
+    assert config.skills.additional_roots == (Path("skills"),)
     assert str(tmp_path) not in composition.canonical_json()
 
 
@@ -211,6 +236,49 @@ def test_workflow_references_must_resolve() -> None:
 
     with pytest.raises(ValidationError, match="references missing nodes"):
         parse_harness_composition(payload)
+
+
+def test_pi_workflow_variation_is_rejected_during_parse_not_late_build() -> None:
+    payload = _composition_payload()
+    nodes = payload["harness"]["config"]["workflow"]["nodes"]
+    nodes["route"]["routes"]["continue"] = "alternate"
+    nodes["alternate"] = {
+        "kind": "compile_context",
+        "next": "compile",
+    }
+
+    with pytest.raises(ValidationError, match="fixed verified workflow graph"):
+        parse_harness_composition(payload)
+
+
+def test_pi_config_rejects_unused_model_entries() -> None:
+    payload = _composition_payload()
+    payload["harness"]["config"]["models"]["unused"] = {
+        "provider": "google_adk",
+        "name": "unused-model",
+    }
+
+    with pytest.raises(ValidationError, match="must be referenced"):
+        parse_harness_composition(payload)
+
+
+def test_resolved_file_prompt_rejects_symlink_escape(tmp_path: Path) -> None:
+    payload = _composition_payload()
+    payload["harness"]["config"]["agents"]["coding_worker"]["prompt"] = {
+        "source": "file",
+        "path": "prompts/worker.md",
+    }
+    root = tmp_path / "configuration"
+    root.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("untrusted prompt", encoding="utf-8")
+    prompts = root / "prompts"
+    prompts.mkdir()
+    (prompts / "worker.md").symlink_to(outside)
+    composition = parse_harness_composition(payload)
+
+    with pytest.raises(ValueError, match="escapes the configuration root"):
+        composition.resolved_behavior_sha256(root)
 
 
 def test_workflow_requires_a_reachable_finish_node() -> None:

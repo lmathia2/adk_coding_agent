@@ -27,6 +27,9 @@ complete.
 - [x] Registered Pi harness factory with implementation-owned strict configuration,
   explicit runtime bindings, isolated builds, and a swappable test harness behind the
   same public contract.
+- [x] Parse-time rejection of unsupported Pi workflow/agent shapes, executable agent
+  model bindings, and bounded configuration-root prompt files covered by the resolved
+  behavior hash.
 - [x] Versioned WebSocket control and AG-UI event-envelope contracts.
 
 ### Context economy

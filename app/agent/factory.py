@@ -41,8 +41,12 @@ from harness.tools.adk_adapter import create_adk_tools, discover_known_secrets
 from harness.tracing import CodingToolArtifactPlugin, HarnessTracePlugin, TraceContentMode
 from harness.workspace import GitWorktreeManager
 
-from .builders import build_coding_worker, build_final_diff_reviewer
-from .config import settings_from_composition
+from .builders import (
+    FINAL_REVIEW_INSTRUCTION,
+    build_coding_worker,
+    build_final_diff_reviewer,
+)
+from .config import resolve_prompt_text, settings_from_composition
 from .learning import VerifiedTraceLearningPlugin
 from .skills import build_learning_controller
 from .workflow import PiWorkflowDependencies, build_root_agent
@@ -183,7 +187,7 @@ class PiCodingHarnessFactory:
                 "review": {
                     "kind": "review",
                     "agent": "final_diff_reviewer",
-                    "enabled": False,
+                    "enabled": config.reviewer.enabled,
                     "next": "finish",
                 },
                 "finish": {"kind": "finish"},
@@ -207,8 +211,10 @@ class PiCodingHarnessFactory:
             or worker.tools != FOUR_CODING_TOOLS
             or worker.output_schema != "agent_step"
             or worker.mode != "multi_turn"
-            or worker.prompt.source != "builtin"
-            or worker.prompt.name != "coding_worker_v1"
+            or (
+                worker.prompt.source == "builtin"
+                and worker.prompt.name != "coding_worker_v1"
+            )
         ):
             raise ValueError("pi_coding_v1 requires the fixed coding_worker contract")
         reviewer = config.agents.get("final_diff_reviewer")
@@ -218,12 +224,22 @@ class PiCodingHarnessFactory:
             or reviewer.tools
             or reviewer.output_schema != "final_diff_review"
             or reviewer.mode != "single_turn"
-            or reviewer.prompt.source != "builtin"
-            or reviewer.prompt.name != "final_diff_review_v1"
+            or (
+                reviewer.prompt.source == "builtin"
+                and reviewer.prompt.name != "final_diff_review_v1"
+            )
         ):
             raise ValueError("pi_coding_v1 requires the fixed final reviewer contract")
-        if "coding" not in config.models:
-            raise ValueError("pi_coding_v1 requires a coding model")
+        if set(config.agents) != {"coding_worker", "final_diff_reviewer"}:
+            raise ValueError(
+                "pi_coding_v1 accepts only coding_worker and final_diff_reviewer; "
+                "register another harness for additional agents"
+            )
+        referenced_models = {agent.model for agent in config.agents.values()}
+        if set(config.models) != referenced_models:
+            raise ValueError(
+                "pi_coding_v1 model entries must be referenced by a configured agent"
+            )
         unknown_providers = sorted(
             {
                 model.provider
@@ -292,7 +308,8 @@ class PiCodingHarnessFactory:
                 ),
             )
 
-        coding_model = build_model("coding")
+        worker_config = config.agents["coding_worker"]
+        coding_model = build_model(worker_config.model)
         worker = build_coding_worker(
             settings,
             coding_model,
@@ -304,10 +321,20 @@ class PiCodingHarnessFactory:
         if reviewer_config is None:
             reviewer_config = config.agents["final_diff_reviewer"]
         reviewer_model_config = config.models[reviewer_config.model]
+        configuration_root = (
+            bindings.configuration_root or bindings.workspace
+        ).expanduser().resolve()
+        reviewer_instruction = resolve_prompt_text(
+            reviewer_config.prompt,
+            configuration_root=configuration_root,
+            builtin_name="final_diff_review_v1",
+            builtin_text=FINAL_REVIEW_INSTRUCTION,
+        )
         reviewer = (
             build_final_diff_reviewer(
                 build_model(reviewer_config.model),
                 model_name=reviewer_model_config.name,
+                instruction=reviewer_instruction,
             )
             if config.reviewer.enabled
             else None

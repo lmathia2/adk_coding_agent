@@ -73,9 +73,14 @@ The declarative models, implementation-specific strict schemas, closed factory
 registry, and configuration-driven ADK `App` assembly are implemented. Application
 imports are lazy, and each factory build receives explicit runtime bindings and
 constructs isolated workflow, tool, state, sandbox, plugin, and model dependencies.
-The Pi implementation fails closed when YAML changes a topology edge, route, prompt,
-or agent contract that its compiled workflow cannot honor; materially different
-topologies are registered as separate harnesses.
+The Pi implementation validates its compiled topology, routes, agent names, and
+agent contracts while parsing YAML, so unsupported graph changes fail before server
+startup. Its agent model bindings and built-in or configuration-root-relative prompt
+files are executable configuration, not descriptive metadata. Prompt files are
+UTF-8, size-bounded, included in the resolved behavior hash, and cannot escape the
+configuration root through `..`, absolute paths, or symlinks. Materially different
+topologies are registered as separate harnesses and continue to use the same client
+protocol.
 The WebSocket server and Bubble Tea client implement this boundary. See
 [`design/declarative-runtime-and-clients.md`](design/declarative-runtime-and-clients.md)
 for the full boundary and delivery plan.

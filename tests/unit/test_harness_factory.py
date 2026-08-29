@@ -12,7 +12,7 @@ from typing import Any, cast
 import pytest
 from google.adk.agents import LlmAgent
 from google.adk.apps import App
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from app.agent.config import settings_from_composition
 from app.agent.factory import (
@@ -230,6 +230,56 @@ def test_default_pi_factory_builds_from_composition_without_credentials(
     assert registry.available() == ("pi_coding_v1",)
     assert not environment_state.exists()
 
+
+def test_pi_factory_executes_file_prompt_and_agent_model_bindings(
+    tmp_path: Path,
+) -> None:
+    registry = default_harness_registry()
+    payload = load_harness_composition(
+        config_models=registry.config_models()
+    ).model_dump(mode="python")
+    config = cast(dict[str, Any], cast(dict[str, Any], payload["harness"])["config"])
+    models = cast(dict[str, Any], config["models"])
+    agents = cast(dict[str, Any], config["agents"])
+    config["models"] = {
+        "primary": models["coding"],
+        "critic": models["reviewer"],
+    }
+    agents["coding_worker"]["model"] = "primary"
+    agents["final_diff_reviewer"]["model"] = "critic"
+    prompt_root = tmp_path / "configuration"
+    prompt = prompt_root / "prompts" / "worker.md"
+    prompt.parent.mkdir(parents=True)
+    prompt.write_text(
+        "Return the required AgentStep JSON and keep changes extremely small.",
+        encoding="utf-8",
+    )
+    agents["coding_worker"]["prompt"] = {
+        "source": "file",
+        "path": Path("prompts/worker.md"),
+    }
+    configured = parse_harness_composition(
+        payload,
+        config_models=registry.config_models(),
+    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    assembly = registry.build(
+        configured,
+        RuntimeBindings(
+            workspace=workspace,
+            state_root=tmp_path / "state",
+            configuration_root=prompt_root,
+        ),
+    )
+
+    worker = cast(Any, assembly.agents["coding_worker"])
+    assert worker.static_instruction.startswith("Return the required AgentStep JSON")
+    assert assembly.build_info.models == {
+        "critic": models["reviewer"]["name"],
+        "primary": models["coding"]["name"],
+    }
 
 def test_importing_pi_factory_does_not_build_environment_singletons(
     tmp_path: Path,
@@ -451,7 +501,7 @@ def test_pi_factory_forwards_control_database_binding(
     monkeypatch.setattr(factory_module, "create_control_state_backend", create_backend)
     registry = default_harness_registry()
     composition = load_harness_composition(config_models=registry.config_models())
-    database_url = "postgresql://control.example/harness"
+    database_url = SecretStr("postgresql://control.example/harness")
     registry.build(
         composition,
         RuntimeBindings(
@@ -461,4 +511,6 @@ def test_pi_factory_forwards_control_database_binding(
         ),
     )
 
-    assert calls == [((tmp_path / "state").resolve(), database_url)]
+    assert calls == [
+        ((tmp_path / "state").resolve(), database_url.get_secret_value())
+    ]

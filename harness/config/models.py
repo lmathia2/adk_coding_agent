@@ -181,7 +181,7 @@ class VerifyNode(FrozenModel):
 class ReviewNode(FrozenModel):
     kind: Literal[NodeKind.REVIEW]
     agent: str = Field(min_length=1, max_length=64)
-    enabled: bool = True
+    enabled: bool = False
     next: str = Field(min_length=1, max_length=64)
 
 
@@ -464,6 +464,77 @@ class PiCodingConfig(FrozenModel):
                 raise ValueError(f"workflow node {name!r} references unknown agents: {missing}")
         if self.reviewer.enabled and self.reviewer.agent not in self.agents:
             raise ValueError("enabled reviewer references an unknown agent")
+        required_workflow = {
+            "entry": "initialize",
+            "nodes": {
+                "initialize": {"kind": "initialize", "next": "compile"},
+                "compile": {"kind": "compile_context", "next": "code"},
+                "code": {
+                    "kind": "invoke_agent",
+                    "agent": "coding_worker",
+                    "next": "reduce",
+                },
+                "reduce": {"kind": "reduce_step", "next": "route"},
+                "route": {
+                    "kind": "route",
+                    "routes": {
+                        "continue": "compile",
+                        "compact": "compact",
+                        "replan": "replan",
+                        "verify": "verify",
+                        "blocked": "blocked",
+                    },
+                },
+                "compact": {"kind": "compact", "next": "compile"},
+                "replan": {"kind": "replan", "next": "compile"},
+                "verify": {
+                    "kind": "verify",
+                    "routes": {"passed": "review", "failed": "compile"},
+                },
+                "review": {
+                    "kind": "review",
+                    "agent": "final_diff_reviewer",
+                    "enabled": self.reviewer.enabled,
+                    "next": "finish",
+                },
+                "finish": {"kind": "finish"},
+                "blocked": {"kind": "blocked"},
+            },
+        }
+        actual_workflow = self.workflow.model_dump(
+            mode="json",
+            exclude={"max_iterations"},
+        )
+        if actual_workflow != required_workflow:
+            raise ValueError(
+                "pi_coding_v1 has a fixed verified workflow graph; register another "
+                "harness implementation for a different topology"
+            )
+        if set(self.agents) != {"coding_worker", "final_diff_reviewer"}:
+            raise ValueError(
+                "pi_coding_v1 accepts only coding_worker and final_diff_reviewer"
+            )
+        worker = self.agents["coding_worker"]
+        reviewer = self.agents["final_diff_reviewer"]
+        if (
+            worker.kind != "llm"
+            or worker.tools != FOUR_CODING_TOOLS
+            or worker.output_schema != "agent_step"
+            or worker.mode != "multi_turn"
+        ):
+            raise ValueError("pi_coding_v1 requires the coding_worker contract")
+        if (
+            reviewer.kind != "reviewer"
+            or reviewer.tools
+            or reviewer.output_schema != "final_diff_review"
+            or reviewer.mode != "single_turn"
+        ):
+            raise ValueError("pi_coding_v1 requires the final_diff_reviewer contract")
+        referenced_models = {agent.model for agent in self.agents.values()}
+        if set(self.models) != referenced_models:
+            raise ValueError(
+                "pi_coding_v1 model entries must be referenced by a configured agent"
+            )
         return self
 
 
@@ -590,12 +661,20 @@ class HarnessComposition(FrozenModel):
             if prompt["source"] != "file":
                 continue
             portable_path = Path(prompt["path"])
-            resolved = (
-                portable_path
-                if portable_path.is_absolute()
-                else configuration_root / portable_path
-            ).resolve()
-            prompt["sha256"] = hashlib.sha256(resolved.read_bytes()).hexdigest()
+            if portable_path.is_absolute():
+                raise ValueError(
+                    "file prompt paths must be relative to the configuration root"
+                )
+            root = configuration_root.expanduser().resolve()
+            resolved = (root / portable_path).resolve(strict=True)
+            try:
+                resolved.relative_to(root)
+            except ValueError as error:
+                raise ValueError("file prompt escapes the configuration root") from error
+            content = resolved.read_bytes()
+            if len(content) > 128_000:
+                raise ValueError("file prompt exceeds 128000 bytes")
+            prompt["sha256"] = hashlib.sha256(content).hexdigest()
         payload = json.dumps(
             {"app": self.app.model_dump(mode="json"), "harness": harness},
             ensure_ascii=False,
@@ -628,6 +707,7 @@ __all__ = [
     "HarnessSelectionConfig",
     "ModelConfig",
     "PiCodingConfig",
+    "PromptConfig",
     "RuntimeBindings",
     "SandboxConfig",
     "SecretRef",

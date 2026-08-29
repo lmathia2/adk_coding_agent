@@ -200,7 +200,10 @@ def test_factory_does_not_construct_unused_or_disabled_models(tmp_path: Path) ->
                 update={
                     "config": config.model_copy(
                         update={
-                            "models": {**config.models, "unreachable": unreachable},
+                                "models": {
+                                    "coding": config.models["coding"],
+                                    "unreachable": unreachable,
+                                },
                             "agents": agents,
                         }
                     )
@@ -238,7 +241,17 @@ def test_factory_constructs_configured_reviewer_when_enabled(tmp_path: Path) -> 
                     "config": config.model_copy(
                         update={
                             "models": {**config.models, "reviewer": _magnitude_model()},
-                            "reviewer": config.reviewer.model_copy(update={"enabled": True}),
+                                "workflow": config.workflow.model_copy(
+                                    update={
+                                        "nodes": {
+                                            **config.workflow.nodes,
+                                            "review": config.workflow.nodes[
+                                                "review"
+                                            ].model_copy(update={"enabled": True}),
+                                        }
+                                    }
+                                ),
+                                "reviewer": config.reviewer.model_copy(update={"enabled": True}),
                         }
                     )
                 }
