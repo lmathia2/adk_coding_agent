@@ -195,6 +195,11 @@ def _parser() -> argparse.ArgumentParser:
     serve.add_argument("--state-root", type=Path)
     serve.add_argument("--config", type=Path)
     serve.add_argument(
+        "--production",
+        action="store_true",
+        help="Refuse the host-local sandbox and require an enforceable adapter",
+    )
+    serve.add_argument(
         "--print-config",
         action="store_true",
         help="Resolve and print server settings without starting the network listener",
@@ -213,6 +218,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Magnitude's OpenAI-compatible base URL",
     )
     magnitude.add_argument("--magnitude-state", type=Path)
+    magnitude.add_argument(
+        "--production",
+        action="store_true",
+        help="Refuse the host-local sandbox and require an enforceable adapter",
+    )
     magnitude.add_argument(
         "--no-start-magnitude",
         action="store_true",
@@ -248,8 +258,12 @@ def _serve(args: argparse.Namespace) -> int:
         workspace=workspace,
         state_root=state_root,
         config_path=config_path,
+        production=args.production,
     )
     server = assembly.composition.server
+    sandbox_kind = str(
+        getattr(getattr(assembly.composition.harness.config, "sandbox", None), "kind", "unknown")
+    )
     if args.print_config:
         print(
             json.dumps(
@@ -263,6 +277,8 @@ def _serve(args: argparse.Namespace) -> int:
                     "harness": assembly.coordinator.descriptor.implementation,
                     "host": server.host,
                     "port": server.port,
+                    "production_mode": bool(args.production),
+                    "sandbox": sandbox_kind,
                     "state_root": assembly.state_root.as_posix(),
                     "websocket_url": (f"ws://{server.host}:{server.port}{server.websocket_path}"),
                     "workspace": assembly.workspace.as_posix(),

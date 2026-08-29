@@ -39,6 +39,10 @@ adapter accepts only HTTPS or an injected enterprise transport. Neither backend 
 back to local execution after a configuration or transport failure. Output is redacted
 before it is bounded or persisted as an artifact.
 
+The server's `--production` gate rejects the host-local adapter before it creates
+state or opens a listener. Configuration inspection reports the effective sandbox,
+so an operator does not have to infer the isolation level from YAML or process logs.
+
 Recommended production defaults:
 
 ```text

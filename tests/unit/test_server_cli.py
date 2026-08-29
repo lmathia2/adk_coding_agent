@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 import yaml
 
 from harness.cli import main
@@ -36,10 +37,35 @@ def test_serve_print_config_resolves_composition_without_listening(
     assert payload["websocket_url"] == "ws://127.0.0.1:8765/v1/agent"
     assert payload["workspace"] == tmp_path.resolve().as_posix()
     assert payload["state_root"] == state_root.resolve().as_posix()
+    assert payload["sandbox"] == "local"
+    assert payload["production_mode"] is False
     assert (
         payload["auth_token_source"] == (state_root.resolve() / "server" / "auth-token").as_posix()
     )
     assert len(payload["config_sha256"]) == 64
+
+
+def test_production_server_refuses_local_sandbox_before_creating_state(
+    tmp_path: Path,
+) -> None:
+    state_root = tmp_path / "state"
+
+    with pytest.raises(ValueError, match="production mode requires"):
+        main(
+            [
+                "serve",
+                "--workspace",
+                str(tmp_path),
+                "--state-root",
+                str(state_root),
+                "--config",
+                str(DEFAULT_COMPOSITION_PATH),
+                "--production",
+                "--print-config",
+            ]
+        )
+
+    assert not state_root.exists()
 
 
 def test_serve_uses_adk_coding_config_when_flag_is_absent(

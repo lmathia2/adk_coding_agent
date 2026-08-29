@@ -175,6 +175,9 @@ agents-cli run '{"goal":"Fix the parser","acceptance_criteria":["Malformed input
 The local environment backend is a development adapter, not a security boundary.
 Production command execution can select Docker, a pre-provisioned Kubernetes task
 pod, or a pluggable enterprise remote sandbox with fail-closed configuration.
+Start `serve --production` after selecting one of those adapters; production mode
+refuses the host-local sandbox before creating server state. `--print-config` reports
+both the effective sandbox kind and whether the production gate is active.
 
 The repository lockfile pins the tested Google ADK 2.7 minor. Live credentialed
 Gemini runs remain an explicit deployment validation step; deterministic development

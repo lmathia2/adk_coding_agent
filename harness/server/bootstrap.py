@@ -115,6 +115,7 @@ def build_server_assembly(
     workspace: Path,
     state_root: Path,
     config_path: Path = DEFAULT_COMPOSITION_PATH,
+    production: bool = False,
 ) -> ServerAssembly:
     """Build the configured harness behind the protocol-only WebSocket app."""
 
@@ -123,14 +124,20 @@ def build_server_assembly(
     resolved_config = config_path.expanduser().resolve()
     if not resolved_workspace.is_dir():
         raise ValueError(f"workspace is not a directory: {resolved_workspace}")
-    resolved_state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    auth_token, auth_token_path = load_or_create_local_auth_token(resolved_state_root)
-
     registry = default_harness_registry()
     composition = load_harness_composition(
         resolved_config,
         config_models=registry.config_models(),
     )
+    sandbox = getattr(composition.harness.config, "sandbox", None)
+    sandbox_kind = str(getattr(sandbox, "kind", "unknown"))
+    if production and sandbox_kind == "local":
+        raise ValueError(
+            "production mode requires docker, kubernetes, or remote sandbox; "
+            "the local adapter is not an OS security boundary"
+        )
+    resolved_state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    auth_token, auth_token_path = load_or_create_local_auth_token(resolved_state_root)
     require_loopback_host(composition.server.host)
     bindings = RuntimeBindings(
         workspace=resolved_workspace,
