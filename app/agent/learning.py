@@ -34,6 +34,7 @@ _TOOL_CATEGORY = {
     "edit": "mutate",
     "write": "mutate",
 }
+_VERIFICATION_STRENGTH = {"none": -1, "syntax": 0, "static": 1, "behavioral": 2}
 
 
 def _context_value(context: Any, name: str, default: Any = None) -> Any:
@@ -189,7 +190,15 @@ def episode_for_verified_task(
     report = VerificationReport.model_validate(
         verification_event.payload.get("report", {})
     )
-    if not report.passed:
+    if (
+        not report.passed
+        or report.scope_violations
+        or report.unresolved_diagnostics
+        or not report.criteria
+        or any(not row.satisfied or not row.evidence for row in report.criteria)
+        or _VERIFICATION_STRENGTH[report.achieved_strength]
+        < _VERIFICATION_STRENGTH[report.required_strength]
+    ):
         return None
     ledger = rebuild_ledger(events)
     tool_spans = trace_store.query(
@@ -209,7 +218,24 @@ def episode_for_verified_task(
         tool_spans.extend(
             span for span in fallback_spans if span.span_id not in known_span_ids
         )
-    actions = tuple(
+    actions: list[NormalizedAction] = [
+        NormalizedAction(action="frame", category="requirements", outcome="ok")
+    ]
+    if ledger.permitted_paths is not None or ledger.forbidden_paths:
+        actions.append(
+            NormalizedAction(action="scope", category="boundaries", outcome="ok")
+        )
+    if ledger.plan:
+        actions.append(NormalizedAction(action="plan", category="steps", outcome="ok"))
+    if ledger.decisions:
+        actions.append(
+            NormalizedAction(action="decide", category="rationale", outcome="ok")
+        )
+    if any(event.kind == EventKind.STEERING_RECEIVED for event in events):
+        actions.append(
+            NormalizedAction(action="steer", category="correction", outcome="ok")
+        )
+    actions.extend(
         NormalizedAction(
             action=span.name if span.name in _TOOL_CATEGORY else "tool",
             category=_TOOL_CATEGORY.get(span.name, "other"),
@@ -223,19 +249,18 @@ def episode_for_verified_task(
         )
         for span in tool_spans
     )
-    if not actions:
-        actions = (
-            NormalizedAction(
-                action="verify",
-                category="task",
-                outcome="ok",
-            ),
+    actions.append(
+        NormalizedAction(
+            action="verify",
+            category=report.achieved_strength,
+            outcome="ok",
         )
+    )
     blocked = any(action.outcome == "blocked" for action in actions)
     return WorkflowEpisode(
         trace_id=f"task:{hashlib.sha256(task_id.encode()).hexdigest()}",
         workflow_kind=workflow_kind_for(ledger.goal, ledger.files_modified),
-        actions=actions,
+        actions=tuple(actions),
         verified_completed=True,
         blocked=blocked,
         security_risks=(

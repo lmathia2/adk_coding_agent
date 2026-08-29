@@ -29,7 +29,15 @@ from harness.learning import (
 from harness.learning import (
     SkillRegistry as LearnedSkillRegistry,
 )
-from harness.models import TaskLedger, TaskRequest, VerificationReport
+from harness.models import (
+    CriterionEvidence,
+    Decision,
+    EvidenceReference,
+    PlanStep,
+    TaskLedger,
+    TaskRequest,
+    VerificationReport,
+)
 from harness.state import EventKind, JsonlEventStore
 from harness.telemetry import MetricsStore, TaskOutcomeSample, ToolUsageSample
 from harness.tracing import TraceSpan, TraceStore
@@ -45,6 +53,32 @@ def _write_skill(root: Path, name: str, description: str, body: str) -> None:
         "---\n\n"
         f"{body}\n",
         encoding="utf-8",
+    )
+
+
+def _verified_report(*, changed_paths: list[str]) -> VerificationReport:
+    reference = EvidenceReference(
+        kind="command_result",
+        reference="validation:0",
+        command_sha256="a" * 64,
+        validation_index=0,
+        category="test",
+        strength="behavioral",
+    )
+    return VerificationReport(
+        passed=True,
+        criteria=[
+            CriterionEvidence(
+                criterion="Tests pass",
+                satisfied=True,
+                claimed_evidence=["tests passed"],
+                evidence=[reference],
+            )
+        ],
+        commands_run=["pytest -q"],
+        changed_paths=changed_paths,
+        required_strength="behavioral",
+        achieved_strength="behavioral",
     )
 
 
@@ -146,16 +180,26 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
         base_revision="abc123",
     )
     ledger.files_modified = ["parser.py"]
+    ledger.permitted_paths = ["parser.py"]
+    ledger.plan = [PlanStep(step_id="implement", description="Implement parser")]
+    ledger.decisions = [
+        Decision(summary="Preserve API", rationale="User preference")
+    ]
     events.append(
         task_id,
         EventKind.TASK_CREATED,
         {"ledger": ledger.model_dump(mode="json")},
     )
-    report = VerificationReport(passed=True, changed_paths=["parser.py"])
+    report = _verified_report(changed_paths=["parser.py"])
     events.append(
         task_id,
         EventKind.VERIFICATION_COMPLETED,
         {"report": report.model_dump(mode="json")},
+    )
+    events.append(
+        task_id,
+        EventKind.STEERING_RECEIVED,
+        {"message_id": "steer-1", "content": "private user correction"},
     )
     events.append(task_id, EventKind.TASK_FINISHED, {"verification": {}})
 
@@ -224,15 +268,22 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
     assert episode is not None
     assert episode.workflow_kind == "python-change"
     assert [action.token for action in episode.actions] == [
+        "frame:requirements:ok",
+        "scope:boundaries:ok",
+        "plan:steps:ok",
+        "decide:rationale:ok",
+        "steer:correction:ok",
         "read:inspect:ok",
         "search.grep:inspect:ok",
         "search.find:inspect:ok",
         "search.health:inspect:ok",
+        "verify:behavioral:ok",
     ]
     assert episode.quality.tool_calls == 4
     serialized = episode.model_dump_json()
     assert "Fix the parser" not in serialized
     assert "secret" not in serialized
+    assert "private user correction" not in serialized
 
     shared_session = "shared-session"
     traces.append(
@@ -275,11 +326,17 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
     )
     assert scoped_episode is not None
     assert [action.token for action in scoped_episode.actions] == [
+        "frame:requirements:ok",
+        "scope:boundaries:ok",
+        "plan:steps:ok",
+        "decide:rationale:ok",
+        "steer:correction:ok",
         "read:inspect:ok",
         "search.grep:inspect:ok",
         "search.find:inspect:ok",
         "search.health:inspect:ok",
         "bash:shell:ok",
+        "verify:behavioral:ok",
     ]
     assert not scoped_episode.blocked
 
@@ -292,10 +349,16 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
     )
     assert uncorrelated_episode is not None
     assert [action.token for action in uncorrelated_episode.actions] == [
+        "frame:requirements:ok",
+        "scope:boundaries:ok",
+        "plan:steps:ok",
+        "decide:rationale:ok",
+        "steer:correction:ok",
         "read:inspect:ok",
         "search.grep:inspect:ok",
         "search.find:inspect:ok",
         "search.health:inspect:ok",
+        "verify:behavioral:ok",
     ]
     assert not uncorrelated_episode.blocked
 
@@ -324,6 +387,37 @@ def test_verified_task_reduces_to_privacy_safe_episode(tmp_path: Path) -> None:
     assert blocked_episode.blocked
     assert blocked_episode.security_risks == ("policy-blocked-tool-call",)
     assert blocked_episode.quality.tool_calls == 5
+
+
+def test_false_positive_completion_cannot_enter_learning_store(tmp_path: Path) -> None:
+    task_id = "false-positive"
+    events = JsonlEventStore(tmp_path / "events")
+    ledger = TaskLedger.from_request(
+        TaskRequest(goal="Implement behavior", acceptance_criteria=["It works"]),
+        task_id=task_id,
+        workspace_id="workspace",
+        base_revision="abc123",
+    )
+    events.append(
+        task_id,
+        EventKind.TASK_CREATED,
+        {"ledger": ledger.model_dump(mode="json")},
+    )
+    events.append(
+        task_id,
+        EventKind.VERIFICATION_COMPLETED,
+        {"report": VerificationReport(passed=True).model_dump(mode="json")},
+    )
+    events.append(task_id, EventKind.TASK_FINISHED, {"verification": {}})
+
+    episode = episode_for_verified_task(
+        task_id=task_id,
+        event_store=events,
+        trace_store=TraceStore(tmp_path / "traces.db"),
+        metrics_store=MetricsStore(tmp_path / "metrics.db"),
+    )
+
+    assert episode is None
 
 
 def test_workflow_kind_is_coarse_and_deterministic() -> None:

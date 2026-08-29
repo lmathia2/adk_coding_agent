@@ -45,11 +45,19 @@ the volatile work packet, and referenced resources are not loaded implicitly.
 
 ## Learning and quality gates
 
-A workflow episode is eligible only when deterministic verification passed. The
+A workflow episode is eligible only when deterministic verification passed. Every
+acceptance criterion must carry a typed environmental evidence reference, achieved
+verification strength must satisfy the required strength, and scope violations or
+unresolved diagnostics make the trace ineligible even if a terminal event says
+`passed`. The
 learner stores a privacy-safe fingerprint, normalized action sequence, outcome and
 cost/latency/context metrics. It never treats model completion claims as success.
 
-Repeated eligible patterns may synthesize a candidate skill. Synthesis is pluggable,
+The privacy-safe projection retains normalized workflow phases—requirement framing,
+scope boundaries, planning, rationale-bearing decisions, user steering corrections,
+tool categories/outcomes, and verification strength—without retaining prompt,
+steering, source, argument, or output bodies. Repeated eligible patterns may
+synthesize a candidate skill. Synthesis is pluggable,
 but the baseline implementation is conservative and local: it writes only procedural
 steps inferred from normalized action kinds and provenance trace IDs. It does not
 copy prompts, tool payload bodies, model responses, source code, secrets, or commands

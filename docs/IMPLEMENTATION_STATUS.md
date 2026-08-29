@@ -117,6 +117,9 @@ complete.
 - [x] Trusted multi-root Agent Skills discovery with path confinement, validation, hashing, and progressive disclosure.
 - [x] Deterministic explicit and lexical skill selection in the volatile work packet.
 - [x] Verified-only workflow episodes, repeated-pattern discovery, and privacy-safe heuristic synthesis.
+- [x] Learning eligibility requires typed environmental evidence for every criterion
+  and records privacy-safe requirement, scope, plan, decision, steering, tool, and
+  verification phases rather than raw interaction content.
 - [x] Candidate/baseline assignment, multi-metric promotion gates, provenance, and automatic rollback.
 - [x] Runtime integration that cannot broaden the four-tool surface or override deterministic verification.
 - [x] Programmatic high-fanout routing skill with a controlled paired-ablation definition.
