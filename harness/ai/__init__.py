@@ -10,6 +10,7 @@ from .function_call_ids import (
 from .providers import (
     ClosedAdkModelProviderRegistry,
     GoogleAdkModelProvider,
+    OpenAiCodexModelProvider,
     OpenAiCompatibleModelProvider,
     default_adk_model_provider_registry,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "FunctionCallIdNormalizationError",
     "FunctionCallIdNormalizingLlm",
     "GoogleAdkModelProvider",
+    "OpenAiCodexModelProvider",
     "OpenAiCompatibleModelProvider",
     "default_adk_model_provider_registry",
     "normalize_llm_request_function_call_ids",

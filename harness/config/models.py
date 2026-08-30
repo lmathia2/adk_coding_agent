@@ -63,6 +63,10 @@ class ModelConfig(FrozenModel):
     retry: RetryConfig = RetryConfig()
     base_url: str | None = Field(default=None, min_length=8, max_length=2_048)
     api_key: SecretRef | None = None
+    client_version: str | None = Field(
+        default=None,
+        pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$",
+    )
 
     @field_validator("base_url")
     @classmethod
@@ -87,9 +91,22 @@ class ModelConfig(FrozenModel):
             if self.api_key is None:
                 raise ValueError("openai_compatible models require an api_key env reference")
         elif self.provider == "google_adk" and (
+            self.base_url is not None
+            or self.api_key is not None
+            or self.client_version is not None
+        ):
+            raise ValueError(
+                "google_adk models cannot define base_url, api_key, or client_version"
+            )
+        elif self.provider == "openai_codex" and (
             self.base_url is not None or self.api_key is not None
         ):
-            raise ValueError("google_adk models cannot define base_url or api_key")
+            raise ValueError(
+                "openai_codex uses the fixed ChatGPT subscription endpoint and cannot "
+                "define base_url or api_key"
+            )
+        elif self.provider != "openai_codex" and self.client_version is not None:
+            raise ValueError("client_version is supported only by openai_codex")
         return self
 
 

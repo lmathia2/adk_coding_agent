@@ -15,8 +15,10 @@ from harness.ai import (
     ClosedAdkModelProviderRegistry,
     FunctionCallIdNormalizingLlm,
     GoogleAdkModelProvider,
+    OpenAiCodexModelProvider,
     OpenAiCompatibleModelProvider,
 )
+from harness.ai.codex_responses import CodexResponsesLlm
 from harness.config import (
     ModelConfig,
     PiCodingConfig,
@@ -66,6 +68,35 @@ def test_google_provider_preserves_native_gemini_adapter() -> None:
 
     assert isinstance(model, Gemini)
     assert model.model == "gemini-test"
+
+
+def test_openai_codex_provider_uses_runtime_oauth_and_never_api_key(tmp_path: Path) -> None:
+    bindings = RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state")
+    model = OpenAiCodexModelProvider().build_model(
+        ModelConfig(
+            provider="openai_codex",
+            name="gpt-5.3-codex-spark",
+            reasoning="low",
+            client_version="0.147.0",
+        ),
+        secrets={},
+        bindings=bindings,
+    )
+
+    codex_model = cast(CodexResponsesLlm, model)
+    assert codex_model.model == "gpt-5.3-codex-spark"
+    assert codex_model.reasoning_effort == "low"
+    assert codex_model.client_version == "0.147.0"
+    assert codex_model._credentials.store.path == (
+        tmp_path / "state" / "auth" / "openai-codex.json"
+    )
+
+    with pytest.raises(ValidationError, match="cannot define base_url or api_key"):
+        ModelConfig(
+            provider="openai_codex",
+            name="gpt-5.3-codex-spark",
+            api_key=SecretRef(env="OPENAI_API_KEY"),
+        )
 
 
 def test_openai_compatible_provider_builds_adk_model_without_network() -> None:

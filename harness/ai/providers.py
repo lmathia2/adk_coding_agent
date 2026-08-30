@@ -9,8 +9,10 @@ from typing import Any, Protocol
 from google.adk.models import BaseLlm, Gemini
 from google.genai import types
 
-from harness.config import ModelConfig, SecretRef
+from harness.config import ModelConfig, RuntimeBindings, SecretRef
 
+from .codex_auth import CodexCredentialManager, CodexCredentialStore
+from .codex_responses import CodexResponsesLlm
 from .contracts import AdkModelProvider
 from .function_call_ids import normalize_openai_compatible_model
 
@@ -31,8 +33,9 @@ class GoogleAdkModelProvider:
         config: ModelConfig,
         *,
         secrets: Mapping[str, SecretRef],
+        bindings: RuntimeBindings | None = None,
     ) -> BaseLlm:
-        del secrets
+        del secrets, bindings
         retry = config.retry
         return Gemini(
             model=config.name,
@@ -77,7 +80,9 @@ class OpenAiCompatibleModelProvider:
         config: ModelConfig,
         *,
         secrets: Mapping[str, SecretRef],
+        bindings: RuntimeBindings | None = None,
     ) -> BaseLlm:
+        del bindings
         if config.base_url is None:
             raise ValueError("openai_compatible models require base_url")
         secret_ref = secrets.get("api_key")
@@ -98,6 +103,39 @@ class OpenAiCompatibleModelProvider:
         if config.reasoning is not None:
             options["reasoning_effort"] = config.reasoning
         return normalize_openai_compatible_model(self._model_factory(model_name, **options))
+
+
+class OpenAiCodexModelProvider:
+    """Use a ChatGPT Plus/Pro OAuth subscription through ADK's model seam."""
+
+    @property
+    def provider_id(self) -> str:
+        return "openai_codex"
+
+    def build_model(
+        self,
+        config: ModelConfig,
+        *,
+        secrets: Mapping[str, SecretRef],
+        bindings: RuntimeBindings | None = None,
+    ) -> BaseLlm:
+        if secrets or config.api_key is not None:
+            raise ValueError("openai_codex is subscription-only and cannot use API keys")
+        if bindings is None:
+            raise ValueError("openai_codex requires runtime bindings for private OAuth state")
+        retry = config.retry
+        return CodexResponsesLlm(
+            model=config.name,
+            reasoning_effort=config.reasoning,
+            retry_attempts=retry.attempts,
+            retry_initial_delay_seconds=retry.initial_delay_seconds,
+            retry_exponential_base=retry.exponential_base,
+            retry_statuses=retry.retry_statuses,
+            client_version=config.client_version,
+            credential_manager=CodexCredentialManager(
+                CodexCredentialStore(bindings.state_root)
+            ),
+        )
 
 
 class ClosedAdkModelProviderRegistry:
@@ -129,13 +167,18 @@ class ClosedAdkModelProviderRegistry:
 
 def default_adk_model_provider_registry() -> ClosedAdkModelProviderRegistry:
     return ClosedAdkModelProviderRegistry(
-        (GoogleAdkModelProvider(), OpenAiCompatibleModelProvider())
+        (
+            GoogleAdkModelProvider(),
+            OpenAiCodexModelProvider(),
+            OpenAiCompatibleModelProvider(),
+        )
     )
 
 
 __all__ = [
     "ClosedAdkModelProviderRegistry",
     "GoogleAdkModelProvider",
+    "OpenAiCodexModelProvider",
     "OpenAiCompatibleModelProvider",
     "default_adk_model_provider_registry",
 ]

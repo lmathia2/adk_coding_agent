@@ -7,7 +7,7 @@ from typing import Protocol, runtime_checkable
 
 from google.adk.models import BaseLlm
 
-from harness.config import ModelConfig, SecretRef
+from harness.config import ModelConfig, RuntimeBindings, SecretRef
 
 
 @runtime_checkable
@@ -22,6 +22,7 @@ class AdkModelProvider(Protocol):
         config: ModelConfig,
         *,
         secrets: Mapping[str, SecretRef],
+        bindings: RuntimeBindings | None = None,
     ) -> BaseLlm: ...
 
 

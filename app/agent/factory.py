@@ -306,6 +306,7 @@ class PiCodingHarnessFactory:
                 secrets=(
                     {"api_key": model_config.api_key} if model_config.api_key is not None else {}
                 ),
+                bindings=bindings,
             )
 
         worker_config = config.agents["coding_worker"]
