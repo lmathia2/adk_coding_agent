@@ -12,7 +12,6 @@ from .adk_services import (
     build_session_service,
     local_durable_settings,
     settings_from_composition,
-    settings_from_env,
 )
 
 __all__ = [
@@ -27,5 +26,4 @@ __all__ = [
     "build_session_service",
     "local_durable_settings",
     "settings_from_composition",
-    "settings_from_env",
 ]

@@ -14,7 +14,7 @@ import pytest
 from google.adk.agents import LlmAgent
 from google.adk.apps import App
 from google.adk.models import BaseLlm
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agent.builders import build_coding_worker
 from app.agent.config import settings_from_composition
@@ -41,7 +41,6 @@ from harness.config import (
     parse_harness_composition,
 )
 from harness.server import PROTOCOL_VERSION, ServerHello
-from harness.state import JsonlEventStore
 from harness.tools.adk_adapter import AdkCodingTools
 
 
@@ -546,37 +545,3 @@ def test_pi_factory_enforces_configured_steering_message_limit(tmp_path: Path) -
     )
     assert receipt.accepted is False
     assert "256 UTF-8 bytes" in (receipt.detail or "")
-
-
-def test_pi_factory_forwards_control_database_binding(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import app.agent.factory as factory_module
-
-    calls: list[tuple[Path, str | None]] = []
-    backend = SimpleNamespace(
-        event_store=JsonlEventStore(tmp_path / "events"),
-        task_lease_store=None,
-    )
-
-    def create_backend(*, state_root: Path, database_url: str | None):
-        calls.append((state_root, database_url))
-        return backend
-
-    monkeypatch.setattr(factory_module, "create_control_state_backend", create_backend)
-    registry = default_harness_registry()
-    composition = load_harness_composition(config_models=registry.config_models())
-    database_url = SecretStr("postgresql://control.example/harness")
-    registry.build(
-        composition,
-        RuntimeBindings(
-            workspace=tmp_path,
-            state_root=tmp_path / "state",
-            control_database_url=database_url,
-        ),
-    )
-
-    assert calls == [
-        ((tmp_path / "state").resolve(), database_url.get_secret_value())
-    ]

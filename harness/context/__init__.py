@@ -1,13 +1,12 @@
 """Context economy: stable prefixes, bounded packets, and compaction."""
 
 from .compaction import CompactionPolicy, build_compaction_snapshot, safe_artifact_uri
-from .compiler import ContextCompiler, estimate_tokens, truncate_to_tokens
+from .compiler import estimate_tokens, truncate_to_tokens
 from .prompt import STATIC_CODING_INSTRUCTION, build_static_prefix, prefix_hash
 
 __all__ = [
     "STATIC_CODING_INSTRUCTION",
     "CompactionPolicy",
-    "ContextCompiler",
     "build_compaction_snapshot",
     "build_static_prefix",
     "estimate_tokens",

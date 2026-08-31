@@ -29,13 +29,6 @@ class TaskStatus(StrEnum):
     COMPLETE = "complete"
 
 
-class StepStatus(StrEnum):
-    CONTINUE = "continue"
-    VERIFY = "verify"
-    BLOCKED = "blocked"
-    DONE = "done"
-
-
 class PlanStepStatus(StrEnum):
     PENDING = "pending"
     ACTIVE = "active"
@@ -85,22 +78,6 @@ class ValidationResult(StrictModel):
     summary: str
     duration_ms: int = Field(default=0, ge=0)
     artifact_uri: str | None = None
-
-
-class AgentStep(StrictModel):
-    """Bounded structured result emitted after one coding work batch."""
-
-    status: StepStatus = StepStatus.CONTINUE
-    progress: list[str] = Field(default_factory=list)
-    next_action: str | None = None
-    decisions: list[Decision] = Field(default_factory=list)
-    questions: list[str] = Field(default_factory=list)
-    discovered_constraints: list[str] = Field(default_factory=list)
-    files_in_focus: list[str] = Field(default_factory=list)
-    files_read: list[str] = Field(default_factory=list)
-    files_modified: list[str] = Field(default_factory=list)
-    completion_claims: list[str] = Field(default_factory=list)
-    action_fingerprints: list[str] = Field(default_factory=list)
 
 
 class TaskLedger(StrictModel):

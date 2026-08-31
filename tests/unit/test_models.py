@@ -5,8 +5,6 @@ from pydantic import ValidationError
 
 from harness.models import (
     AgentStep,
-    Decision,
-    StepStatus,
     TaskLedger,
     TaskRequest,
 )
@@ -86,9 +84,9 @@ def test_ledger_projection_is_bounded_and_model_facing() -> None:
 
 def test_agent_step_round_trip() -> None:
     step = AgentStep(
-        status=StepStatus.VERIFY,
+        status="verify",
         progress=["Implemented parser fix"],
-        decisions=[Decision(summary="Preserve public API", rationale="Compatibility")],
-        files_modified=["src/parser.py"],
+        decisions=["Preserve public API for compatibility"],
+        files_in_focus=["src/parser.py"],
     )
     assert AgentStep.model_validate_json(step.model_dump_json()) == step

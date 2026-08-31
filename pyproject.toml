@@ -13,16 +13,11 @@ authors = [{ name = "Lambert Mathias" }]
 dependencies = [
   "fastapi>=0.141,<1.0",
   "fff-search==0.10.5",
-  "google-adk[gcp]>=2.7.1,<2.8.0",
+  "google-adk>=2.7.1,<2.8.0",
   "httpx>=0.28,<1.0",
   "pydantic>=2.10,<3.0",
   "PyYAML>=6.0,<7.0",
   "uvicorn>=0.52,<1.0",
-]
-
-[project.optional-dependencies]
-production = [
-  "psycopg[binary]>=3.2,<4.0",
 ]
 
 [project.scripts]

@@ -31,8 +31,7 @@ def _composition_payload() -> dict[str, Any]:
             "config": harness_config,
         },
         "persistence": {
-            "session_backend": "database",
-            "session_database_url": {"env": "ADK_DATABASE_URL"},
+            "session_backend": "sqlite",
         },
     }
 
@@ -241,17 +240,6 @@ def test_runtime_bindings_are_not_part_of_declarative_behavior(tmp_path: Path) -
     serialized = composition.canonical_json()
     assert "task-123" not in serialized
     assert str(tmp_path) not in serialized
-
-
-def test_secret_values_cannot_be_embedded_in_composition() -> None:
-    payload = _composition_payload()
-    payload["persistence"]["session_database_url"] = {
-        "env": "ADK_DATABASE_URL",
-        "value": "postgresql://user:secret@example.invalid/db",
-    }
-
-    with pytest.raises(ValidationError, match="value"):
-        parse_harness_composition(payload)
 
 
 def test_search_default_page_size_cannot_exceed_maximum() -> None:

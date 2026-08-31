@@ -12,7 +12,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SecretStr,
     SerializeAsAny,
     field_validator,
     model_validator,
@@ -339,27 +338,9 @@ class HarnessSelectionConfig(FrozenModel):
 
 
 class PersistenceConfig(FrozenModel):
-    session_backend: Literal["in_memory", "sqlite", "database", "vertex"] = "in_memory"
-    session_database_url: SecretRef | None = None
-    artifact_backend: Literal["in_memory", "file", "gcs"] = "in_memory"
-    memory_backend: Literal["in_memory", "vertex"] = "in_memory"
-    gcs_bucket: str | None = Field(default=None, max_length=256)
-    cloud_project: str | None = Field(default=None, max_length=128)
-    cloud_location: str = Field(default="us-central1", max_length=64)
-    agent_engine_id: str | None = Field(default=None, max_length=256)
-    memory_bank_id: str | None = Field(default=None, max_length=256)
-
-    @model_validator(mode="after")
-    def validate_backends(self) -> PersistenceConfig:
-        if self.session_backend == "database" and self.session_database_url is None:
-            raise ValueError("database sessions require session_database_url")
-        if self.artifact_backend == "gcs" and not self.gcs_bucket:
-            raise ValueError("GCS artifacts require gcs_bucket")
-        if "vertex" in {self.session_backend, self.memory_backend} and (
-            not self.cloud_project or not self.agent_engine_id
-        ):
-            raise ValueError("Vertex persistence requires cloud_project and agent_engine_id")
-        return self
+    session_backend: Literal["in_memory", "sqlite"] = "in_memory"
+    artifact_backend: Literal["in_memory", "file"] = "in_memory"
+    memory_backend: Literal["in_memory"] = "in_memory"
 
 
 class ServerConfig(FrozenModel):
@@ -467,7 +448,6 @@ class RuntimeBindings(FrozenModel):
     workspace_id: str | None = Field(default=None, max_length=256)
     worker_id: str | None = Field(default=None, max_length=256)
     invocation_id: str | None = Field(default=None, max_length=256)
-    control_database_url: SecretStr | None = Field(default=None)
     project_trusted: bool = False
 
 

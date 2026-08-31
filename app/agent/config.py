@@ -64,7 +64,6 @@ class HarnessSettings:
     task_id_override: str | None
     base_revision_override: str | None
     workspace_id_override: str | None
-    control_database_url: str | None
     worker_id: str
     task_lease_seconds: int
     max_iterations: int
@@ -87,33 +86,7 @@ def _state_root(workspace: Path) -> Path:
     else:
         digest = hashlib.sha256(workspace.as_posix().encode()).hexdigest()[:16]
         root = Path.home() / ".cache" / "adk-coding-agent" / digest
-    root.mkdir(parents=True, exist_ok=True)
     return root
-
-
-def _enabled(name: str, default: str = "0") -> bool:
-    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _trace_mode() -> str:
-    value = os.getenv("ADK_CODING_TRACE_MODE", "metadata").strip().lower()
-    if value not in {"off", "metadata", "redacted"}:
-        raise ValueError(
-            "ADK_CODING_TRACE_MODE must be one of: off, metadata, redacted"
-        )
-    return value
-
-
-def _skill_roots(workspace: Path, *, project_trusted: bool) -> tuple[Path, ...]:
-    roots = [workspace / ".agents" / "skills"] if project_trusted else []
-    configured = os.getenv("ADK_CODING_SKILL_DIRS", "").strip()
-    if configured:
-        roots.extend(
-            Path(value).expanduser()
-            for value in configured.split(os.pathsep)
-            if value.strip()
-        )
-    return tuple(dict.fromkeys(path.absolute() for path in roots))
 
 
 def resolve_prompt_text(
@@ -149,70 +122,39 @@ def resolve_prompt_text(
     return content.decode("utf-8").strip()
 
 
-def load_settings() -> HarnessSettings:
-    workspace = Path(os.getenv("ADK_CODING_WORKSPACE", os.getcwd())).resolve()
-    source_value = os.getenv("ADK_CODING_SOURCE_REPOSITORY")
-    model = os.getenv("ADK_CODING_MODEL", "gemini-3.7-flash")
-    worker_id = os.getenv("ADK_CODING_WORKER_ID", "").strip()
-    if not worker_id:
-        worker_id = f"{socket.gethostname()}:{os.getpid()}"
-    project_trusted = _enabled("ADK_CODING_TRUST_PROJECT")
-    project_instructions = (
-        collect_project_instructions(workspace) if project_trusted else ""
-    )
-    if len(project_instructions) > 16_000:
-        project_instructions = (
-            project_instructions[:16_000]
-            + "\n[project instructions truncated; read the source files when needed]"
-        )
-    instruction = _BASE_INSTRUCTION
-    if project_instructions:
-        instruction += "\n\nStable project instructions:\n" + project_instructions
-
-    state_root = _state_root(workspace)
-    return HarnessSettings(
-        app_name="pi_inspired_adk_coding_agent",
-        model=model,
+def runtime_bindings_from_env(configuration_root: Path) -> RuntimeBindings:
+    """Read invocation identity only; YAML is the single source of behavior."""
+    obsolete = {
+        "MODEL", "CONTROL_DATABASE_URL", "TASK_LEASE_SECONDS", "MAX_ITERATIONS",
+        "COMPACT_AT_TOKENS", "RECENT_EVENTS", "TRACE_MODE", "TRACE_MAX_CONTENT_BYTES",
+        "SKILL_DIRS", "SKILL_MAX_SELECTED", "SKILL_CONTEXT_BYTES", "FINAL_REVIEWER",
+        "REVIEW_MODEL", "REVIEW_MAX_CHARS", "LEARNING_ENABLED",
+        "LEARNING_MIN_SUPPORT", "LEARNING_TRIAL_PERCENT",
+        "COMPACTION_INTERVAL", "COMPACTION_OVERLAP", "SEARCH_BACKEND",
+    }
+    configured = sorted(f"ADK_CODING_{name}" for name in obsolete if f"ADK_CODING_{name}" in os.environ)
+    if configured:
+        raise ValueError("Move removed behavior environment settings to ADK_CODING_CONFIG YAML: " + ", ".join(configured))
+    workspace = Path(os.getenv("ADK_CODING_WORKSPACE", os.getcwd())).expanduser().resolve()
+    source = os.getenv("ADK_CODING_SOURCE_REPOSITORY")
+    return RuntimeBindings(
         workspace=workspace,
-        source_repository=(Path(source_value).resolve() if source_value else None),
-        state_root=state_root,
-        task_id_override=os.getenv("ADK_CODING_TASK_ID"),
-        base_revision_override=os.getenv("ADK_CODING_BASE_REVISION"),
-        workspace_id_override=os.getenv("ADK_CODING_WORKSPACE_ID"),
-        control_database_url=(
-            os.getenv("ADK_CODING_CONTROL_DATABASE_URL", "").strip() or None
-        ),
-        worker_id=worker_id,
-        task_lease_seconds=max(
-            30,
-            int(os.getenv("ADK_CODING_TASK_LEASE_SECONDS", "900")),
-        ),
-        max_iterations=int(os.getenv("ADK_CODING_MAX_ITERATIONS", "40")),
-        compact_at_tokens=int(
-            os.getenv("ADK_CODING_COMPACT_AT_TOKENS", "80000")
-        ),
-        recent_event_limit=int(os.getenv("ADK_CODING_RECENT_EVENTS", "12")),
-        static_instruction=instruction,
-        static_prefix=build_static_prefix(
-            model_name=model,
-            instruction=instruction,
-        ),
-        trace_mode=_trace_mode(),
-        trace_max_content_bytes=max(
-            64,
-            int(os.getenv("ADK_CODING_TRACE_MAX_CONTENT_BYTES", "8192")),
-        ),
-        skill_roots=_skill_roots(workspace, project_trusted=project_trusted),
-        skill_max_selected=max(
-            0,
-            int(os.getenv("ADK_CODING_SKILL_MAX_SELECTED", "3")),
-        ),
-        skill_context_bytes=max(
-            0,
-            int(os.getenv("ADK_CODING_SKILL_CONTEXT_BYTES", "24000")),
-        ),
-        project_trusted=project_trusted,
+        state_root=_state_root(workspace),
+        configuration_root=configuration_root,
+        source_repository=Path(source).expanduser().resolve() if source else None,
+        task_id=os.getenv("ADK_CODING_TASK_ID"),
+        base_revision=os.getenv("ADK_CODING_BASE_REVISION"),
+        workspace_id=os.getenv("ADK_CODING_WORKSPACE_ID"),
+        worker_id=os.getenv("ADK_CODING_WORKER_ID"),
+        project_trusted=os.getenv("ADK_CODING_TRUST_PROJECT", "0").lower() in {"1", "true", "yes", "on"},
     )
+
+
+def load_settings() -> HarnessSettings:
+    from harness.config import DEFAULT_COMPOSITION_PATH, load_harness_composition
+
+    path = Path(os.getenv("ADK_CODING_CONFIG", str(DEFAULT_COMPOSITION_PATH))).expanduser().resolve()
+    return settings_from_composition(load_harness_composition(path), runtime_bindings_from_env(path.parent))
 
 
 def settings_from_composition(
@@ -252,7 +194,7 @@ def settings_from_composition(
     for configured in config.skills.additional_roots:
         path = configured.expanduser()
         skill_roots.append(
-            path.resolve() if path.is_absolute() else (configuration_root / path).resolve()
+            path.absolute() if path.is_absolute() else (configuration_root / path).absolute()
         )
     worker_id = bindings.worker_id
     if not worker_id:
@@ -270,11 +212,6 @@ def settings_from_composition(
         task_id_override=bindings.task_id,
         base_revision_override=bindings.base_revision,
         workspace_id_override=bindings.workspace_id,
-        control_database_url=(
-            bindings.control_database_url.get_secret_value()
-            if bindings.control_database_url is not None
-            else None
-        ),
         worker_id=worker_id,
         task_lease_seconds=config.steering.lease_seconds,
         max_iterations=config.workflow.max_iterations,
@@ -297,5 +234,6 @@ def settings_from_composition(
 __all__ = [
     "HarnessSettings",
     "load_settings",
+    "runtime_bindings_from_env",
     "settings_from_composition",
 ]

@@ -33,8 +33,7 @@ from harness.context import prefix_hash
 from harness.repo import StructuralIndex
 from harness.safety import ApprovalPolicy
 from harness.sandbox import create_configured_command_sandbox
-from harness.state import CheckpointStore, SteeringQueue, rebuild_ledger
-from harness.state.factory import create_control_state_backend
+from harness.state import CheckpointStore, JsonlEventStore, SteeringQueue, rebuild_ledger
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin, ModelPricing
 from harness.tools.adk_adapter import create_adk_tools, discover_known_secrets
 from harness.tracing import CodingToolArtifactPlugin, HarnessTracePlugin, TraceContentMode
@@ -225,10 +224,7 @@ class PiCodingHarnessFactory:
             tools=tools,
             tool_config=config.tools,
         )
-        control_state = create_control_state_backend(
-            state_root=settings.state_root,
-            database_url=settings.control_database_url,
-        )
+        event_store = JsonlEventStore(settings.state_root / "events")
         steering = SteeringQueue(settings.state_root / "state.db")
         checkpoints = CheckpointStore(settings.state_root / "state.db")
         metrics_plugin = HarnessMetricsPlugin(
@@ -246,7 +242,7 @@ class PiCodingHarnessFactory:
         )
         deps = PiWorkflowDependencies(
             settings=settings,
-            control_state=control_state,
+            event_store=event_store,
             steering_queue=steering,
             checkpoint_store=checkpoints,
             metrics_store=metrics_plugin.store,
@@ -286,7 +282,7 @@ class PiCodingHarnessFactory:
             plugins.append(
                 SteeringPlugin(
                     queue=steering,
-                    event_store=control_state.event_store,
+                    event_store=event_store,
                     lease_seconds=settings.task_lease_seconds,
                     batch_limit=config.steering.batch_limit,
                     before_model="before_model" in config.steering.safe_points,
@@ -297,7 +293,7 @@ class PiCodingHarnessFactory:
             [
                 metrics_plugin,
                 CodingToolArtifactPlugin(
-                    event_store=control_state.event_store,
+                    event_store=event_store,
                     default_task_id=settings.task_id_override,
                 ),
             ]

@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 import importlib
-import json
-import os
-from dataclasses import replace
-from datetime import UTC, datetime
 from importlib.metadata import version
 from types import SimpleNamespace
 
 import pytest
 
 from harness.adk import SteeringPlugin
-from harness.state.postgres import TaskLease
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin
 from harness.tracing import (
     CodingToolArtifactPlugin,
@@ -89,51 +84,32 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     )
 
 
-def test_control_state_settings_are_environment_driven(monkeypatch, tmp_path) -> None:
+def test_agents_cli_uses_yaml_behavior_and_runtime_environment(monkeypatch, tmp_path) -> None:
+    import yaml
+
+    from harness.config import load_harness_composition
+
     config = importlib.import_module("app.agent.config")
+    payload = load_harness_composition().model_dump(mode="json")
+    payload["harness"]["config"]["context"]["skill_context_bytes"] = 12000
+    path = tmp_path / "harness.yaml"
+    path.write_text(yaml.safe_dump(payload))
+    monkeypatch.setenv("ADK_CODING_CONFIG", str(path))
     monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv(
-        "ADK_CODING_CONTROL_DATABASE_URL",
-        "postgresql://control.example/harness",
-    )
-    monkeypatch.setenv("ADK_CODING_WORKER_ID", "worker-a")
-    monkeypatch.setenv("ADK_CODING_TASK_LEASE_SECONDS", "45")
-    monkeypatch.setenv("ADK_CODING_TRACE_MODE", "metadata")
-    monkeypatch.setenv("ADK_CODING_TRACE_MAX_CONTENT_BYTES", "2048")
-    monkeypatch.setenv(
-        "ADK_CODING_SKILL_DIRS",
-        f"{tmp_path / 'team-skills'}{os.pathsep}{tmp_path / 'personal-skills'}",
-    )
-    monkeypatch.setenv("ADK_CODING_SKILL_MAX_SELECTED", "2")
-    monkeypatch.setenv("ADK_CODING_SKILL_CONTEXT_BYTES", "12000")
     monkeypatch.setenv("ADK_CODING_TRUST_PROJECT", "1")
-
     settings = config.load_settings()
-
-    assert settings.control_database_url == "postgresql://control.example/harness"
-    assert settings.worker_id == "worker-a"
-    assert settings.task_lease_seconds == 45
-    assert settings.trace_mode == "metadata"
-    assert settings.trace_max_content_bytes == 2048
-    assert settings.skill_roots == (
-        (tmp_path / ".agents" / "skills").resolve(),
-        (tmp_path / "team-skills").resolve(),
-        (tmp_path / "personal-skills").resolve(),
-    )
-    assert settings.skill_max_selected == 2
     assert settings.skill_context_bytes == 12000
+    assert settings.project_trusted
+    assert settings.skill_roots == (tmp_path / ".agents" / "skills",)
+    assert not settings.state_root.exists()
 
 
-def test_invalid_trace_mode_fails_closed(monkeypatch, tmp_path) -> None:
+def test_removed_environment_behavior_fails_with_migration_guidance(monkeypatch, tmp_path) -> None:
     config = importlib.import_module("app.agent.config")
-    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("ADK_CODING_TRUST_PROJECT", "1")
-    monkeypatch.setenv("ADK_CODING_TRACE_MODE", "raw")
-
-    with pytest.raises(ValueError, match="off, metadata, redacted"):
-        config.load_settings()
+    monkeypatch.setenv("ADK_CODING_MODEL", "ignored-before-cleanup")
+    with pytest.raises(ValueError, match="ADK_CODING_CONFIG YAML"):
+        config.runtime_bindings_from_env(tmp_path)
 
 
 def test_trace_initialization_failure_disables_optional_plugin(
@@ -163,53 +139,6 @@ def test_trace_initialization_failure_disables_optional_plugin(
         isinstance(plugin, HarnessTracePlugin) for plugin in assembly.app.plugins
     )
     assert "tracing is disabled" in caplog.text
-
-
-def test_interval_compaction_requires_explicit_positive_configuration(
-    monkeypatch,
-) -> None:
-    application = importlib.import_module("app.agent.application")
-    monkeypatch.delenv("ADK_CODING_COMPACTION_INTERVAL", raising=False)
-    monkeypatch.delenv("ADK_CODING_COMPACTION_OVERLAP", raising=False)
-
-    assert (
-        application._optional_int_env(
-            "ADK_CODING_COMPACTION_INTERVAL",
-            minimum=1,
-        )
-        is None
-    )
-    assert (
-        application._optional_int_env(
-            "ADK_CODING_COMPACTION_OVERLAP",
-            minimum=0,
-        )
-        is None
-    )
-
-    monkeypatch.setenv("ADK_CODING_COMPACTION_INTERVAL", "12")
-    monkeypatch.setenv("ADK_CODING_COMPACTION_OVERLAP", "3")
-    assert (
-        application._optional_int_env(
-            "ADK_CODING_COMPACTION_INTERVAL",
-            minimum=1,
-        )
-        == 12
-    )
-    assert (
-        application._optional_int_env(
-            "ADK_CODING_COMPACTION_OVERLAP",
-            minimum=0,
-        )
-        == 3
-    )
-
-    monkeypatch.setenv("ADK_CODING_COMPACTION_INTERVAL", "0")
-    with pytest.raises(ValueError, match="must be at least 1"):
-        application._optional_int_env(
-            "ADK_CODING_COMPACTION_INTERVAL",
-            minimum=1,
-        )
 
 
 def test_skill_root_symlink_is_preserved_for_registry_validation(
@@ -249,110 +178,3 @@ def test_legacy_settings_do_not_load_project_instructions_without_trust(
     assert not settings.project_trusted
     assert "UNTRUSTED PROJECT INSTRUCTION" not in settings.static_instruction
     assert tmp_path / ".agents" / "skills" not in settings.skill_roots
-
-
-def test_control_state_builder_forwards_settings_without_connecting() -> None:
-    workflow = importlib.import_module("app.agent.workflow")
-    bootstrap = importlib.import_module("app.agent.bootstrap")
-    settings = replace(
-        bootstrap.SETTINGS,
-        control_database_url="postgresql://control.example/harness",
-    )
-    calls: list[tuple[object, object]] = []
-    expected_backend = object()
-
-    def build_backend(*, state_root, database_url):
-        calls.append((state_root, database_url))
-        return expected_backend
-
-    backend = workflow._build_control_state(settings, factory=build_backend)
-
-    assert backend is expected_backend
-    assert calls == [(settings.state_root, settings.control_database_url)]
-
-
-class _LeaseStore:
-    def __init__(self, *, available: bool = True, renews: bool = True) -> None:
-        self.available = available
-        self.renews = renews
-        self.acquired: list[tuple[str, str, int]] = []
-        self.renewed = 0
-        self.released = 0
-
-    def acquire(
-        self,
-        task_id: str,
-        owner: str,
-        *,
-        lease_seconds: int = 120,
-    ) -> TaskLease | None:
-        self.acquired.append((task_id, owner, lease_seconds))
-        if not self.available:
-            return None
-        return TaskLease(
-            task_id=task_id,
-            owner=owner,
-            token="token-1",
-            lease_until=datetime.now(UTC),
-        )
-
-    def renew(
-        self,
-        lease: TaskLease,
-        *,
-        lease_seconds: int = 120,
-    ) -> TaskLease | None:
-        del lease_seconds
-        self.renewed += 1
-        return lease if self.renews else None
-
-    def release(self, lease: TaskLease) -> bool:
-        del lease
-        self.released += 1
-        return True
-
-
-def test_task_lease_guard_acquires_renews_and_releases() -> None:
-    workflow = importlib.import_module("app.agent.workflow")
-    store = _LeaseStore()
-
-    guard = workflow._TaskLeaseGuard.acquire(
-        store,
-        task_id="task-1",
-        owner="worker-a",
-        lease_seconds=90,
-    )
-
-    assert guard.acquired
-    assert store.acquired == [("task-1", "worker-a", 90)]
-    assert guard.renew()
-    assert guard.release()
-    assert store.renewed == 1
-    assert store.released == 1
-
-
-def test_task_lease_guard_fails_closed_when_unavailable_or_lost() -> None:
-    workflow = importlib.import_module("app.agent.workflow")
-    unavailable = workflow._TaskLeaseGuard.acquire(
-        _LeaseStore(available=False),
-        task_id="task-1",
-        owner="worker-a",
-        lease_seconds=90,
-    )
-    assert not unavailable.acquired
-    assert not unavailable.renew()
-
-    lost = workflow._TaskLeaseGuard.acquire(
-        _LeaseStore(renews=False),
-        task_id="task-1",
-        owner="worker-a",
-        lease_seconds=90,
-    )
-    assert lost.acquired
-    assert not lost.renew()
-    blocked = json.loads(workflow._lease_blocked_result("task-1", "another worker owns it"))
-    assert blocked == {
-        "reason": "another worker owns it",
-        "status": "blocked",
-        "task_id": "task-1",
-    }

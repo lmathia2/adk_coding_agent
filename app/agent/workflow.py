@@ -6,7 +6,7 @@ import hashlib
 import json
 import subprocess
 import time
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -44,12 +44,6 @@ from harness.state import (
     rebuild_ledger,
     register_action_batch,
 )
-from harness.state.factory import (
-    ControlStateBackend,
-    TaskLeaseStore,
-    create_control_state_backend,
-)
-from harness.state.postgres import TaskLease
 from harness.telemetry import MetricsStore, TaskOutcomeSample
 from harness.verification import (
     ValidationCommand,
@@ -61,26 +55,11 @@ from harness.workspace import GitWorktreeManager
 from .config import HarnessSettings
 from .skills import SkillRuntimeContext, build_skill_context
 
-ControlStateFactory = Callable[..., ControlStateBackend]
-
-
-def _build_control_state(
-    settings: HarnessSettings,
-    *,
-    factory: ControlStateFactory = create_control_state_backend,
-) -> ControlStateBackend:
-    return factory(
-        state_root=settings.state_root,
-        database_url=settings.control_database_url,
-    )
-
-
-
 
 @dataclass(frozen=True, slots=True)
 class PiWorkflowDependencies:
     settings: HarnessSettings
-    control_state: ControlStateBackend
+    event_store: EventStore
     steering_queue: SteeringQueue
     checkpoint_store: CheckpointStore
     metrics_store: MetricsStore
@@ -96,82 +75,6 @@ class PiWorkflowDependencies:
     steering_batch_limit: int
     steering_enabled: bool
     steering_at_work_batch_boundary: bool
-
-    @property
-    def event_store(self) -> Any:
-        return self.control_state.event_store
-
-    @property
-    def task_lease_store(self) -> TaskLeaseStore | None:
-        return self.control_state.task_lease_store
-
-
-@dataclass(slots=True)
-class _TaskLeaseGuard:
-    store: TaskLeaseStore | None
-    task_id: str
-    owner: str
-    lease_seconds: int
-    lease: TaskLease | None = None
-
-    @classmethod
-    def acquire(
-        cls,
-        store: TaskLeaseStore | None,
-        *,
-        task_id: str,
-        owner: str,
-        lease_seconds: int,
-    ) -> _TaskLeaseGuard:
-        guard = cls(
-            store=store,
-            task_id=task_id,
-            owner=owner,
-            lease_seconds=lease_seconds,
-        )
-        if store is not None:
-            guard.lease = store.acquire(
-                task_id,
-                owner,
-                lease_seconds=lease_seconds,
-            )
-        return guard
-
-    @property
-    def acquired(self) -> bool:
-        return self.store is None or self.lease is not None
-
-    def renew(self) -> bool:
-        if self.store is None:
-            return True
-        if self.lease is None:
-            return False
-        self.lease = self.store.renew(
-            self.lease,
-            lease_seconds=self.lease_seconds,
-        )
-        return self.lease is not None
-
-    def release(self) -> bool:
-        if self.store is None:
-            return True
-        if self.lease is None:
-            return False
-        released = self.store.release(self.lease)
-        self.lease = None
-        return released
-
-
-def _lease_blocked_result(task_id: str, reason: str) -> str:
-    return json.dumps(
-        {
-            "status": "blocked",
-            "task_id": task_id,
-            "reason": reason,
-        },
-        sort_keys=True,
-    )
-
 
 def _session_id(ctx: Context) -> str | None:
     direct = getattr(ctx, "session_id", None)
@@ -583,7 +486,6 @@ async def _orchestrate_owned(
     deps: PiWorkflowDependencies,
     ctx: Context,
     node_input: str | dict[str, Any],
-    lease_guard: _TaskLeaseGuard,
     *,
     verify_node: BaseNode,
 ) -> AsyncGenerator[Event | str, None]:
@@ -702,12 +604,6 @@ async def _orchestrate_owned(
     )
 
     while ledger.iteration < max_iterations:
-        if not lease_guard.renew():
-            yield _lease_blocked_result(
-                task_id,
-                "distributed task lease was lost; another worker may own the task",
-            )
-            return
         leased = (
             deps.steering_queue.lease(
                 task_id,
@@ -813,12 +709,6 @@ async def _orchestrate_owned(
                 owner,
             )
             raise
-        if not lease_guard.renew():
-            yield _lease_blocked_result(
-                task_id,
-                "distributed task lease expired during model execution",
-            )
-            return
         try:
             step = parse_agent_step(raw_step)
         except ValueError as error:
@@ -984,12 +874,6 @@ async def _orchestrate_owned(
                     ],
                 },
             )
-            if not lease_guard.renew():
-                yield _lease_blocked_result(
-                    task_id,
-                    "distributed task lease expired during verification",
-                )
-                return
             report = verification["report"]
             deps.event_store.append(
                 task_id,
@@ -1121,33 +1005,10 @@ def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
         # FunctionNode adapter unwraps that message only when this boundary
         # directly expects ``str``; structured requests remain supported as
         # JSON text by ``parse_task_request``.
-        request = parse_task_request(node_input)
-        session_id = _session_id(ctx)
-        task_id = deps.settings.task_id_override or task_id_for(request, session_id)
-        lease_guard = _TaskLeaseGuard.acquire(
-            deps.task_lease_store,
-            task_id=task_id,
-            owner=deps.settings.worker_id,
-            lease_seconds=deps.settings.task_lease_seconds,
-        )
-        if not lease_guard.acquired:
-            yield _lease_blocked_result(
-                task_id,
-                "another worker owns the distributed task lease",
-            )
-            return
-
-        try:
-            async for event in _orchestrate_owned(
-                deps,
-                ctx,
-                node_input,
-                lease_guard,
-                verify_node=verify_task,
-            ):
-                yield event
-        finally:
-            lease_guard.release()
+        async for event in _orchestrate_owned(
+            deps, ctx, node_input, verify_node=verify_task,
+        ):
+            yield event
 
     return Workflow(
         name="coding_harness",

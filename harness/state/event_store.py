@@ -6,9 +6,20 @@ import hashlib
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .events import HarnessEvent
+
+
+class EventStore(Protocol):
+    """Append-only event primitive consumed by the orchestration layer."""
+
+    def read(self, task_id: str, *, after_sequence: int = 0) -> list[HarnessEvent]: ...
+
+    def append(
+        self, task_id: str, kind: str, payload: dict[str, Any] | None = None,
+        *, idempotency_key: str | None = None,
+    ) -> HarnessEvent: ...
 
 
 class JsonlEventStore:

@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from harness.context import (
     CompactionPolicy,
-    ContextCompiler,
     build_compaction_snapshot,
     truncate_to_tokens,
 )
 from harness.models import (
-    ContextBudget,
     Decision,
-    RepositoryManifest,
     TaskLedger,
     TaskRequest,
     ValidationResult,
@@ -33,51 +30,6 @@ def _ledger() -> TaskLedger:
     ]
     ledger.next_action = "Repair quoted-token handling"
     return ledger
-
-
-def test_prefix_hash_does_not_change_with_dynamic_ledger_state() -> None:
-    compiler = ContextCompiler(model_name="gemini-test")
-    first = compiler.compile(ledger=_ledger())
-    ledger = _ledger()
-    ledger.progress.append("New progress")
-    second = compiler.compile(ledger=ledger)
-
-    assert first.static_prefix_hash == second.static_prefix_hash
-    assert first.text != second.text
-
-
-def test_context_compilation_is_deterministic() -> None:
-    compiler = ContextCompiler(model_name="gemini-test")
-    manifest = RepositoryManifest(
-        root="/repo",
-        base_revision="abc123",
-        languages=["python"],
-        commands={"test": "pytest"},
-    )
-    kwargs = {
-        "ledger": _ledger(),
-        "manifest": manifest,
-        "project_instructions": {"AGENTS.md": "Keep changes focused."},
-        "repository_map": "src/parser.py\n  function parse(text: str)",
-        "recent_events": [{"event": "read", "path": "src/parser.py"}],
-    }
-    assert compiler.compile(**kwargs).model_dump() == compiler.compile(**kwargs).model_dump()
-
-
-def test_oversized_recent_events_request_compaction() -> None:
-    compiler = ContextCompiler(
-        model_name="gemini-test",
-        budget=ContextBudget(
-            model_context_window=8_000,
-            completion_reserve=1_000,
-            recent_events=100,
-            repository_map=300,
-        ),
-    )
-    packet = compiler.compile(ledger=_ledger(), recent_events=["x" * 10_000])
-    recent = next(section for section in packet.sections if section.name == "recent_events")
-    assert recent.truncated is True
-    assert packet.should_compact is True
 
 
 def test_truncation_preserves_head_and_tail() -> None:
