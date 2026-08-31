@@ -1,5 +1,15 @@
 # Implementation TODO
 
+## Pi terminal experience
+
+- [x] Prove standalone Pi toolkit reuse with deterministic rendering fixtures.
+- [ ] Separate public replies from workflow control and support non-coding turns.
+- [ ] Preserve conversations and wire queues, model/auth controls and resources.
+- [ ] Complete Pi-style UI and migrate installation/launching.
+- [ ] Verify conversational/coding examples, replay and harness swap; remove Go TUI.
+
+See `docs/design/pi-terminal-migration.md` for delivery gates.
+
 ## Minimal-harness simplification
 
 - [x] Remove Magnitude, LiteLLM integration, and installer/launcher branches; retain Codex and native ADK provider seams.
