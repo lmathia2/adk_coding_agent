@@ -95,6 +95,7 @@ export class RemoteSession {
   private receive(message: WireObject): void {
     switch (message.type) {
       case "server.hello": {
+        const retryRequests = [...this.requests.values()];
         clearTimeout(this.helloTimer);
         this.negotiated = true; this.attempts = 0;
         this.state.view.notice = "";
@@ -107,7 +108,7 @@ export class RemoteSession {
         if (this.pendingStart) this.send(this.pendingStart);
         else if (this.state.runId) this.send({type: "task.attach", run_id: this.state.runId, after_sequence: this.state.cursor});
         for (const control of this.controls.values()) this.send(control);
-        for (const request of this.requests.values()) this.send(request.message);
+        for (const request of retryRequests) this.send(request.message);
         clearInterval(this.sessionPoll);
         this.sessionPoll = setInterval(() => {
           if (this.state.active || this.state.view.pending?.length) this.refreshConversation();

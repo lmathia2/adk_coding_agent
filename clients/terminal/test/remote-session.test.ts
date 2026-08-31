@@ -47,6 +47,29 @@ test("one socket supports two turns with a stable conversation and retained tran
     assert.equal(session.state.view.entries.length, 4);
   } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
 });
+test("hello sends fresh model and resource discovery exactly once", async () => {
+  const server = new WebSocketServer({host: "127.0.0.1", port: 0});
+  await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const counts = new Map<string, number>();
+  server.on("connection", socket => socket.on("message", data => {
+    const message = JSON.parse(data.toString());
+    if (message.type === "client.hello") send(socket, {type: "server.hello", harness: {display_name: "Fixture", capabilities: ["model_selection", "resources"]}});
+    if (message.type === "resource.request" || message.type === "model.request") {
+      counts.set(message.request_id, (counts.get(message.request_id) ?? 0) + 1);
+      send(socket, {type: message.type.replace(".request", ".result"), request_id: message.request_id,
+        operation: message.operation, data: message.type === "resource.request" ? {items: [], warnings: [], workspace: "/fixture", state_root: "/state", configuration_root: "/config", run_database: "/state/runs.db", project_trusted: false} : {coding_model: {provider: "fixture", name: "alpha"}}});
+    }
+  }));
+  const session = new RemoteSession({url: `ws://127.0.0.1:${address.port}`, token});
+  try {
+    session.connect();
+    await until(() => counts.size === 2);
+    await delay(20);
+    assert.deepEqual([...counts.values()], [1, 1]);
+    assert.equal(session.state.view.notice, "");
+  } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
+});
 test("disconnect reattaches from the contiguous cursor and does not repeat a reply", async () => {
   const server = new WebSocketServer({host: "127.0.0.1", port: 0});
   await once(server, "listening");
