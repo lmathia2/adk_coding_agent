@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { decode, object, string, type WireObject } from "./protocol.js";
 import { SessionState } from "./session.js";
+import { loadHistory } from "./history.js";
 
 export interface RemoteOptions {
   url: string;
@@ -20,6 +21,8 @@ export class RemoteSession {
   private helloTimer?: NodeJS.Timeout;
   private sessionPoll?: NodeJS.Timeout;
   private refreshing = false;
+  private historyLoad?: AbortSignal;
+  private get loadingHistory(): boolean { return this.historyLoad !== undefined && !this.historyLoad.aborted; }
   private refreshAgain = false;
   private latestSnapshot?: WireObject;
   private lastPong = 0;
@@ -161,6 +164,7 @@ export class RemoteSession {
   submit(text: string, mode: "steer" | "followUp" = "steer"): void {
     if (!text.trim()) return;
     if (!this.negotiated) throw new Error("Wait for the server connection before sending");
+    if (this.loadingHistory) throw new Error("Wait for history to load or close the resume dialog");
     if (this.pendingStart) throw new Error("Waiting for the current request to be accepted");
     const id = randomUUID();
     if (this.state.active) {
@@ -260,7 +264,25 @@ export class RemoteSession {
     this.acceptSnapshot(await this.request("state", {thread_id: this.state.threadId}));
     this.notice("Alt+Enter queues · /queue continue resumes · /queue clear removes pending follow-ups");
   }
+  async resume(thread: string, signal: AbortSignal): Promise<void> {
+    if (!this.state.capabilities.has("session_history")) throw new Error("Server does not support transcript history");
+    if (this.state.active || this.loadingHistory) throw new Error("Finish or cancel active work before switching conversations");
+    this.historyLoad = signal;
+    try {
+      const history = await loadHistory(this, thread, signal);
+      signal.throwIfAborted();
+      if (this.stopped || !this.negotiated) throw new Error("Reconnect before resuming a conversation");
+      if (this.state.active) throw new Error("Queued work started while history loaded; cancel it before switching");
+      if (!history.state.runId) throw new Error("Conversation has no saved turns");
+      this.state.restore(history.state); this.latestSnapshot = undefined;
+      this.acceptSnapshot(history.snapshot);
+      this.send({type: "task.attach", run_id: this.state.runId, after_sequence: this.state.cursor});
+      this.refreshModel(); this.refreshConversation();
+      this.notice(`Resumed conversation · ${history.turns} recent turns${history.older ? " · /history for earlier turns" : ""}`);
+    } finally { if (this.historyLoad === signal) this.historyLoad = undefined; }
+  }
   newConversation(): void {
+    if (this.loadingHistory) throw new Error("Close the resume dialog before starting a new conversation");
     this.state.newConversation(); this.latestSnapshot = undefined;
     this.refreshModel(); this.changed();
   }

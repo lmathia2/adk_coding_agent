@@ -224,4 +224,27 @@ snapshot; normal attachment catches up afterward. Inputs and events are redacted
 and both the conversation and run must match the authenticated user/workspace/
 harness. History reads neither attach nor acknowledge, dispatch queues, or invoke
 models/tools. Focused tests cover Unicode byte limits, snapshot retries and growth,
-ownership, invalid cursors and zero execution. The terminal resume UI remains next.
+ownership, invalid cursors and zero execution.
+
+## Resume and history UI
+
+The `session_history` capability gates `/resume` and `/history`; `/session` shows
+conversation/run identity and queue status. The picker lists server-scoped recent
+conversations, restores up to 20 turns through the same reducer used for live
+events, and attaches after the last restored sequence. A fresh terminal can reopen
+saved conversations without creating a new model invocation. Pending follow-ups
+remain server-owned; opening a stopped conversation does not continue them.
+
+`/history` browses older pages in a read-only dialog. Escape restores the live view
+and editor draft; Ctrl+O expands tool details. The 400-entry/64-KB-per-entry display
+bounds still apply, while full public events remain in server storage. This is not
+Pi's session branching, renaming or cross-workspace switching; those are not exposed
+as placeholder commands. A run ending without a tool result says so instead of
+leaving a historical card marked `running`.
+
+The production-server/ADK bridge drives the real resume picker and history dialog,
+then reopens the conversation from a second client. Model invocation counts stay
+unchanged. Deterministic terminal tests additionally cover active-run catch-up,
+cancelled delayed loads, chronological replay, malformed cursors, earlier-page
+navigation and widths of 20/40/80/120 columns. Installation migration and fresh
+live-provider visual/quality comparisons remain outstanding.

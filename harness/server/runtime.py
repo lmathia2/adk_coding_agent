@@ -434,7 +434,7 @@ class RunCoordinator:
     @property
     def descriptor(self) -> HarnessDescriptor:
         descriptor = self.execution_factory.descriptor
-        capabilities = descriptor.capabilities | {RuntimeCapability.SESSIONS}
+        capabilities = descriptor.capabilities | {RuntimeCapability.SESSIONS, RuntimeCapability.SESSION_HISTORY}
         if self.provider_controls is not None:
             capabilities |= {RuntimeCapability.PROVIDER_CONTROLS}
         if self.models is not None:

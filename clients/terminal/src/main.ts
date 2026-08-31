@@ -7,6 +7,7 @@ import { RemoteSession } from "./remote-session.js";
 import { TerminalView } from "./view.js";
 import { providerCommand } from "./provider-ui.js";
 import { ModelPicker } from "./model-picker.js";
+import { HistoryDialog, SessionInfo, SessionPicker } from "./session-ui.js";
 
 const {values} = parseArgs({options: {
   server: {type: "string", default: "ws://127.0.0.1:8765/v1/agent"},
@@ -25,7 +26,14 @@ try {
     {value: "/help", label: "/help", description: "Commands and keyboard hints"},
     {value: "/new", label: "/new", description: "Start a new conversation"},
     ...(session.state.capabilities.has("cancel") ? [{value: "/cancel", label: "/cancel", description: "Interrupt the active run"}] : []),
-    ...(session.state.capabilities.has("sessions") ? [{value: "/queue", label: "/queue", description: "Manage durable follow-ups"}] : []),
+    ...(session.state.capabilities.has("sessions") ? [
+      {value: "/queue", label: "/queue", description: "Manage durable follow-ups"},
+      {value: "/session", label: "/session", description: "Show conversation and run identity"},
+    ] : []),
+    ...(session.state.capabilities.has("session_history") ? [
+      {value: "/resume", label: "/resume", description: "Search and reopen a server conversation"},
+      {value: "/history", label: "/history", description: "Browse read-only transcript pages"},
+    ] : []),
     ...(session.state.capabilities.has("model_selection") ? [{value: "/model", label: "/model", description: "Select the next turn's model; Ctrl+S saves a default"}] : []),
     ...(session.state.capabilities.has("provider_controls") ? [
       {value: "/login", label: "/login", description: "Sign in to a provider on the server"},
@@ -61,6 +69,19 @@ try {
         if (command === "/quit") return quit();
         if (command === "/new") return session.newConversation();
         if (command === "/cancel") return session.cancel();
+        if (command === "/resume") {
+          if (!session.state.capabilities.has("session_history")) throw new Error("Server does not support transcript history");
+          if (session.state.active) throw new Error("Finish or cancel active work before switching conversations");
+          view.showDialog(close => new SessionPicker(session, () => view.refresh(), close)); return;
+        }
+        if (command === "/history") {
+          if (!session.state.capabilities.has("session_history")) throw new Error("Server does not support transcript history");
+          if (!session.state.runId) throw new Error("No saved turns yet; send a request or use /resume");
+          view.showDialog(close => new HistoryDialog(session, session.state.threadId, () => view.refresh(), close)); return;
+        }
+        if (command === "/session") {
+          view.showDialog(close => new SessionInfo(`Conversation: ${session.state.threadId}\nRun: ${session.state.runId || "none yet"}\nModel: ${session.state.view.model}\nStatus: ${session.state.view.status}\nQueued follow-ups: ${session.state.view.pending?.length ?? 0}\nHistory and queues are saved on the server. /resume reopens history; /queue continue starts pending work.`, close)); return;
+        }
         if (command === "/model") {
           view.showDialog(close => new ModelPicker(session, () => view.refresh(), close, text => {
             if (!stopped) { session.state.view.notice = text; view.refresh(); }

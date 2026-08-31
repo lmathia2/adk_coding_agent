@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decode, type WireObject } from "../src/protocol.js";
 import { SessionState } from "../src/session.js";
+import { Transcript } from "../src/transcript.js";
 
 const envelope = (sequence: number, event: WireObject) => ({type: "event", protocol_version: 1, sequence, run_id: "run", durable: true, event});
 test("reducer is quiet, keeps tool args/results separate, and deduplicates replay", () => {
@@ -40,5 +41,19 @@ test("sequence gaps never advance the replay cursor", () => {
 test("unknown/malformed events fail before reduction", () => {
   for (const event of [{type: "BOGUS"}, {type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: 3}]) {
     assert.throws(() => decode(JSON.stringify(envelope(1, event))));
+  }
+});
+
+test("stopped runs show missing tool results without claiming the tool is still running", () => {
+  for (const ending of [
+    {type: "RUN_ERROR", message: "Server restarted"},
+    {type: "RUN_FINISHED", runId: "run", threadId: "thread", result: {status: "cancelled"}},
+  ]) {
+    const state = new SessionState(); state.runId = "run";
+    state.envelope(envelope(1, {type: "TOOL_CALL_START", toolCallId: "tool", toolCallName: "bash"}));
+    state.envelope(envelope(2, ending));
+    const rendered = new Transcript(state.view).render(80).join("\n");
+    assert.match(rendered, /without a recorded tool result/);
+    assert.doesNotMatch(rendered, /running…/);
   }
 });

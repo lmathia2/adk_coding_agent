@@ -23,11 +23,14 @@ historical feature checklist or book-rubric score.
   ordinary text streaming by default.
 - Standalone Pi terminal toolkit client with authenticated transport, multi-turn
   conversations and replay, tested against the real server/ADK stack with a scripted
-  model (not yet the default installed client; session selector pending).
+  model (not yet the default installed client; resource discovery still pending).
 - Server-owned durable follow-ups, bounded conversation queries, queue continuation
   and removal controls; the terminal catches up through successor runs in order.
 - Read-only public transcript pages with a stable snapshot cursor, event/byte
   limits, redaction and ownership checks; reads never attach or execute a run.
+- Pi-style `/resume` selector, `/history` paging and `/session` identity view.
+  Restoring history reuses the live reducer and catches up an active run without
+  starting it again. Stopped work and pending queues require explicit continuation.
 - Authenticated server-owned provider login/status/cancel/logout controls. OAuth
   workers never block the server event loop; credential tokens remain server-side.
 - Pi-style terminal `/login`, `/auth` and confirmed `/logout` dialogs use those

@@ -108,6 +108,49 @@ test("model status reconciles new conversations and reconnect without replaying 
   } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
 });
 
+test("resume catches up an active run without starting work; cancelling a delayed load preserves the session", async () => {
+  const server = new WebSocketServer({host: "127.0.0.1", port: 0});
+  await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  let delayed: (() => void) | undefined, attached = 0, starts = 0;
+  server.on("connection", socket => socket.on("message", data => {
+    const message = JSON.parse(data.toString());
+    if (message.type === "client.hello") send(socket, {type: "server.hello", harness: {display_name: "Fixture", capabilities: ["sessions", "session_history"]}});
+    if (message.type === "task.start") starts++;
+    if (message.type === "session.request") {
+      const run = {run_id: "saved-run", thread_id: message.thread_id, input: "saved request", status: "running"};
+      const reply = () => send(socket, {type: "session.result", request_id: message.request_id, operation: message.operation,
+        data: message.operation === "get" ? {thread_id: message.thread_id, runs: [run], latest: run, queue: [], next_before_run_id: null}
+          : message.operation === "events" ? {thread_id: message.thread_id, run, high_water_sequence: 1, next_after_sequence: null,
+            events: [{type: "event", protocol_version: 1, run_id: "saved-run", sequence: 1, durable: true,
+              event: {type: "RUN_STARTED", runId: "saved-run", threadId: message.thread_id}}]}
+          : {thread_id: message.thread_id, queue: [], latest: run}});
+      if (message.thread_id === "delayed") delayed = reply; else reply();
+    }
+    if (message.type === "task.attach") {
+      attached++; assert.equal(message.after_sequence, 1);
+      send(socket, {type: "event", run_id: "saved-run", sequence: 2, durable: true, event: {type: "TEXT_MESSAGE_CONTENT", messageId: "reply", delta: "caught up"}});
+      send(socket, {type: "event", run_id: "saved-run", sequence: 3, durable: true, event: {type: "RUN_FINISHED", runId: "saved-run", threadId: "saved", result: {status: "answered"}}});
+    }
+  }));
+  const session = new RemoteSession({url: `ws://127.0.0.1:${address.port}`, token});
+  try {
+    session.connect(); await until(() => session.state.view.status === "ready");
+    const abort = new AbortController();
+    const pending = session.resume("delayed", abort.signal);
+    const rejected = assert.rejects(pending, {name: "AbortError"});
+    await until(() => delayed !== undefined); abort.abort();
+    session.newConversation(); const original = session.state.threadId;
+    delayed!(); await rejected;
+    assert.equal(session.state.threadId, original);
+    await session.resume("saved", new AbortController().signal);
+    await until(() => session.state.view.status === "answered");
+    assert.equal(session.state.threadId, "saved"); assert.equal(session.state.cursor, 3);
+    assert.equal(session.state.view.entries.length, 2);
+    assert.equal(attached, 1); assert.equal(starts, 0);
+  } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
+});
+
 test("provider controls are correlated, stay out of chat, and mutations are not replayed after disconnect", async () => {
   const server = new WebSocketServer({host: "127.0.0.1", port: 0});
   await once(server, "listening");

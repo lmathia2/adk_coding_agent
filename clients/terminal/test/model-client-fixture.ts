@@ -5,6 +5,7 @@ import { stripTerminalSequences, visibleWidth, type TUI } from "@earendil-works/
 import { RemoteSession } from "../src/remote-session.js";
 import { ModelPicker } from "../src/model-picker.js";
 import { TerminalView } from "../src/view.js";
+import { SessionPicker, HistoryDialog } from "../src/session-ui.js";
 
 const session = new RemoteSession({url: process.env.ADK_TEST_URL!, token: process.env.ADK_TEST_TOKEN!});
 let input!: (data: string) => unknown;
@@ -23,6 +24,7 @@ function openPicker(): void {
 }
 try {
   session.connect(); await until(() => session.state.view.status === "ready");
+  const original = session.state.threadId;
   session.submit("First fixture turn");
   await until(() => session.state.view.status === "running");
   view.editor.setText("preserved draft");
@@ -45,5 +47,27 @@ try {
   session.submit("New conversation with saved model");
   await until(() => session.state.view.status === "answered");
   assert.deepEqual(session.state.view.entries.map(entry => entry.kind), ["user", "assistant"]);
-  process.stdout.write(JSON.stringify({turns: 3, active_model_preserved: true, default: "gamma"}));
+  view.showDialog(close => new SessionPicker(session, () => view.refresh(), close));
+  await until(() => screen().includes("Next fixture turn"));
+  input("Next fixture turn"); input("\r");
+  await until(() => session.state.threadId === original && session.state.view.notice.includes("Resumed conversation"));
+  assert.equal(view.editor.getText(), "preserved draft");
+  assert.deepEqual(session.state.view.entries.map(entry => entry.kind), ["user", "assistant", "user", "assistant"]);
+  const cursor = session.state.cursor;
+  const run = session.state.runId;
+  view.showDialog(close => new HistoryDialog(session, original, () => view.refresh(), close));
+  await until(() => screen().includes("2 recent turns"));
+  for (const width of [20, 40, 80, 120]) assert.ok(view.root.render(width).every(line => visibleWidth(line) <= width));
+  input("\x1b"); await delay(50);
+  assert.equal(session.state.runId, run); assert.equal(session.state.cursor, cursor);
+  assert.equal(session.state.view.entries.length, 4);
+  const fresh = new RemoteSession({url: process.env.ADK_TEST_URL!, token: process.env.ADK_TEST_TOKEN!});
+  try {
+    fresh.connect(); await until(() => fresh.state.view.status === "ready");
+    await fresh.resume(original, new AbortController().signal);
+    assert.equal(fresh.state.view.entries.length, 4);
+    assert.equal(fresh.state.runId, run);
+    assert.equal(fresh.state.cursor, cursor);
+  } finally { fresh.close(); }
+  process.stdout.write(JSON.stringify({turns: 3, active_model_preserved: true, default: "gamma", resumed: true}));
 } finally { view.dispose(); session.close(); }

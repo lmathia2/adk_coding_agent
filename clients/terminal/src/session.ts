@@ -20,6 +20,10 @@ export class SessionState {
   user(id: string, text: string): void { this.append({kind: "user", id, text: bounded(text)}); }
   error(text: string): void { this.append({kind: "error", id: randomUUID(), text: bounded(text)}); }
   begin(): void { this.runId = ""; this.cursor = 0; this.view.status = "starting"; this.view.notice = ""; }
+  restore(history: SessionState): void {
+    this.threadId = history.threadId; this.runId = history.runId; this.cursor = history.cursor;
+    Object.assign(this.view, history.view, {workspace: this.view.workspace});
+  }
   newConversation(): void {
     if (this.active) throw new Error("Cancel active work before starting a new conversation");
     this.threadId = randomUUID(); this.runId = ""; this.cursor = 0;
@@ -43,6 +47,11 @@ export class SessionState {
     this.append(entry);
     return entry;
   }
+  private closeTools(): void {
+    for (const entry of this.view.entries) {
+      if (entry.kind === "tool" && entry.id.startsWith(`${this.runId}:tool:`)) entry.done = true;
+    }
+  }
   envelope(message: WireObject): "applied" | "duplicate" | "gap" {
     if (message.run_id !== this.runId) return "duplicate";
     const sequence = Number(message.sequence);
@@ -56,12 +65,13 @@ export class SessionState {
         if (event.metadata) this.model(object(event.metadata)["coding.model"]);
         break;
       case "RUN_FINISHED": {
+        this.closeTools();
         const result = event.result && typeof event.result === "object" ? object(event.result) : {};
         this.view.status = typeof result.status === "string" ? result.status : "completed";
         this.view.notice = result.verified === true ? "Verification passed" : "";
         break;
       }
-      case "RUN_ERROR": this.view.status = "failed"; this.error(string(event.message)); break;
+      case "RUN_ERROR": this.closeTools(); this.view.status = "failed"; this.error(string(event.message)); break;
       case "TEXT_MESSAGE_START": break;
       case "TEXT_MESSAGE_CONTENT": {
         const id = `${this.runId}:message:${string(event.messageId)}`;

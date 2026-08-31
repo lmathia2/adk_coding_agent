@@ -23,7 +23,7 @@ export function renderTool(entry: ToolEntry, width: number, expanded: boolean): 
   const heading = error ? theme.error(label) : theme.accent(label);
   const lines = new Text(heading, 1, 0, theme.tool).render(width);
   if (entry.result === undefined) {
-    if (!entry.done) lines.push(...new Text(theme.dim("running…"), 1, 0, theme.tool).render(width));
+    lines.push(...new Text(theme.dim(entry.done ? "Run ended without a recorded tool result" : "running…"), 1, 0, theme.tool).render(width));
     return lines;
   }
   const text = typeof result.model_text === "string" ? result.model_text : entry.result;

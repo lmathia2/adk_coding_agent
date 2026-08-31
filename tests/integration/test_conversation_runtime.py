@@ -258,7 +258,7 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=40)
         assert process.returncode == 0, stderr.decode()
         if fixture == "model-client":
-            assert json.loads(stdout) == {"turns": 3, "active_model_preserved": True, "default": "gamma"}
+            assert json.loads(stdout) == {"turns": 3, "active_model_preserved": True, "default": "gamma", "resumed": True}
             assert [(name, model._calls) for name, model in models.items()] == [("alpha", 1), ("beta", 1), ("gamma", 1)]
             assert load_model_default(state_root).name == "gamma"
             assert "First fixture turn" in models["beta"]._requests[0]
