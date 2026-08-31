@@ -4,66 +4,127 @@ A small, configurable Google ADK coding harness with a Bubble Tea terminal clien
 One coding worker uses four tools: `read`, `bash`, `edit`, and `write`.
 The server owns task state, steering, approval requests, and deterministic verification.
 
-## Install
+## 1. Install
 
-On macOS, install [Homebrew](https://brew.sh) once. Then:
+On macOS, install [Homebrew](https://brew.sh) and make sure `brew` is on your PATH.
+Git is needed to clone the repository; if it is missing, run `brew install git` first.
+
+For a new checkout:
 
 ```bash
-git clone https://github.com/lmathia2/adk_coding_agent.git ~/src/adk_coding_agent
-cd ~/src/adk_coding_agent
-./install.sh
+mkdir -p "$HOME/src"
+git clone https://github.com/lmathia2/adk_coding_agent.git "$HOME/src/adk_coding_agent"
+cd "$HOME/src/adk_coding_agent"
+./install.sh --bin-dir "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The installer installs missing uv, Git, and Go on macOS, recreates **only this
-checkout's `.venv`**, syncs `uv.lock`, builds the TUI, and links commands into
-`~/.local/bin`. It refuses to overwrite non-symlink commands or a symlinked
-environment. No workspace is selected during installation.
-
-On Linux, install uv, Git, and Go 1.24+ first. uv can provision Python 3.11+.
-No Node/npm, Magnitude, local-model runtime, or separate rg/fd install is required.
-Indexed search uses the pinned native `fff-search` Python wheel.
+If you already have the checkout, skip cloning. Stop its running server/TUI before
+reinstalling:
 
 ```bash
-./install.sh --plan             # inspect without installing
-./install.sh --dev              # also install pytest, Ruff, and Pyright
-./install.sh --minimal          # CLI only, no TUI
-./install.sh --bin-dir /custom/bin
-export PATH="$HOME/.local/bin:$PATH"  # add to ~/.zshrc if needed
+cd "$HOME/src/adk_coding_agent"
+./install.sh --bin-dir "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The first install requires package downloads. Rerunning recreates the environment;
-model credentials and task state are outside it and are not deleted.
+The installer detects macOS, installs missing uv/Git/Go through Homebrew, creates
+Python 3.11+ in this checkout's `.venv`, syncs the locked dependencies, and builds
+the Bubble Tea TUI **by default**. It links `adk-coding-agent`, `adk-agent-tui`, and
+`adk-agent-start` into the specified command directory. You do not need to activate
+the virtual environment, install Pi or Magnitude, or pass a workspace to installation.
+Indexed search comes from the pinned `fff-search` dependency; no separate rg/fd
+installation is needed for that search backend.
 
-## Run in the TUI
+**Every installation deletes and recreates this checkout's `.venv`.** Credentials
+and task state outside it are preserved. Keep the checkout in place: command links
+point into it. The installer refuses a symlinked environment or a non-symlink
+command collision.
 
-Choose a workspace at launch:
+Add `export PATH="$HOME/.local/bin:$PATH"` to your shell startup file (`~/.zshrc`
+for zsh, or the appropriate bash profile) to make the commands available in future
+terminals. The startup examples below also set PATH explicitly.
+
+Go 1.24+ is required. If an older Homebrew Go is already installed, run
+`brew upgrade go` and rerun the installer; existing outdated Go is not auto-upgraded.
+On Linux, install uv, Git, and Go 1.24+ before running the same script. The first
+installation needs internet access for dependencies.
+
+Optional installer flags (choose only what you need):
+
+| Flag | Effect |
+| --- | --- |
+| `--plan` | Show paths and the plan without installing |
+| `--dev` | Also install pytest, Ruff, and Pyright |
+| `--minimal` | CLI only; skip the TUI |
+| `--bin-dir DIR` | Choose where the command links are placed |
+
+## 2. Start the coding agent
+
+Choose **one** of the following launch modes. The examples use the existing
+`$HOME/src/coding_tools` repository; replace that path with the repository you want
+the agent to work on. The server works directly in that workspace, so review its
+changes as you would any local edits.
+
+### One terminal: server and TUI together
 
 ```bash
-adk-agent-start run --workspace /absolute/path/to/repository
+export PATH="$HOME/.local/bin:$PATH"
+adk-agent-start run --workspace "$HOME/src/coding_tools"
 ```
 
-Enter `/login` if prompted, then `/model` to select a Codex subscription model.
-The launcher defaults to Codex; it does not use an OpenAI API key. Exiting the TUI
-stops the server child that this command started.
+This starts a managed server, opens the TUI, and stops that server child when you
+exit the TUI with `/quit`. Do not also start a separate server on the same port.
 
-Alternatively, run in two terminals:
+### Two terminals: server and TUI separately
+
+Terminal 1 — start the server and leave it running:
 
 ```bash
-# Terminal 1: leave running
-adk-agent-start server --workspace /absolute/path/to/repository
+export PATH="$HOME/.local/bin:$PATH"
+adk-agent-start server --workspace "$HOME/src/coding_tools"
+```
 
-# Terminal 2
+Terminal 2 — connect the TUI:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
 adk-agent-start tui
 ```
 
-Add `--trust-project` only after reviewing the workspace's `AGENTS.md` and
-`.agents/skills`. Without it, project instructions and skills are not loaded.
-Use `--state-root DIR` in both terminals if you override the default.
+The launcher reads the token and sets the TUI environment automatically. No token
+copy/paste or manual `STATE_ROOT` setup is needed. `/quit` exits only the TUI in this
+mode; press Ctrl+C in Terminal 1 to stop the server.
 
-The TUI supports `/help`, `/login`, `/auth`, `/logout`, `/model`, `/models`,
-`/benchmark`, `/start`, `/attach`, `/cancel`, and `/reconnect`.
-Guidance sent during execution is delivered at the next safe boundary.
-Model/default changes apply on the next server start.
+From the harness checkout, `./start.sh run`, `./start.sh server`, and
+`./start.sh tui` are equivalent launcher commands (installed CLI/TUI commands must
+still be on PATH). `--server` and `--tui` are also accepted as mode aliases.
+
+### First login and model selection
+
+The launcher uses this harness's Codex subscription adapter, not a local model or
+an OpenAI API key. Login uses the harness's own credential store; do not assume that
+being signed into the Codex app or Pi has authenticated this harness.
+
+In the TUI:
+
+1. Enter `/login` if needed and follow the displayed browser/device-code instructions.
+2. Enter `/auth` to check authentication.
+3. Enter `/model` to choose a model from your account's catalog.
+4. **Restart the server after changing the model.** In one-terminal mode, `/quit`
+   and rerun the launch command. In two-terminal mode, stop/restart Terminal 1 and
+   use `/reconnect` in the TUI (or restart Terminal 2).
+5. Enter your coding request, or use `/start YOUR_REQUEST`. The TUI reports the
+   configured coding model; merely starting the server is not a model-response test.
+
+Use `/help` for commands. Guidance entered during execution is delivered at the next
+safe boundary; `/cancel` requests cancellation. `/benchmark` is optional and makes
+live model requests—it is not required for installation or startup.
+
+Add `--trust-project` to `run` or `server` only after reviewing the workspace's
+`AGENTS.md` and `.agents/skills`. Without it, project instructions and skills are not
+loaded. Prepare the target repository's own test/build dependencies separately;
+the harness installation does not install them.
 
 ### State and environment
 
@@ -73,7 +134,9 @@ tokens. Defaults:
 | Data | Location |
 | --- | --- |
 | State root | `~/.local/state/adk-coding-agent` |
-| Codex credentials and model selection | `STATE_ROOT/auth/` |
+| Codex credentials | `STATE_ROOT/auth/openai-codex.json` |
+| Saved model selection | `STATE_ROOT/auth/openai-codex-selection.json` |
+| Generated Codex configuration | `STATE_ROOT/server/openai-codex.yaml` |
 | WebSocket bearer token | `STATE_ROOT/server/auth-token` |
 | Combined-launch server log | `STATE_ROOT/server/foreground.log` |
 | Per-run state and artifacts | `STATE_ROOT/runs/` |
@@ -84,16 +147,39 @@ The TUI process receives `ADK_CODING_AGENT_TOKEN` from the token file and
 `ADK_CODING_AGENT_STATE_ROOT` from the resolved directory. Tokens are not command-line
 arguments. The default endpoint is `ws://127.0.0.1:8765/v1/agent`; it is not a browser UI.
 
+For a different state directory, pass the **same** `--state-root /absolute/path`
+to both `server` and `tui` (or once to `run`). This also selects which saved login
+and model selection the TUI uses. Run only one server process per state directory.
+
+### Startup troubleshooting
+
+- **Command not found:** set PATH as shown above; use the directory supplied to
+  `--bin-dir` if it differs from `~/.local/bin`.
+- **Missing auth token:** start Terminal 1 first and ensure both terminals use the
+  same state root. This WebSocket token is separate from your Codex login.
+- **Managed server exited / address already in use:** stop your existing harness
+  server before using `run`. Inspect `STATE_ROOT/server/foreground.log` for the cause.
+- **Browser shows 404 at port 8765:** connect with the TUI; there is no web frontend.
+- **Removed Magnitude commands/options:** use the commands above, not
+  `serve-magnitude`, `magnitude --setup`, or installer `--workspace`/`--magnitude` flags.
+
 ## Configure the harness
 
 Copy [the default YAML](harness/config/default.yaml), then change the model,
 instruction file, skill roots, budgets, steering, tracing, or local/Docker command
 settings. Start a custom configuration with:
 
+Terminal 1:
+
 ```bash
 adk-coding-agent serve --config /absolute/path/to/harness.yaml \
   --workspace /absolute/path/to/repository \
   --state-root "$HOME/.local/state/adk-coding-agent"
+```
+
+Terminal 2:
+
+```bash
 adk-agent-start tui
 ```
 
