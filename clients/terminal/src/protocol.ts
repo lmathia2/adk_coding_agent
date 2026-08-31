@@ -36,6 +36,8 @@ export function decode(text: string): WireObject {
   } else if (type === "control.result") {
     for (const field of ["run_id", "command_id", "operation"]) string(message[field]);
     if (typeof message.accepted !== "boolean") throw new Error("invalid control result");
+  } else if (type === "session.result") {
+    string(message.request_id); string(message.operation); object(message.data);
   } else if (type === "pong") string(message.nonce);
   else throw new Error("unknown server message");
   return message;

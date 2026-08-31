@@ -28,6 +28,8 @@ from harness.server.protocol import (
     ControlResultMessage,
     PongMessage,
     ServerErrorMessage,
+    SessionRequestMessage,
+    SessionResultMessage,
     TaskAcceptedMessage,
     parse_server_message,
 )
@@ -68,6 +70,23 @@ def test_parser_discriminates_json_and_mapping_client_messages() -> None:
     assert hello.protocol_versions == (1,)
     assert isinstance(start, StartTaskMessage)
     assert start.input == "Fix the parser"
+
+
+def test_session_controls_round_trip_and_validate_operation_parameters() -> None:
+    request = SessionRequestMessage(type="session.request", operation="follow_up",
+        request_id="queue-key", thread_id="thread", content="Next task")
+    assert parse_client_message(request.model_dump_json()) == request
+    response = SessionResultMessage(request_id="queue-key", operation="follow_up", data={"queue": []})
+    assert parse_server_message(response.model_dump_json()) == response
+    for invalid in [
+        {"operation": "follow_up", "thread_id": "thread"},
+        {"operation": "list", "thread_id": "thread"},
+        {"operation": "remove_follow_up", "thread_id": "thread"},
+        {"operation": "state", "thread_id": "thread", "content": "unexpected"},
+        {"operation": "follow_up", "thread_id": "thread", "content": "🙂" * 12_501},
+    ]:
+        with pytest.raises(ValidationError):
+            parse_client_message({"type": "session.request", "request_id": "key", **invalid})
 
 
 @pytest.mark.parametrize(

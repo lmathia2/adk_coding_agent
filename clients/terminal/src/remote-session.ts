@@ -18,10 +18,15 @@ export class RemoteSession {
   private timer?: NodeJS.Timeout;
   private heartbeat?: NodeJS.Timeout;
   private helloTimer?: NodeJS.Timeout;
+  private sessionPoll?: NodeJS.Timeout;
+  private refreshing = false;
+  private refreshAgain = false;
+  private latestSnapshot?: WireObject;
   private lastPong = 0;
   private attempts = 0;
   private pendingStart?: WireObject;
   private controls = new Map<string, WireObject>();
+  private requests = new Map<string, {message: WireObject; resolve: (data: WireObject) => void; reject: (error: Error) => void; timer: NodeJS.Timeout}>();
   private listeners = new Set<() => void>();
   constructor(private readonly options: RemoteOptions) {
     const url = new URL(options.url);
@@ -58,7 +63,7 @@ export class RemoteSession {
     socket.on("close", (code) => {
       if (this.stopped || this.socket !== socket) return;
       this.negotiated = false;
-      clearInterval(this.heartbeat); clearTimeout(this.helloTimer);
+      clearInterval(this.heartbeat); clearTimeout(this.helloTimer); clearInterval(this.sessionPoll);
       if (code === 1008) {
         this.stopped = true;
         this.state.view.status = "disconnected";
@@ -89,6 +94,12 @@ export class RemoteSession {
         if (this.pendingStart) this.send(this.pendingStart);
         else if (this.state.runId) this.send({type: "task.attach", run_id: this.state.runId, after_sequence: this.state.cursor});
         for (const control of this.controls.values()) this.send(control);
+        for (const request of this.requests.values()) this.send(request.message);
+        clearInterval(this.sessionPoll);
+        this.sessionPoll = setInterval(() => {
+          if (this.state.active || this.state.view.pending?.length) this.refreshConversation();
+        }, 1_000);
+        this.refreshConversation();
         this.lastPong = Date.now();
         clearInterval(this.heartbeat);
         this.heartbeat = setInterval(() => {
@@ -105,7 +116,11 @@ export class RemoteSession {
         const outcome = this.state.envelope(message);
         if (outcome === "gap") { this.socket?.terminate(); break; }
         if (outcome === "applied" && message.durable) this.send({type: "events.ack", run_id: this.state.runId, through_sequence: this.state.cursor});
-        if (outcome === "applied" && !this.state.active) this.controls.clear();
+        if (outcome === "applied" && !this.state.active) {
+          this.controls.clear();
+          if (this.latestSnapshot) this.acceptSnapshot(this.latestSnapshot);
+          this.refreshConversation();
+        }
         break;
       }
       case "control.result":
@@ -115,11 +130,22 @@ export class RemoteSession {
           : `${message.operation} ${message.accepted ? "accepted" : "rejected"}`;
         break;
       case "error":
+        if (typeof message.request_id === "string" && this.requests.has(message.request_id)) {
+          const request = this.requests.get(message.request_id)!;
+          clearTimeout(request.timer); this.requests.delete(message.request_id);
+          request.reject(new Error(string(message.message))); break;
+        }
         this.state.error(string(message.message));
         if (message.request_id === this.pendingStart?.request_id) {
           this.pendingStart = undefined; this.state.view.status = "failed";
         }
         break;
+      case "session.result": {
+        const id = string(message.request_id), request = this.requests.get(id);
+        if (!request) break;
+        clearTimeout(request.timer); this.requests.delete(id);
+        request.resolve(object(message.data)); break;
+      }
       case "pong": this.lastPong = Date.now(); break;
     }
   }
@@ -129,7 +155,13 @@ export class RemoteSession {
     if (this.pendingStart) throw new Error("Waiting for the current request to be accepted");
     const id = randomUUID();
     if (this.state.active) {
-      if (mode === "followUp") throw new Error("Queued follow-ups are not supported by this server yet");
+      if (mode === "followUp") {
+        if (Buffer.byteLength(text) > 50_000) throw new Error("Follow-up exceeds 50000 UTF-8 bytes");
+        this.request("follow_up", {thread_id: this.state.threadId, content: text})
+          .then(data => { this.acceptSnapshot(data); this.notice("Follow-up accepted"); })
+          .catch(error => this.notice(`Follow-up not confirmed: ${error.message}. Draft: ${text}`));
+        this.notice("Queueing follow-up…"); return;
+      }
       if (Buffer.byteLength(text) > 4096) throw new Error("Steering is limited to 4096 UTF-8 bytes");
       this.control("steer", {content: text, priority: 0}, id);
     } else {
@@ -143,15 +175,69 @@ export class RemoteSession {
   private control(operation: "steer" | "cancel", extra: WireObject = {}, id = randomUUID()): void {
     const capability = operation === "steer" ? "steering" : "cancel";
     if (!this.state.capabilities.has(capability)) throw new Error(`Harness does not support ${operation}`);
+    if (this.controls.size >= 32) throw new Error("Waiting for outstanding control requests");
     const message = {type: `task.${operation}`, run_id: this.state.runId, idempotency_key: id, ...extra};
     this.controls.set(id, message); this.send(message);
     this.state.view.notice = `${operation} requested`; this.changed();
   }
   cancel(): void { if (this.state.active && this.state.runId) this.control("cancel"); }
-  newConversation(): void { this.state.newConversation(); this.changed(); }
+  request(operation: string, parameters: WireObject = {}): Promise<WireObject> {
+    if (!this.negotiated || !this.state.capabilities.has("sessions")) return Promise.reject(new Error("Session controls are not available"));
+    if (this.requests.size >= 32) return Promise.reject(new Error("Waiting for outstanding session requests"));
+    const id = randomUUID(), message = {type: "session.request", request_id: id, operation, ...parameters};
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.requests.delete(id); reject(new Error("Session request timed out; check /queue before retrying a follow-up")); }, 15_000);
+      this.requests.set(id, {message, resolve, reject, timer}); this.send(message);
+    });
+  }
+  private notice(text: string): void { if (!this.stopped) { this.state.view.notice = text; this.changed(); } }
+  private acceptSnapshot(data: WireObject): void {
+    if (this.stopped || data.thread_id !== this.state.threadId) return;
+    this.latestSnapshot = data;
+    this.state.view.pending = Array.isArray(data.queue) ? data.queue.map(item => {
+      const value = object(item); return {item_id: string(value.item_id), preview: string(value.preview)};
+    }) : [];
+    const next = data.next && typeof data.next === "object" ? object(data.next) : undefined;
+    if (next && data.after_run_id === this.state.runId && !this.state.active && !this.pendingStart) {
+      const runId = string(next.run_id);
+      this.state.begin(); this.state.runId = runId;
+      this.state.user(`${runId}:user`, string(next.input));
+      this.send({type: "task.attach", run_id: runId, after_sequence: 0});
+    }
+    if (data.after_run_id === null && object(data.latest).run_id !== this.state.runId) this.refreshConversation();
+    this.changed();
+  }
+  private refreshConversation(): void {
+    if (!this.negotiated || !this.state.runId || !this.state.capabilities.has("sessions")) return;
+    if (this.refreshing) { this.refreshAgain = true; return; }
+    this.refreshing = true;
+    this.request("state", {thread_id: this.state.threadId, after_run_id: this.state.runId}).then(data => this.acceptSnapshot(data))
+      .catch(error => this.notice(error.message)).finally(() => {
+        this.refreshing = false;
+        if (this.refreshAgain) { this.refreshAgain = false; this.refreshConversation(); }
+      });
+  }
+  async continueQueue(): Promise<void> {
+    this.acceptSnapshot(await this.request("continue", {thread_id: this.state.threadId}));
+  }
+  async clearQueue(): Promise<void> {
+    const thread = this.state.threadId;
+    const snapshot = await this.request("state", {thread_id: thread});
+    for (const item of snapshot.queue as WireObject[]) {
+      await this.request("remove_follow_up", {thread_id: thread, item_id: item.item_id});
+    }
+    this.refreshConversation();
+  }
+  async queueStatus(): Promise<void> {
+    this.acceptSnapshot(await this.request("state", {thread_id: this.state.threadId}));
+    this.notice("Alt+Enter queues · /queue continue resumes · /queue clear removes pending follow-ups");
+  }
+  newConversation(): void { this.state.newConversation(); this.latestSnapshot = undefined; this.changed(); }
   close(): void {
     this.stopped = true; this.negotiated = false;
-    clearTimeout(this.timer); clearInterval(this.heartbeat); clearTimeout(this.helloTimer);
+    clearTimeout(this.timer); clearInterval(this.heartbeat); clearTimeout(this.helloTimer); clearInterval(this.sessionPoll);
+    for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(new Error("Terminal disconnected")); }
+    this.requests.clear();
     this.socket?.close();
   }
 }

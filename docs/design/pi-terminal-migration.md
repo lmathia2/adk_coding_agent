@@ -87,3 +87,24 @@ as a compact card. Rendering at 40/80/120 columns remains bounded and excludes
 workflow diagnostics. This is stronger than separate fake-socket tests but is not
 live-model quality or end-to-end visual parity evidence. Model/auth selectors,
 durable follow-ups and launcher migration are still pending.
+
+## Durable follow-ups
+
+The server now advertises `sessions` controls. Conversation summaries/history are
+queried from the existing run registry; follow-up and continuation receipts live
+in that same SQLite database. Alt+Enter queues a new turn; Enter remains steering.
+The terminal shows up to three queue previews and a count, with `/queue`,
+`/queue continue` and `/queue clear` controls while full selectors are completed.
+
+Success drains the queue in order. Blocked, failed and cancelled turns retain
+pending messages. Shutdown does not silently run them; an explicit continuation
+can restart the pending queue. A continuation retry remains tied to the original
+item, and a crash after run creation cannot invoke that run again. User/workspace/
+harness identity is checked before session access or queue dispatch.
+
+The cross-language test now exercises three real ADK turns, with two follow-ups
+queued while the first model response is gated. The terminal follows each successor
+run, not merely the newest run, so fast completions cannot skip transcript entries.
+Unit tests cover queue ordering, retries, cancellation, blocked/error results,
+restart persistence, ownership and redacted previews. Session/model/login selectors,
+full historical transcript loading and live visual/model comparisons remain pending.

@@ -103,6 +103,34 @@ class PingMessage(FrozenModel):
     nonce: str = Field(min_length=1, max_length=256)
 
 
+class SessionRequestMessage(FrozenModel):
+    """Authenticated session controls; request_id is also the mutation retry key."""
+
+    type: Literal["session.request"]
+    protocol_version: Literal[1] = 1
+    request_id: str = Field(min_length=1, max_length=256)
+    operation: Literal["list", "get", "state", "follow_up", "remove_follow_up", "continue"]
+    thread_id: str | None = Field(default=None, min_length=1, max_length=256)
+    content: str | None = Field(default=None, min_length=1, max_length=50_000)
+    item_id: str | None = Field(default=None, min_length=1, max_length=256)
+    before_run_id: str | None = Field(default=None, min_length=1, max_length=256)
+    after_run_id: str | None = Field(default=None, min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_operation(self) -> SessionRequestMessage:
+        required = {
+            "list": set(), "get": {"thread_id"}, "state": {"thread_id"}, "continue": {"thread_id"},
+            "follow_up": {"thread_id", "content"}, "remove_follow_up": {"thread_id", "item_id"},
+        }[self.operation]
+        supplied = {key for key in ("thread_id", "content", "item_id", "before_run_id", "after_run_id") if getattr(self, key) is not None}
+        optional = {"before_run_id"} if self.operation == "get" else {"after_run_id"} if self.operation == "state" else set()
+        if not required <= supplied or supplied - required - optional:
+            raise ValueError("invalid session operation parameters")
+        if self.content is not None and len(self.content.encode("utf-8")) > 50_000:
+            raise ValueError("follow-up exceeds 50000 UTF-8 bytes")
+        return self
+
+
 ClientMessage = Annotated[
     HelloMessage
     | StartTaskMessage
@@ -111,7 +139,9 @@ ClientMessage = Annotated[
     | PauseTaskMessage
     | CancelTaskMessage
     | AckMessage
-    | PingMessage,
+    | PingMessage
+    | SessionRequestMessage,
+    # Session operations extend v1 by capability; old clients never receive their replies.
     Field(discriminator="type"),
 ]
 _CLIENT_MESSAGE_ADAPTER = TypeAdapter(ClientMessage)
@@ -288,13 +318,22 @@ class ServerErrorMessage(SparseWireModel):
     retryable: bool = False
 
 
+class SessionResultMessage(FrozenModel):
+    type: Literal["session.result"] = "session.result"
+    protocol_version: Literal[1] = 1
+    request_id: str
+    operation: str
+    data: dict[str, object]
+
+
 ServerMessage = Annotated[
     ServerHello
     | TaskAcceptedMessage
     | ControlResultMessage
     | PongMessage
     | ServerErrorMessage
-    | ServerEnvelope,
+    | ServerEnvelope
+    | SessionResultMessage,
     Field(discriminator="type"),
 ]
 _SERVER_MESSAGE_ADAPTER = TypeAdapter(ServerMessage)

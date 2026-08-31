@@ -1,6 +1,7 @@
 """Scripted model, real ADK workflow/tools: deterministic interaction contracts."""
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -25,8 +26,12 @@ class ScriptedModel(BaseLlm):
     _responses: list[list[types.Part]] = PrivateAttr(default_factory=list)
     _calls: int = PrivateAttr(default=0)
     _requests: list[str] = PrivateAttr(default_factory=list)
+    _gate: asyncio.Event | None = PrivateAttr(default=None)
 
     async def generate_content_async(self, llm_request, stream=False) -> AsyncGenerator[LlmResponse, None]:
+        if self._gate is not None:
+            await self._gate.wait()
+            self._gate = None
         assert self._responses, "unexpected extra model call"
         self._calls += 1
         self._requests.append(llm_request.model_dump_json())
@@ -194,9 +199,10 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path) -> None:
     if not node or not client.is_file():
         pytest.skip("run npm ci && npm run build in clients/terminal for the cross-language gate")
     model = ScriptedModel(model="fixture")
+    model._gate = asyncio.Event()
     model._responses = [reply("answer", "First reply"), [types.Part(function_call=types.FunctionCall(
         id="read1", name="read", args={"path": "README.md"},
-    ))], reply("answer", "Repository explanation")]
+    ))], reply("answer", "Repository explanation"), reply("answer", "Final queued reply")]
     registry = default_harness_registry(model_providers=ClosedAdkModelProviderRegistry((Provider(model),)))
     composition = load_harness_composition(config_models=registry.config_models())
     config = composition.harness.config
@@ -230,10 +236,17 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path) -> None:
         process = await asyncio.create_subprocess_exec(node, str(client),
             env={"PATH": os.environ.get("PATH", ""), "ADK_TEST_URL": f"ws://127.0.0.1:{port}/v1/agent", "ADK_TEST_TOKEN": token},
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        async with asyncio.timeout(15):
+            while True:
+                threads = coordinator.conversations.store.threads("local-user")
+                if threads and len(coordinator.conversations.store.pending("local-user", threads[0].thread_id)) == 2:
+                    break
+                await asyncio.sleep(0.01)
+        model._gate.set()
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=40)
         assert process.returncode == 0, stderr.decode()
-        assert json.loads(stdout) == {"turns": 2, "entries": 5, "status": "answered"}
-        assert model._calls == 3
+        assert json.loads(stdout) == {"turns": 3, "entries": 7, "status": "answered"}
+        assert model._calls == 4
         assert "bridge-marker-731" in model._requests[1]
     finally:
         if process is not None and process.returncode is None:

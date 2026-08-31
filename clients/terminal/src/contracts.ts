@@ -19,6 +19,7 @@ export interface SessionView {
   workspace: string;
   model: string;
   notice: string;
+  pending?: {item_id: string; preview: string}[];
 }
 export interface SessionActions {
   submit(text: string, mode: "steer" | "followUp"): void;

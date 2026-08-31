@@ -25,7 +25,13 @@ try {
         if (text === "/quit") return quit();
         if (text === "/new") return session.newConversation();
         if (text === "/cancel") return session.cancel();
-        if (text.startsWith("/")) throw new Error("Available in this prototype: /new /cancel /quit");
+        const queueAction = text === "/queue" ? () => session.queueStatus()
+          : text === "/queue continue" ? () => session.continueQueue()
+          : text === "/queue clear" ? () => session.clearQueue() : undefined;
+        if (queueAction) {
+          void queueAction().catch(error => { session.state.view.notice = error.message; view.refresh(); }); return;
+        }
+        if (text.startsWith("/")) throw new Error("Available in this prototype: /new /cancel /queue /quit");
         session.submit(text, mode);
       } catch (error) {
         session.state.view.notice = error instanceof Error ? error.message : "Request failed";

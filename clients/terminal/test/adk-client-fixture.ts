@@ -18,11 +18,12 @@ try {
   await until(() => session.state.view.status === "ready");
   const thread = session.state.threadId;
   session.submit("Remember bridge-marker-731");
-  await until(() => session.state.view.status === "answered");
-  session.submit("Explain README.md without changing files");
-  await until(() => session.state.view.status === "answered");
+  await until(() => session.state.view.status === "running");
+  session.submit("Explain README.md without changing files", "followUp");
+  session.submit("Give a final queued reply", "followUp");
+  await until(() => session.state.view.status === "answered" && session.state.view.entries.length === 7);
   assert.equal(session.state.threadId, thread);
-  assert.deepEqual(session.state.view.entries.map(e => e.kind), ["user", "assistant", "user", "tool", "assistant"]);
+  assert.deepEqual(session.state.view.entries.map(e => e.kind), ["user", "assistant", "user", "tool", "assistant", "user", "assistant"]);
   const transcript = new Transcript(session.state.view);
   for (const width of [40, 80, 120]) {
     const lines = transcript.render(width);
@@ -31,5 +32,5 @@ try {
     assert.match(text, /read README.md/);
     assert.doesNotMatch(text, /model_text|completion_claims|checkpoint_id|run started/);
   }
-  process.stdout.write(JSON.stringify({turns: 2, entries: session.state.view.entries.length, status: session.state.view.status}));
+  process.stdout.write(JSON.stringify({turns: 3, entries: session.state.view.entries.length, status: session.state.view.status}));
 } finally { session.close(); }

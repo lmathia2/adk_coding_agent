@@ -23,7 +23,9 @@ historical feature checklist or book-rubric score.
   ordinary text streaming by default.
 - Standalone Pi terminal toolkit client with authenticated transport, multi-turn
   conversations and replay, tested against the real server/ADK stack with a scripted
-  model (not yet the default installed client; selectors and follow-ups pending).
+  model (not yet the default installed client; selectors pending).
+- Server-owned durable follow-ups, bounded conversation queries, queue continuation
+  and removal controls; the terminal catches up through successor runs in order.
 - Plain-language turns support a distinct `answered` outcome without inventing a
   coding task. Direct answers permit no managed shell/write/edit action and no
   explicit verification obligation; coding results still route through verification.

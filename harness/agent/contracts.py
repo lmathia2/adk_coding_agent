@@ -28,6 +28,7 @@ class RuntimeCapability(StrEnum):
     STATE_SNAPSHOTS = "state_snapshots"
     APPROVALS = "approvals"
     ARTIFACTS = "artifacts"
+    SESSIONS = "sessions"
 
 
 class HarnessDescriptor(FrozenModel):

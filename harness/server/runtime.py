@@ -23,6 +23,7 @@ from harness.agent import (
     HarnessRegistry,
     ModelReadiness,
     PublicModelStatus,
+    RuntimeCapability,
     SteeringCommand,
 )
 from harness.config import HarnessComposition, RuntimeBindings
@@ -36,6 +37,7 @@ from .protocol import (
     CancelTaskMessage,
     PauseTaskMessage,
     ServerEnvelope,
+    SessionRequestMessage,
     StartTaskMessage,
     SteerTaskMessage,
 )
@@ -45,6 +47,7 @@ from .registry import (
     RunRecord,
     SqliteRunEventStore,
 )
+from .sessions import ConversationController
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,10 +412,15 @@ class RunCoordinator:
         self._active: dict[str, _ActiveRun] = {}
         self._workspace_lock = asyncio.Lock()
         self._lifecycle_lock = asyncio.Lock()
+        self.conversations = ConversationController(self)
 
     @property
     def descriptor(self) -> HarnessDescriptor:
-        return self.execution_factory.descriptor
+        descriptor = self.execution_factory.descriptor
+        return descriptor.model_copy(update={"capabilities": descriptor.capabilities | {RuntimeCapability.SESSIONS}})
+
+    async def session_request(self, message: SessionRequestMessage, *, user_id: str) -> dict[str, object]:
+        return await self.conversations.request(message, user_id)
 
     @property
     def coding_model_status(self) -> PublicModelStatus | None:
@@ -434,8 +442,15 @@ class RunCoordinator:
         message: StartTaskMessage,
         *,
         user_id: str,
+        queued_follow_up: bool = False,
     ) -> tuple[RunRecord, bool]:
         thread_id = message.thread_id or self._default_thread_id(user_id, message.idempotency_key)
+        if (
+            not queued_follow_up
+            and self.conversations.store.pending(user_id, thread_id)
+            and self.conversations.store.run_for_key(user_id, message.idempotency_key) is None
+        ):
+            raise ValueError("conversation has pending follow-ups; continue or remove them first")
         metadata = dict(message.metadata)
         metadata.update(self.execution_factory.run_metadata)
         record, created = self.store.create_run(
@@ -806,6 +821,7 @@ class RunCoordinator:
                     await self._close_execution(current_execution)
             finally:
                 self._active.pop(record.run_id, None)
+                await self.conversations.after_turn(record)
 
     async def wait(self, run_id: str) -> RunRecord:
         active = self._active.get(run_id)
@@ -963,6 +979,7 @@ class RunCoordinator:
             raise ValueError("acknowledgement exceeds the durable high-water sequence")
 
     async def aclose(self) -> None:
+        self.conversations.closed = True
         active = tuple(self._active.values())
         for item in active:
             item.task.cancel()

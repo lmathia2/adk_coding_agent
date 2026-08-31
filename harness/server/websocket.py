@@ -31,6 +31,8 @@ from .protocol import (
     ServerErrorMessage,
     ServerHello,
     ServerMessage,
+    SessionRequestMessage,
+    SessionResultMessage,
     StartTaskMessage,
     SteerTaskMessage,
     TaskAcceptedMessage,
@@ -306,6 +308,23 @@ class _AgentWebSocketConnection:
             await self._acknowledge(message)
         elif isinstance(message, PingMessage):
             await self._enqueue(PongMessage(nonce=message.nonce))
+        elif isinstance(message, SessionRequestMessage):
+            await self._session_request(message)
+
+    async def _session_request(self, message: SessionRequestMessage) -> None:
+        # Session management is a server capability, not a model-visible tool.
+        handler = getattr(self.coordinator, "session_request", None)
+        if handler is None:
+            await self._enqueue(ServerErrorMessage(code="unsupported_control", message="Session controls are not supported", request_id=message.request_id))
+            return
+        try:
+            result = await handler(message, user_id=self.user_id)
+        except (KeyError, ValueError) as error:
+            await self._enqueue(ServerErrorMessage(code="session_request_failed", message=str(error)[:4096], request_id=message.request_id))
+        except Exception:
+            await self._enqueue(ServerErrorMessage(code="session_request_failed", message="Session request failed; inspect the server log", request_id=message.request_id, retryable=True))
+        else:
+            await self._enqueue(SessionResultMessage(request_id=message.request_id, operation=message.operation, data=result))
 
     async def _start(self, message: StartTaskMessage) -> None:
         await self._release_terminal_attachment()

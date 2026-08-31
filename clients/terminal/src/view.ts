@@ -9,6 +9,7 @@ export class TerminalView {
   readonly transcript: Transcript;
   readonly root = new Container();
   private readonly status = new Text("", 1, 0);
+  private readonly queue = new Text("", 1, 0);
   private readonly footer = new Text("", 1, 0);
   private readonly removeListener: () => void;
   constructor(readonly tui: TUI, readonly state: SessionView, private readonly actions: SessionActions) {
@@ -17,6 +18,7 @@ export class TerminalView {
     this.root.addChild(new Text(theme.accent("adk-agent") + theme.dim(" · Pi terminal / ADK harness"), 1, 0));
     this.root.addChild(new Text(theme.dim("esc interrupt · ctrl+c clear · ctrl+d exit · / commands · ctrl+o tools"), 1, 1));
     this.root.addChild(this.transcript);
+    this.root.addChild(this.queue);
     this.root.addChild(this.status);
     this.root.addChild(this.editor);
     this.root.addChild(this.footer);
@@ -48,6 +50,10 @@ export class TerminalView {
     this.refresh();
   }
   refresh(): void {
+    const pending = this.state.pending ?? [];
+    const lines = pending.slice(0, 3).map(item => `↳ queued: ${safeText(item.preview).split("\n")[0].slice(0, 120)}`);
+    if (pending.length > 3) lines.push(`… ${pending.length - 3} more queued follow-ups`);
+    this.queue.setText(theme.dim(lines.join("\n")));
     this.status.setText(theme.dim(safeText(this.state.notice || (this.state.status === "running" ? "Working…" : ""))));
     this.footer.setText(theme.dim(safeText(`${this.state.workspace}  ·  ${this.state.model}  ·  ${this.state.status}`)));
     this.tui.requestRender();

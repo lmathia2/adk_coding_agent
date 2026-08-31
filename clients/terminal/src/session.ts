@@ -24,6 +24,7 @@ export class SessionState {
     if (this.active) throw new Error("Cancel active work before starting a new conversation");
     this.threadId = randomUUID(); this.runId = ""; this.cursor = 0;
     this.view.entries = []; this.view.status = "ready"; this.view.notice = "";
+    this.view.pending = [];
   }
   model(value: unknown): void {
     if (!value || typeof value !== "object") return;
@@ -49,7 +50,10 @@ export class SessionState {
     const event = object(message.event);
     const type = string(event.type);
     switch (type) {
-      case "RUN_STARTED": this.view.status = "running"; break;
+      case "RUN_STARTED":
+        this.view.status = "running";
+        if (event.metadata) this.model(object(event.metadata)["coding.model"]);
+        break;
       case "RUN_FINISHED": {
         const result = event.result && typeof event.result === "object" ? object(event.result) : {};
         this.view.status = typeof result.status === "string" ? result.status : "completed";

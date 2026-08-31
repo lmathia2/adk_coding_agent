@@ -49,6 +49,7 @@ from harness.server import (
     StartTaskMessage,
     SteerTaskMessage,
 )
+from harness.server.protocol import SessionRequestMessage
 from harness.server.registry import RunRecord
 from harness.server.runtime import (
     AdkRunExecution,
@@ -213,6 +214,160 @@ def _coordinator(
         ),
         resolved_factory,
     )
+
+
+def _session_request(operation: str, thread: str, key: str = "followup-one", **kwargs: Any) -> SessionRequestMessage:
+    return SessionRequestMessage.model_validate({"type": "session.request", "operation": operation,
+        "request_id": key, "thread_id": thread, **kwargs})
+
+
+@pytest.mark.asyncio
+async def test_followups_are_durable_ordered_and_idempotent(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(tmp_path)
+    first, _ = await coordinator.start(_start(), user_id="user")
+    await factory.executions[first.run_id].entered.wait()
+    request = _session_request("follow_up", first.thread_id, content="second turn")
+    one = await coordinator.session_request(request, user_id="user")
+    again = await coordinator.session_request(request, user_id="user")
+    assert one["queue"] == again["queue"]
+    await coordinator.session_request(_session_request("follow_up", first.thread_id, "followup-two", content="third turn"), user_id="user")
+    assert len(factory.created) == 1
+    # A fresh handle to the same DB sees both pending messages; no TUI owns them.
+    from harness.server.sessions import ConversationStore
+    assert len(ConversationStore(coordinator.store).pending("user", first.thread_id)) == 2
+    with pytest.raises(ValueError, match="retry key"):
+        await coordinator.session_request(request.model_copy(update={"content": "changed"}), user_id="user")
+    factory.executions[first.run_id].finish()
+    await coordinator.wait(first.run_id)
+    assert len(factory.created) == 2
+    second = factory.created[1]
+    assert second.input == "second turn"
+    assert second.thread_id == first.thread_id
+    factory.executions[second.run_id].finish()
+    await coordinator.wait(second.run_id)
+    third = factory.created[2]
+    assert third.input == "third turn"
+    factory.executions[third.run_id].finish()
+    await coordinator.wait(third.run_id)
+    assert coordinator.conversations.store.pending("user", first.thread_id) == []
+    # A lost receipt replay must not queue or dispatch a second copy.
+    await coordinator.session_request(request, user_id="user")
+    assert len(factory.created) == 3
+    await coordinator.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["cancelled", "blocked", "failed"])
+async def test_followups_wait_after_unsuccessful_turn_and_can_be_removed(tmp_path: Path, outcome: str) -> None:
+    coordinator, factory = _coordinator(tmp_path)
+    first, _ = await coordinator.start(_start(), user_id="user")
+    await factory.executions[first.run_id].entered.wait()
+    snapshot = await coordinator.session_request(_session_request("follow_up", first.thread_id, content="next"), user_id="user")
+    if outcome == "cancelled":
+        await coordinator.cancel(CancelTaskMessage(type="task.cancel", run_id=first.run_id, idempotency_key="cancel"), user_id="user")
+    elif outcome == "failed":
+        factory.executions[first.run_id].fail(ValueError("fixture failed"))
+    else:
+        factory.executions[first.run_id].emit("result", AgUiEvent(type=AgUiEventType.CUSTOM,
+            name="coding.workflow.output", value={"status": "blocked"}))
+        factory.executions[first.run_id].finish()
+    await coordinator.wait(first.run_id)
+    assert len(factory.created) == 1
+    pending = coordinator.conversations.store.pending("user", first.thread_id)
+    assert len(pending) == 1
+    with pytest.raises(ValueError, match="pending follow-ups"):
+        await coordinator.start(_start(idempotency_key="jump").model_copy(update={"thread_id": first.thread_id}), user_id="user")
+    if outcome == "cancelled":
+        await coordinator.session_request(_session_request("continue", first.thread_id), user_id="user")
+        assert len(factory.created) == 2
+        factory.executions[factory.created[1].run_id].finish()
+        await coordinator.wait(factory.created[1].run_id)
+    else:
+        item_id = str(pending[0]["item_id"])
+        removal = _session_request("remove_follow_up", first.thread_id, item_id=item_id)
+        await coordinator.session_request(removal, user_id="user")
+        await coordinator.session_request(removal, user_id="user")
+    assert coordinator.conversations.store.pending("user", first.thread_id) == []
+    assert snapshot["thread_id"] == first.thread_id
+    await coordinator.aclose()
+
+
+@pytest.mark.asyncio
+async def test_session_controls_enforce_ownership_and_redact_previews(tmp_path: Path) -> None:
+    coordinator, _ = _coordinator(tmp_path)
+    first, _ = await coordinator.start(_start(input="password=very-secret-value"), user_id="user")
+    snapshot = await coordinator.session_request(_session_request("follow_up", first.thread_id, content="password=second-secret-value"), user_id="user")
+    assert "very-secret-value" not in json.dumps(snapshot)
+    assert "second-secret-value" not in json.dumps(snapshot)
+    with pytest.raises(KeyError):
+        await coordinator.session_request(_session_request("get", first.thread_id), user_id="other")
+    with pytest.raises(KeyError):
+        await coordinator.session_request(_session_request("follow_up", first.thread_id, content="intrusion"), user_id="other")
+    listed = await coordinator.session_request(SessionRequestMessage(type="session.request", operation="list", request_id="list"), user_id="other")
+    assert listed["conversations"] == []
+    await coordinator.aclose()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_crash_window_does_not_reinvoke_a_created_run(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(tmp_path)
+    first, _ = await coordinator.start(_start(), user_id="user")
+    await factory.executions[first.run_id].entered.wait()
+    await coordinator.session_request(_session_request("follow_up", first.thread_id, content="next"), user_id="user")
+    pending = coordinator.conversations.store.pending("user", first.thread_id)[0]
+    # Simulate a stopped process before marking a dispatched turn: a run exists,
+    # but the queue item is still pending. Recovery must never execute it again.
+    coordinator.conversations.closed = True
+    factory.executions[first.run_id].finish()
+    await coordinator.wait(first.run_id)
+    key = f"followup:{pending['item_id']}"
+    second, _ = coordinator.store.create_run(request_id=key, idempotency_key=key,
+        thread_id=first.thread_id, user_id="user", input="next", metadata=dict(factory.run_metadata))
+    coordinator.store.update_status(second.run_id, "running")
+    coordinator.store.update_status(second.run_id, "completed")
+    coordinator.conversations.closed = False
+    await coordinator.session_request(_session_request("continue", first.thread_id), user_id="user")
+    assert len(factory.created) == 1
+    assert coordinator.conversations.store.pending("user", first.thread_id) == []
+    await coordinator.aclose()
+
+
+@pytest.mark.asyncio
+async def test_continue_retry_does_not_authorize_another_turn_after_cancellation(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(tmp_path)
+    first, _ = await coordinator.start(_start(), user_id="user")
+    await factory.executions[first.run_id].entered.wait()
+    for index in range(2):
+        await coordinator.session_request(_session_request("follow_up", first.thread_id, f"q{index}", content=f"queued {index}"), user_id="user")
+    await coordinator.cancel(CancelTaskMessage(type="task.cancel", run_id=first.run_id, idempotency_key="cancel-1"), user_id="user")
+    resume = _session_request("continue", first.thread_id, "continue-one")
+    await coordinator.session_request(resume, user_id="user")
+    second = factory.created[1]
+    await factory.executions[second.run_id].entered.wait()
+    await coordinator.cancel(CancelTaskMessage(type="task.cancel", run_id=second.run_id, idempotency_key="cancel-2"), user_id="user")
+    await coordinator.session_request(resume, user_id="user")
+    assert len(factory.created) == 2
+    await coordinator.session_request(resume.model_copy(update={"request_id": "continue-two"}), user_id="user")
+    assert len(factory.created) == 3
+    await coordinator.aclose()
+
+
+@pytest.mark.asyncio
+async def test_pending_queue_survives_server_shutdown_and_explicit_restart(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(tmp_path)
+    first, _ = await coordinator.start(_start(), user_id="user")
+    await factory.executions[first.run_id].entered.wait()
+    await coordinator.session_request(_session_request("follow_up", first.thread_id, content="after restart"), user_id="user")
+    await coordinator.aclose()
+    restarted, restarted_factory = _coordinator(tmp_path)
+    assert restarted_factory.created == []
+    snapshot = await restarted.session_request(_session_request("state", first.thread_id), user_id="user")
+    assert len(snapshot["queue"]) == 1
+    await restarted.session_request(_session_request("continue", first.thread_id), user_id="user")
+    assert restarted_factory.created[0].input == "after restart"
+    restarted_factory.executions[restarted_factory.created[0].run_id].finish()
+    await restarted.wait(restarted_factory.created[0].run_id)
+    await restarted.aclose()
 
 
 async def _wait_entered(execution: _QueueExecution) -> None:
