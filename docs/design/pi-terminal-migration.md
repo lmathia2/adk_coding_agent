@@ -155,3 +155,25 @@ including success, cancellation before token exchange, shutdown, logout retry,
 ownership, secret-safe failures and an authenticated production-server socket that
 still answers ping during login. The full Python unit/integration suite passes
 460 tests. This does not constitute fresh live-provider authentication evidence.
+
+## Terminal login experience
+
+The new terminal advertises `/login`, `/auth` and `/logout` when the server supports
+provider controls. A searchable selector opens an inline login dialog showing the
+verification URL, code and status; Escape cancels, including when the initial reply
+has not arrived. Confirmed login shows the server credential path. Logout requires
+explicit confirmation. Delayed status replies cannot revive a dismissed dialog.
+
+Authentication requests are correlated but deliberately not replayed on reconnect;
+unconfirmed operations direct the user to `/auth`. A server-owned pending login can
+be reattached via `/login`. The terminal never reads or writes provider credentials.
+Closing the terminal requests cancellation of its active login dialog before closing
+the socket, but only an acknowledged cancellation is reported as confirmed.
+
+Twenty terminal tests pass. A cross-language test drives the actual Pi dialogs and
+remote session against the production authenticated Python server, with only the
+provider HTTP transport mocked. It verifies login, cancellation, logout, preserved
+drafts, width bounds and zero auth messages in the conversation transcript. The
+rendering-only demo's `/login` was exercised in a real PTY through selector, code
+display, Escape and clean exit. Model/session selectors and installation migration
+remain outstanding; these tests are not a live-account sign-in or full-parity claim.

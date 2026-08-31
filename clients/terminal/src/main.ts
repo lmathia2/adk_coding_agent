@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { ProcessTerminal, TuiMainScreen, type SelectItem } from "@earendil-works/pi-tui";
 import { RemoteSession } from "./remote-session.js";
 import { TerminalView } from "./view.js";
+import { providerCommand } from "./provider-ui.js";
 
 const {values} = parseArgs({options: {
   server: {type: "string", default: "ws://127.0.0.1:8765/v1/agent"},
@@ -17,13 +18,18 @@ try {
   let stopped = false;
   const quit = () => {
     if (stopped) return;
-    stopped = true; unsubscribe(); session.close(); view.dispose(); tui.stop();
+    stopped = true; unsubscribe(); view.dispose(); session.close(); tui.stop();
   };
   const commands = (): SelectItem[] => [
     {value: "/help", label: "/help", description: "Commands and keyboard hints"},
     {value: "/new", label: "/new", description: "Start a new conversation"},
     ...(session.state.capabilities.has("cancel") ? [{value: "/cancel", label: "/cancel", description: "Interrupt the active run"}] : []),
     ...(session.state.capabilities.has("sessions") ? [{value: "/queue", label: "/queue", description: "Manage durable follow-ups"}] : []),
+    ...(session.state.capabilities.has("provider_controls") ? [
+      {value: "/login", label: "/login", description: "Sign in to a provider on the server"},
+      {value: "/auth", label: "/auth", description: "Inspect server authentication and credential paths"},
+      {value: "/logout", label: "/logout", description: "Remove provider credentials from the server"},
+    ] : []),
     {value: "/quit", label: "/quit", description: "Disconnect the terminal"},
   ];
   const background = (action: Promise<unknown>) => {
@@ -53,6 +59,11 @@ try {
         if (command === "/quit") return quit();
         if (command === "/new") return session.newConversation();
         if (command === "/cancel") return session.cancel();
+        if (command === "/login" || command === "/auth" || command === "/logout") {
+          background(providerCommand(command, session, view, text => {
+            if (!stopped) { session.state.view.notice = text; view.refresh(); }
+          })); return;
+        }
         const queueAction = command === "/queue" ? showQueue
           : command === "/queue continue" ? () => session.continueQueue()
           : command === "/queue clear" ? () => session.clearQueue() : undefined;

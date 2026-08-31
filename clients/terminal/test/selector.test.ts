@@ -57,4 +57,5 @@ test("closing a selector restores the draft and does not cancel the active run",
     assert.equal(cancelled, 1);
   } finally { view.dispose(); }
   assert.equal(listener, undefined);
+  view.showDialog(() => { assert.fail("late management response reopened a disposed terminal"); });
 });

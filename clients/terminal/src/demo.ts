@@ -2,6 +2,7 @@
 import { ProcessTerminal, TuiMainScreen } from "@earendil-works/pi-tui";
 import { TerminalView } from "./view.js";
 import type { SessionView } from "./contracts.js";
+import { providerCommand, type ProviderPort } from "./provider-ui.js";
 
 const state: SessionView = { entries: [], workspace: "synthetic workspace", model: "fixture (no model calls)", status: "ready", notice: "" };
 const tui = new TuiMainScreen(new ProcessTerminal());
@@ -10,6 +11,9 @@ const view = new TerminalView(tui, state, {
     if (text.trim() === "/quit") return quit();
     if (text.trim() === "/help") {
       view.select("Commands", commands, item => view.editor.setText(item.value)); return;
+    }
+    if (text.trim() === "/login") {
+      void providerCommand("/login", fixtureProvider, view, notice => { state.notice = notice; view.refresh(); }); return;
     }
     state.entries.push({ kind: "user", id: crypto.randomUUID(), text });
     if (text.trim() === "/tools") state.entries.push({
@@ -24,7 +28,13 @@ function quit(): void { view.dispose(); tui.stop(); }
 const commands = [
   {value: "/help", label: "/help", description: "Search commands"},
   {value: "/tools", label: "/tools", description: "Render a compact tool card"},
+  {value: "/login", label: "/login", description: "Synthetic login dialog (no real authentication)"},
   {value: "/quit", label: "/quit", description: "Exit the fixture"},
 ];
+const fixtureProvider: ProviderPort = {async providerRequest(operation, parameters) {
+  if (operation === "status" && !parameters?.login_id) return {providers: [{provider: "fixture", display_name: "Fixture provider (no network)", supports_login: true, authenticated: false, credential_path: "/synthetic/server/auth.json"}]};
+  return {login: {login_id: "synthetic", status: operation === "cancel_login" ? "cancelled" : "waiting",
+    verification_url: "https://example.invalid/rendering-only", user_code: "TEST-CODE"}};
+}};
 view.setCommands(() => commands);
 tui.start();

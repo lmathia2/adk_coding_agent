@@ -1,9 +1,11 @@
-import { Container, Editor, Text, matchesKey, type TUI, type SelectItem } from "@earendil-works/pi-tui";
+import { Container, Editor, Text, matchesKey, type TUI, type SelectItem, type Component, type Focusable } from "@earendil-works/pi-tui";
 import type { SessionActions, SessionView } from "./contracts.js";
 import { Transcript, safeText } from "./transcript.js";
 import { editorTheme, theme } from "./theme.js";
 import { CommandCompletion } from "./commands.js";
 import { Selector } from "./selector.js";
+
+export interface Dialog extends Component, Focusable { handleInput(data: string): void; dispose?(): void; }
 
 /** Presentation depends on a tiny session port, not Pi's AgentSession or ADK. */
 export class TerminalView {
@@ -14,7 +16,8 @@ export class TerminalView {
   private readonly queue = new Text("", 1, 0);
   private readonly footer = new Text("", 1, 0);
   private readonly inputRegion = new Container();
-  private dialog?: Selector;
+  private dialog?: Dialog;
+  private disposed = false;
   private readonly removeListener: () => void;
   constructor(readonly tui: TUI, readonly state: SessionView, private readonly actions: SessionActions) {
     this.editor = new Editor(tui, editorTheme, { paddingX: 1 });
@@ -54,12 +57,21 @@ export class TerminalView {
     this.editor.setAutocompleteProvider(new CommandCompletion(commands));
   }
   select(title: string, items: SelectItem[], choose: (item: SelectItem, persist: boolean) => void, allowDefault = false): void {
+    this.showDialog(close => new Selector(title, items, (item, persist) => { close(); choose(item, persist); }, close, allowDefault));
+  }
+  showDialog(create: (close: () => void) => Dialog): () => void {
+    if (this.disposed) return () => {};
+    this.dialog?.dispose?.();
     const close = () => {
+      if (this.dialog !== dialog) return;
+      dialog.dispose?.();
       this.dialog = undefined; this.inputRegion.children = [this.editor];
       this.tui.setFocus(this.editor); this.refresh();
     };
-    this.dialog = new Selector(title, items, (item, persist) => { close(); choose(item, persist); }, close, allowDefault);
-    this.inputRegion.children = [this.dialog]; this.tui.setFocus(this.dialog); this.refresh();
+    const dialog = create(close);
+    this.dialog = dialog;
+    this.inputRegion.children = [dialog]; this.tui.setFocus(dialog); this.refresh();
+    return close;
   }
   private submit(text: string, mode: "steer" | "followUp"): void {
     if (!text.trim()) return;
@@ -69,6 +81,7 @@ export class TerminalView {
     this.refresh();
   }
   refresh(): void {
+    if (this.disposed) return;
     const pending = this.state.pending ?? [];
     const lines = pending.slice(0, 3).map(item => `↳ queued: ${safeText(item.preview).split("\n")[0].slice(0, 120)}`);
     if (pending.length > 3) lines.push(`… ${pending.length - 3} more queued follow-ups`);
@@ -77,5 +90,5 @@ export class TerminalView {
     this.footer.setText(theme.dim(safeText(`${this.state.workspace}  ·  ${this.state.model}  ·  ${this.state.status}`)));
     this.tui.requestRender();
   }
-  dispose(): void { this.removeListener(); }
+  dispose(): void { this.disposed = true; this.dialog?.dispose?.(); this.removeListener(); }
 }

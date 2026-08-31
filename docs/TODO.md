@@ -6,6 +6,7 @@
 - [x] Separate public replies from workflow control and support non-coding turns.
 - [ ] Preserve conversations and wire queues, model/auth controls and resources.
   - [x] Add cancellable server-owned provider authentication controls.
+  - [x] Connect Pi-style login/status/logout dialogs to the authenticated server.
 - [ ] Complete Pi-style UI and migrate installation/launching.
 - [ ] Verify conversational/coding examples, replay and harness swap; remove Go TUI.
 

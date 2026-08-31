@@ -77,6 +77,35 @@ test("local token is never sent to arbitrary hosts or URL query strings", () => 
     assert.throws(() => new RemoteSession({url, token}));
 });
 
+test("provider controls are correlated, stay out of chat, and mutations are not replayed after disconnect", async () => {
+  const server = new WebSocketServer({host: "127.0.0.1", port: 0});
+  await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  let connections = 0, logins = 0;
+  server.on("connection", socket => {
+    connections++;
+    socket.on("message", data => {
+      const message = JSON.parse(data.toString());
+      if (message.type === "client.hello") send(socket, {type: "server.hello", harness: {display_name: "Fixture", capabilities: ["provider_controls"]}});
+      if (message.type === "provider.request" && message.operation === "status") send(socket, {
+        type: "provider.result", request_id: message.request_id, operation: "status", data: {providers: []},
+      });
+      if (message.type === "provider.request" && message.operation === "login") { logins++; socket.terminate(); }
+    });
+  });
+  const session = new RemoteSession({url: `ws://127.0.0.1:${address.port}`, token, reconnectMs: 1});
+  try {
+    await assert.rejects(session.providerRequest("login"), /not available/);
+    session.connect(); await until(() => session.state.view.status === "ready");
+    assert.deepEqual(await session.providerRequest("status"), {providers: []});
+    await assert.rejects(session.providerRequest("login", {provider: "openai_codex"}), /interrupted/);
+    await until(() => connections === 2);
+    await delay(20);
+    assert.equal(logins, 1);
+    assert.deepEqual(session.state.view.entries, []);
+  } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
+});
+
 test("acknowledged steering is not retried after reconnect and cancellation finishes quietly", async () => {
   const server = new WebSocketServer({host: "127.0.0.1", port: 0});
   await once(server, "listening");

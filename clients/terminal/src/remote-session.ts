@@ -64,6 +64,11 @@ export class RemoteSession {
       if (this.stopped || this.socket !== socket) return;
       this.negotiated = false;
       clearInterval(this.heartbeat); clearTimeout(this.helloTimer); clearInterval(this.sessionPoll);
+      for (const [id, request] of this.requests) {
+        if (request.message.type !== "provider.request") continue;
+        clearTimeout(request.timer); this.requests.delete(id);
+        request.reject(new Error("Provider request interrupted. Reconnect and check /auth before retrying."));
+      }
       if (code === 1008) {
         this.stopped = true;
         this.state.view.status = "disconnected";
@@ -140,9 +145,11 @@ export class RemoteSession {
           this.pendingStart = undefined; this.state.view.status = "failed";
         }
         break;
-      case "session.result": {
+      case "session.result":
+      case "provider.result": {
         const id = string(message.request_id), request = this.requests.get(id);
         if (!request) break;
+        if (message.type !== String(request.message.type).replace(".request", ".result") || message.operation !== request.message.operation) throw new Error("Mismatched response");
         clearTimeout(request.timer); this.requests.delete(id);
         request.resolve(object(message.data)); break;
       }
@@ -182,11 +189,17 @@ export class RemoteSession {
   }
   cancel(): void { if (this.state.active && this.state.runId) this.control("cancel"); }
   request(operation: string, parameters: WireObject = {}): Promise<WireObject> {
-    if (!this.negotiated || !this.state.capabilities.has("sessions")) return Promise.reject(new Error("Session controls are not available"));
-    if (this.requests.size >= 32) return Promise.reject(new Error("Waiting for outstanding session requests"));
-    const id = randomUUID(), message = {type: "session.request", request_id: id, operation, ...parameters};
+    return this.managementRequest("session", "sessions", operation, parameters);
+  }
+  providerRequest(operation: "status" | "login" | "cancel_login" | "logout", parameters: WireObject = {}): Promise<WireObject> {
+    return this.managementRequest("provider", "provider_controls", operation, parameters);
+  }
+  private managementRequest(domain: string, capability: string, operation: string, parameters: WireObject): Promise<WireObject> {
+    if (!this.negotiated || !this.state.capabilities.has(capability)) return Promise.reject(new Error(`${domain} controls are not available`));
+    if (this.requests.size >= 32) return Promise.reject(new Error("Waiting for outstanding requests"));
+    const id = randomUUID(), message = {...parameters, type: `${domain}.request`, request_id: id, operation};
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.requests.delete(id); reject(new Error("Session request timed out; check /queue before retrying a follow-up")); }, 15_000);
+      const timer = setTimeout(() => { this.requests.delete(id); reject(new Error(`${domain} request timed out; check ${domain === "provider" ? "/auth" : "/queue"} before retrying`)); }, 15_000);
       this.requests.set(id, {message, resolve, reject, timer}); this.send(message);
     });
   }
