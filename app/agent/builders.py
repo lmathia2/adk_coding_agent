@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -14,19 +13,10 @@ from google.adk.models import BaseLlm
 from google.adk.tools import ToolContext
 
 from harness.config import ToolSurfaceConfig
-from harness.context import build_static_prefix
-from harness.review import DiffReviewPacket, FinalDiffReview
 from harness.tools.adk_adapter import AdkCodingTools, create_adk_tools
 
 from .config import HarnessSettings
 
-FINAL_REVIEW_INSTRUCTION = """
-Review only the supplied final diff and deterministic verification summary. Identify
-concrete correctness, security, reliability, maintainability, or scope defects that
-were introduced by the diff. Do not speculate about code that is not shown. Prefer a
-small number of actionable findings with exact paths and lines. Return `clear` when
-there are no material findings. This review is advisory and has no tools.
-""".strip()
 LOGGER = logging.getLogger(__name__)
 
 ToolFunction = Callable[..., Awaitable[dict[str, Any]]]
@@ -39,12 +29,6 @@ class CodingWorkerBundle:
     bash: ToolFunction
     edit: ToolFunction
     write: ToolFunction
-
-
-@dataclass(frozen=True, slots=True)
-class ReviewerBundle:
-    agent: Agent
-    static_prefix: str
 
 
 def build_coding_worker(
@@ -191,61 +175,4 @@ def build_coding_worker(
     return CodingWorkerBundle(agent=agent, read=read, bash=bash, edit=edit, write=write)
 
 
-def build_final_diff_reviewer(
-    model: BaseLlm,
-    *,
-    model_name: str | None = None,
-    instruction: str = FINAL_REVIEW_INSTRUCTION,
-) -> ReviewerBundle:
-    agent = Agent(
-        name="final_diff_reviewer",
-        model=model,
-        description="Advisory, bounded review of a deterministically verified final diff.",
-        static_instruction=instruction,
-        instruction="",
-        tools=[],
-        include_contents="none",
-        mode="single_turn",
-        output_schema=FinalDiffReview,
-    )
-    return ReviewerBundle(
-        agent=agent,
-        static_prefix=build_static_prefix(
-            model_name=model_name or model.model,
-            tool_names=(),
-            instruction=instruction,
-        ),
-    )
-
-
-def build_review_input(
-    packet: DiffReviewPacket,
-    verification: dict[str, Any],
-) -> str:
-    return json.dumps(
-        {
-            "diff_packet": packet.model_dump(mode="json"),
-            "verification": verification,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def parse_final_diff_review(value: Any) -> FinalDiffReview:
-    if isinstance(value, FinalDiffReview):
-        return value
-    if isinstance(value, str):
-        return FinalDiffReview.model_validate_json(value)
-    return FinalDiffReview.model_validate(value)
-
-
-__all__ = [
-    "FINAL_REVIEW_INSTRUCTION",
-    "CodingWorkerBundle",
-    "ReviewerBundle",
-    "build_coding_worker",
-    "build_final_diff_reviewer",
-    "build_review_input",
-    "parse_final_diff_review",
-]
+__all__ = ["CodingWorkerBundle", "build_coding_worker"]

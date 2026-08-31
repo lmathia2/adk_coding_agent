@@ -12,7 +12,6 @@ from harness.skills import (
     SkillRoot,
     SkillValidationError,
     UntrustedSkillRootError,
-    learned_skill_roots,
 )
 
 
@@ -116,58 +115,6 @@ def test_duplicate_skill_names_are_conflicts_even_across_lifecycles(tmp_path: Pa
                 SkillRoot(candidate, origin="learned:candidate", lifecycle="candidate"),
             ]
         )
-
-
-def test_learned_active_and_candidate_directories_have_distinct_lifecycles(
-    tmp_path: Path,
-) -> None:
-    learned = tmp_path / "learned"
-    active, candidate = learned_skill_roots(learned)
-    assert candidate.path == learned / "candidates"
-    active.path.mkdir(parents=True)
-    candidate.path.mkdir(parents=True)
-    _write_skill(active.path, "active-skill", description="Perform migration analysis")
-    _write_skill(candidate.path, "candidate-skill", description="Perform migration planning")
-
-    registry = SkillRegistry([candidate, active])
-
-    assert [(skill.name, skill.lifecycle) for skill in registry.skills] == [
-        ("active-skill", "enabled"),
-        ("candidate-skill", "candidate"),
-    ]
-    assert "candidate" in registry.build_catalog().text
-    selection = registry.select(goal="$candidate-skill migration", next_action="planning")
-    assert [skill.name for skill in selection.skills] == ["active-skill"]
-
-
-def test_missing_learned_roots_can_be_treated_as_empty(tmp_path: Path) -> None:
-    roots = learned_skill_roots(tmp_path / "not-created")
-
-    registry = SkillRegistry(roots, allow_missing_roots=True)
-
-    assert registry.skills == ()
-    assert registry.build_catalog().text == ""
-
-
-def test_exact_candidate_selection_is_isolated_from_default_selection(tmp_path: Path) -> None:
-    learned = tmp_path / "learned"
-    active, candidate = learned_skill_roots(learned)
-    active.path.mkdir(parents=True)
-    candidate.path.mkdir(parents=True)
-    _write_skill(active.path, "active-skill", description="Perform release analysis")
-    _write_skill(candidate.path, "candidate-skill", description="Perform release analysis")
-    registry = SkillRegistry([active, candidate])
-
-    normal = registry.select(goal="$candidate-skill release analysis", top_n=2)
-    trial = registry.select_candidate("candidate-skill", goal="release analysis")
-
-    assert [skill.name for skill in normal.skills] == ["active-skill"]
-    assert [skill.name for skill in trial.skills] == ["candidate-skill"]
-    assert trial.skills[0].explicit is True
-    with pytest.raises(SkillValidationError, match="is not a candidate"):
-        registry.select_candidate("active-skill")
-    with pytest.raises(SkillValidationError, match="canonical"):
-        registry.select_candidate("Candidate-Skill")
 
 
 def test_explicit_mentions_outrank_lexical_matches_and_unknowns_are_reported(

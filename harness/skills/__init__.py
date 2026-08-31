@@ -14,7 +14,7 @@ from harness.skills.models import (
     SkillValidationError,
     UntrustedSkillRootError,
 )
-from harness.skills.registry import SkillRegistry, learned_skill_roots
+from harness.skills.registry import SkillRegistry
 
 __all__ = [
     "DuplicateSkillError",
@@ -30,5 +30,4 @@ __all__ = [
     "SkillSelection",
     "SkillValidationError",
     "UntrustedSkillRootError",
-    "learned_skill_roots",
 ]

@@ -18,65 +18,9 @@ from harness.config import (
 
 def _composition_payload() -> dict[str, Any]:
     harness_config = {
-        "models": {
-            "coding": {"provider": "google_adk", "name": "coding-model"},
-            "review": {"provider": "google_adk", "name": "review-model"},
-        },
-        "agents": {
-            "coding_worker": {
-                "kind": "llm",
-                "model": "coding",
-                "prompt": {"source": "builtin", "name": "coding_worker_v1"},
-                "tools": list(FOUR_CODING_TOOLS),
-                "output_schema": "agent_step",
-                "mode": "multi_turn",
-            },
-            "final_diff_reviewer": {
-                "kind": "reviewer",
-                "model": "review",
-                "prompt": {"source": "builtin", "name": "final_diff_review_v1"},
-                "tools": [],
-                "output_schema": "final_diff_review",
-                "mode": "single_turn",
-            },
-        },
-        "workflow": {
-            "entry": "initialize",
-            "nodes": {
-                "initialize": {"kind": "initialize", "next": "compile"},
-                "compile": {"kind": "compile_context", "next": "code"},
-                "code": {
-                    "kind": "invoke_agent",
-                    "agent": "coding_worker",
-                    "next": "reduce",
-                },
-                "reduce": {"kind": "reduce_step", "next": "route"},
-                "route": {
-                    "kind": "route",
-                    "routes": {
-                        "continue": "compile",
-                        "compact": "compact",
-                        "replan": "replan",
-                        "verify": "verify",
-                        "blocked": "blocked",
-                    },
-                },
-                "compact": {"kind": "compact", "next": "compile"},
-                "replan": {"kind": "replan", "next": "compile"},
-                "verify": {
-                    "kind": "verify",
-                    "routes": {"passed": "review", "failed": "compile"},
-                },
-                "review": {
-                    "kind": "review",
-                    "agent": "final_diff_reviewer",
-                    "enabled": False,
-                    "next": "finish",
-                },
-                "finish": {"kind": "finish"},
-                "blocked": {"kind": "blocked"},
-            },
-        },
+        "models": {"coding": {"provider": "google_adk", "name": "coding-model"}},
+        "agents": {"coding_worker": {"model": "coding"}},
+        "workflow": {"max_iterations": 40},
     }
     return {
         "schema_version": 1,
@@ -222,32 +166,11 @@ def test_unknown_configuration_fields_are_rejected() -> None:
         parse_harness_composition(payload)
 
 
-def test_workflow_cannot_reach_finish_without_verification() -> None:
+@pytest.mark.parametrize("field", ["entry", "nodes"])
+def test_removed_graph_dsl_is_rejected(field: str) -> None:
     payload = _composition_payload()
-    payload["harness"]["config"]["workflow"]["nodes"]["initialize"]["next"] = "finish"
-
-    with pytest.raises(ValidationError, match="must pass through verify"):
-        parse_harness_composition(payload)
-
-
-def test_workflow_references_must_resolve() -> None:
-    payload = _composition_payload()
-    payload["harness"]["config"]["workflow"]["nodes"]["review"]["next"] = "missing"
-
-    with pytest.raises(ValidationError, match="references missing nodes"):
-        parse_harness_composition(payload)
-
-
-def test_pi_workflow_variation_is_rejected_during_parse_not_late_build() -> None:
-    payload = _composition_payload()
-    nodes = payload["harness"]["config"]["workflow"]["nodes"]
-    nodes["route"]["routes"]["continue"] = "alternate"
-    nodes["alternate"] = {
-        "kind": "compile_context",
-        "next": "compile",
-    }
-
-    with pytest.raises(ValidationError, match="fixed verified workflow graph"):
+    payload["harness"]["config"]["workflow"][field] = {}
+    with pytest.raises(ValidationError, match="Extra inputs"):
         parse_harness_composition(payload)
 
 
@@ -281,37 +204,6 @@ def test_resolved_file_prompt_rejects_symlink_escape(tmp_path: Path) -> None:
         composition.resolved_behavior_sha256(root)
 
 
-def test_workflow_requires_a_reachable_finish_node() -> None:
-    payload = _composition_payload()
-    nodes = payload["harness"]["config"]["workflow"]["nodes"]
-    del nodes["finish"]
-    nodes["review"]["next"] = "blocked"
-
-    with pytest.raises(ValidationError, match="finish node"):
-        parse_harness_composition(payload)
-
-
-@pytest.mark.parametrize(
-    ("node_name", "node", "message"),
-    [
-        ("invoke", {"kind": "invoke_agent", "next": "verify"}, "agent"),
-        ("parallel", {"kind": "parallel", "next": "verify"}, "agents"),
-    ],
-)
-def test_workflow_node_kind_requires_its_operands(
-    node_name: str,
-    node: dict[str, object],
-    message: str,
-) -> None:
-    payload = _composition_payload()
-    nodes = payload["harness"]["config"]["workflow"]["nodes"]
-    nodes["initialize"]["next"] = node_name
-    nodes[node_name] = node
-
-    with pytest.raises(ValidationError, match=message):
-        parse_harness_composition(payload)
-
-
 @pytest.mark.parametrize(
     "visible",
     [
@@ -328,11 +220,11 @@ def test_tool_surface_cannot_be_broadened_or_reordered(visible: list[str]) -> No
         parse_harness_composition(payload)
 
 
-def test_reviewer_cannot_receive_model_visible_tools() -> None:
+@pytest.mark.parametrize("feature", ["learning", "reviewer"])
+def test_removed_automatic_layers_fail_closed(feature: str) -> None:
     payload = _composition_payload()
-    payload["harness"]["config"]["agents"]["final_diff_reviewer"]["tools"] = ["read"]
-
-    with pytest.raises(ValidationError, match="cannot expose tools"):
+    payload["harness"]["config"][feature] = {"enabled": True}
+    with pytest.raises(ValidationError, match="Extra inputs"):
         parse_harness_composition(payload)
 
 

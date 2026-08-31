@@ -30,7 +30,6 @@ from harness.config import (
     RuntimeBindings,
 )
 from harness.context import prefix_hash
-from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.repo import StructuralIndex
 from harness.safety import ApprovalPolicy
 from harness.sandbox import create_configured_command_sandbox
@@ -41,14 +40,8 @@ from harness.tools.adk_adapter import create_adk_tools, discover_known_secrets
 from harness.tracing import CodingToolArtifactPlugin, HarnessTracePlugin, TraceContentMode
 from harness.workspace import GitWorktreeManager
 
-from .builders import (
-    FINAL_REVIEW_INSTRUCTION,
-    build_coding_worker,
-    build_final_diff_reviewer,
-)
-from .config import resolve_prompt_text, settings_from_composition
-from .learning import VerifiedTraceLearningPlugin
-from .skills import build_learning_controller
+from .builders import build_coding_worker
+from .config import settings_from_composition
 from .workflow import PiWorkflowDependencies, build_root_agent
 
 LOGGER = logging.getLogger(__name__)
@@ -157,89 +150,7 @@ class PiCodingHarnessFactory:
         return PiCodingConfig
 
     def _validate_supported_shape(self, config: PiCodingConfig) -> None:
-        required_workflow = {
-            "entry": "initialize",
-            "nodes": {
-                "initialize": {"kind": "initialize", "next": "compile"},
-                "compile": {"kind": "compile_context", "next": "code"},
-                "code": {
-                    "kind": "invoke_agent",
-                    "agent": "coding_worker",
-                    "next": "reduce",
-                },
-                "reduce": {"kind": "reduce_step", "next": "route"},
-                "route": {
-                    "kind": "route",
-                    "routes": {
-                        "continue": "compile",
-                        "compact": "compact",
-                        "replan": "replan",
-                        "verify": "verify",
-                        "blocked": "blocked",
-                    },
-                },
-                "compact": {"kind": "compact", "next": "compile"},
-                "replan": {"kind": "replan", "next": "compile"},
-                "verify": {
-                    "kind": "verify",
-                    "routes": {"passed": "review", "failed": "compile"},
-                },
-                "review": {
-                    "kind": "review",
-                    "agent": "final_diff_reviewer",
-                    "enabled": config.reviewer.enabled,
-                    "next": "finish",
-                },
-                "finish": {"kind": "finish"},
-                "blocked": {"kind": "blocked"},
-            },
-        }
-        actual_workflow = config.workflow.model_dump(
-            mode="json",
-            exclude={"max_iterations"},
-        )
-        if actual_workflow != required_workflow:
-            raise ValueError(
-                "pi_coding_v1 workflow topology, edges, routes, and agent bindings "
-                "are fixed; register another harness implementation for a different "
-                "topology"
-            )
-        worker = config.agents.get("coding_worker")
-        if (
-            worker is None
-            or worker.kind != "llm"
-            or worker.tools != FOUR_CODING_TOOLS
-            or worker.output_schema != "agent_step"
-            or worker.mode != "multi_turn"
-            or (
-                worker.prompt.source == "builtin"
-                and worker.prompt.name != "coding_worker_v1"
-            )
-        ):
-            raise ValueError("pi_coding_v1 requires the fixed coding_worker contract")
-        reviewer = config.agents.get("final_diff_reviewer")
-        if (
-            reviewer is None
-            or reviewer.kind != "reviewer"
-            or reviewer.tools
-            or reviewer.output_schema != "final_diff_review"
-            or reviewer.mode != "single_turn"
-            or (
-                reviewer.prompt.source == "builtin"
-                and reviewer.prompt.name != "final_diff_review_v1"
-            )
-        ):
-            raise ValueError("pi_coding_v1 requires the fixed final reviewer contract")
-        if set(config.agents) != {"coding_worker", "final_diff_reviewer"}:
-            raise ValueError(
-                "pi_coding_v1 accepts only coding_worker and final_diff_reviewer; "
-                "register another harness for additional agents"
-            )
-        referenced_models = {agent.model for agent in config.agents.values()}
-        if set(config.models) != referenced_models:
-            raise ValueError(
-                "pi_coding_v1 model entries must be referenced by a configured agent"
-            )
+        PiCodingConfig.model_validate(config.model_dump())
         unknown_providers = sorted(
             {
                 model.provider
@@ -256,9 +167,6 @@ class PiCodingHarnessFactory:
         names.update(
             model.api_key.env for model in config.models.values() if model.api_key is not None
         )
-        token = getattr(config.sandbox, "token", None)
-        if token is not None:
-            names.add(token.env)
         return discover_known_secrets(sorted(names))
 
     def build(
@@ -317,30 +225,6 @@ class PiCodingHarnessFactory:
             tools=tools,
             tool_config=config.tools,
         )
-        reviewer_name = config.reviewer.agent or "final_diff_reviewer"
-        reviewer_config = config.agents.get(reviewer_name)
-        if reviewer_config is None:
-            reviewer_config = config.agents["final_diff_reviewer"]
-        reviewer_model_config = config.models[reviewer_config.model]
-        configuration_root = (
-            bindings.configuration_root or bindings.workspace
-        ).expanduser().resolve()
-        reviewer_instruction = resolve_prompt_text(
-            reviewer_config.prompt,
-            configuration_root=configuration_root,
-            builtin_name="final_diff_review_v1",
-            builtin_text=FINAL_REVIEW_INSTRUCTION,
-        )
-        reviewer = (
-            build_final_diff_reviewer(
-                build_model(reviewer_config.model),
-                model_name=reviewer_model_config.name,
-                instruction=reviewer_instruction,
-            )
-            if config.reviewer.enabled
-            else None
-        )
-
         control_state = create_control_state_backend(
             state_root=settings.state_root,
             database_url=settings.control_database_url,
@@ -372,14 +256,8 @@ class PiCodingHarnessFactory:
             ),
             workspace_manager=workspace_manager,
             coding_worker=worker.agent,
-            final_diff_reviewer=reviewer.agent if reviewer is not None else None,
-            learning_controller=build_learning_controller(settings),
             static_prefix_hash=prefix_hash(settings.static_prefix),
             static_prefix_tokens=len(settings.static_prefix) // 4,
-            review_prefix_hash=(
-                prefix_hash(reviewer.static_prefix) if reviewer is not None else None
-            ),
-            review_prefix_tokens=(len(reviewer.static_prefix) // 4 if reviewer is not None else 0),
             repository_map_tokens=config.context.repository_map_tokens,
             work_packet_tokens=config.context.work_packet_tokens,
             max_task_input_tokens=config.context.max_task_input_tokens,
@@ -418,13 +296,6 @@ class PiCodingHarnessFactory:
         plugins.extend(
             [
                 metrics_plugin,
-                VerifiedProjectMemoryPlugin(
-                    workspace=settings.workspace,
-                    state_root=settings.state_root,
-                    project_root=settings.source_repository or settings.workspace,
-                    default_task_id=settings.task_id_override,
-                    event_store=control_state.event_store,
-                ),
                 CodingToolArtifactPlugin(
                     event_store=control_state.event_store,
                     default_task_id=settings.task_id_override,
@@ -449,17 +320,6 @@ class PiCodingHarnessFactory:
                 LOGGER.exception("trace storage initialization failed; tracing is disabled")
         if trace_plugin is not None:
             plugins.insert(1, trace_plugin)
-            if config.learning.enabled:
-                plugins.append(
-                    VerifiedTraceLearningPlugin(
-                        event_store=control_state.event_store,
-                        trace_store=trace_plugin.store,
-                        metrics_store=metrics_plugin.store,
-                        controller=deps.learning_controller,
-                        minimum_support=config.learning.minimum_support,
-                        default_task_id=settings.task_id_override,
-                    )
-                )
 
         app = App(
             name=composition.app.name,
@@ -479,8 +339,6 @@ class PiCodingHarnessFactory:
             resumability_config=ResumabilityConfig(is_resumable=config.adk.resumable),
         )
         agents = {"coding_worker": worker.agent}
-        if reviewer is not None:
-            agents["final_diff_reviewer"] = reviewer.agent
         return AdkHarnessAssembly(
             descriptor=self.descriptor,
             app=app,

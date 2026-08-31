@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from harness.cli import main, prepare_run
-from harness.learning import SkillDraft, SkillRegistry
 from harness.tracing import TraceSpan, TraceStore
 
 
@@ -205,7 +204,7 @@ def test_serve_codex_prints_selected_model_without_requiring_login(tmp_path: Pat
     }
 
 
-def test_trace_export_and_learned_skill_controls(tmp_path: Path, capsys) -> None:
+def test_trace_export(tmp_path: Path, capsys) -> None:
     state = tmp_path / "state"
     traces = TraceStore(state / "traces.db")
     traces.append(
@@ -229,23 +228,6 @@ def test_trace_export_and_learned_skill_controls(tmp_path: Path, capsys) -> None
     exported = json.loads(capsys.readouterr().out)
     assert exported["task_id"] == "task-1"
 
-    registry = SkillRegistry(state / "learned-skills")
-    registry.emit_candidate(
-        SkillDraft(
-            name="learned-example",
-            description="A learned example.",
-            instructions="Verify the result.",
-            source_trace_ids=("trace-1",),
-        )
-    )
-    assert main(["learned-skills", "--state-root", str(state)]) == 0
-    listed = json.loads(capsys.readouterr().out)
-    assert listed[0]["status"] == "candidate"
-    assert main(
-        ["disable-skill", "--state-root", str(state), "learned-example"]
-    ) == 0
-    disabled = json.loads(capsys.readouterr().out)
-    assert disabled["status"] == "disabled"
 
 
 def test_steer_cli_queues_without_exposing_content_and_reports_status(

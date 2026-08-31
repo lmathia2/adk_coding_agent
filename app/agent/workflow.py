@@ -17,7 +17,6 @@ from google.adk.events import EventActions
 from google.adk.workflow import BaseNode, node
 
 from harness.context import build_compaction_snapshot, estimate_tokens
-from harness.learning import TraceSkillLearningController
 from harness.models import CompactionSnapshot
 from harness.models.agent_step import AgentStep
 from harness.models.checkpoint import Checkpoint
@@ -37,7 +36,6 @@ from harness.orchestration import (
     task_id_for,
 )
 from harness.repo import StructuralIndex, build_repository_manifest
-from harness.review import build_diff_review_packet
 from harness.state import (
     CheckpointStore,
     EventKind,
@@ -60,10 +58,6 @@ from harness.verification import (
 )
 from harness.workspace import GitWorktreeManager
 
-from .builders import (
-    build_review_input,
-    parse_final_diff_review,
-)
 from .config import HarnessSettings
 from .skills import SkillRuntimeContext, build_skill_context
 
@@ -93,12 +87,8 @@ class PiWorkflowDependencies:
     repository_index: StructuralIndex
     workspace_manager: GitWorktreeManager | None
     coding_worker: BaseAgent
-    final_diff_reviewer: BaseAgent | None
-    learning_controller: TraceSkillLearningController
     static_prefix_hash: str
     static_prefix_tokens: int
-    review_prefix_hash: str | None
-    review_prefix_tokens: int
     repository_map_tokens: int
     work_packet_tokens: int
     max_task_input_tokens: int
@@ -528,9 +518,6 @@ def _set_skill_state(
             "skill_context_text": runtime.text,
             "selected_skill_names": list(runtime.selected_names),
             "selected_skill_hashes": list(runtime.selected_hashes),
-            "learning_skill_name": runtime.candidate_name,
-            "learning_experiment_id": runtime.experiment_id,
-            "learning_variant": runtime.variant,
         }
     )
 
@@ -543,26 +530,7 @@ def _skill_runtime_from_state(ctx: Context) -> SkillRuntimeContext | None:
         text=str(state.get("skill_context_text", "")),
         selected_names=tuple(state.get("selected_skill_names", ())),
         selected_hashes=tuple(state.get("selected_skill_hashes", ())),
-        candidate_name=state.get("learning_skill_name"),
-        experiment_id=state.get("learning_experiment_id"),
-        variant=state.get("learning_variant"),
     )
-
-
-def _workflow_kind_hint(goal: str, languages: list[str]) -> str | None:
-    lowered = goal.lower()
-    if any(term in lowered for term in ("python", "pytest", "typescript", "rust", "golang")):
-        return None
-    normalized = {language.lower() for language in languages}
-    if "python" in normalized and not normalized & {"typescript", "javascript"}:
-        return "python-change"
-    if normalized & {"typescript", "javascript"} and "python" not in normalized:
-        return "javascript-change"
-    if normalized == {"rust"}:
-        return "rust-change"
-    if normalized == {"go"}:
-        return "go-change"
-    return None
 
 
 async def _verify_task(
@@ -611,41 +579,6 @@ async def _verify_task(
     }
 
 
-async def _review_final_diff(
-    deps: PiWorkflowDependencies,
-    ctx: Context,
-    node_input: dict[str, Any],
-) -> dict[str, Any]:
-    """Run the optional bounded reviewer after deterministic verification passes."""
-
-    reviewer = deps.final_diff_reviewer
-    review_prefix_hash = deps.review_prefix_hash
-    if reviewer is None or review_prefix_hash is None:
-        raise RuntimeError("final diff reviewer is not configured for this harness")
-    packet = build_diff_review_packet(
-        deps.settings.workspace,
-        str(node_input["base_revision"]),
-        max_chars=deps.settings.review_max_chars,
-    )
-    reviewer_input = build_review_input(packet, dict(node_input["verification"]))
-    _set_model_call_state(
-        ctx,
-        task_id=str(node_input["task_id"]),
-        dynamic_tokens=len(reviewer_input) // 4,
-        stable_prefix_hash=review_prefix_hash,
-        static_prefix_tokens=deps.review_prefix_tokens,
-    )
-    raw_review = await ctx.run_node(reviewer, node_input=reviewer_input)
-    review = parse_final_diff_review(raw_review)
-    return {
-        "review": review.model_dump(mode="json"),
-        "diff_sha256": packet.diff_sha256,
-        "changed_paths": packet.changed_paths,
-        "truncated": packet.truncated,
-        "omitted_bytes": packet.omitted_bytes,
-    }
-
-
 async def _orchestrate_owned(
     deps: PiWorkflowDependencies,
     ctx: Context,
@@ -653,7 +586,6 @@ async def _orchestrate_owned(
     lease_guard: _TaskLeaseGuard,
     *,
     verify_node: BaseNode,
-    review_node: BaseNode,
 ) -> AsyncGenerator[Event | str, None]:
     started = time.monotonic()
     request = parse_task_request(node_input)
@@ -738,12 +670,9 @@ async def _orchestrate_owned(
     if skill_runtime is None:
         try:
             skill_runtime = build_skill_context(
-                task_id=task_id,
                 goal=ledger.goal,
                 next_action=ledger.next_action or "",
-                workflow_kind=_workflow_kind_hint(ledger.goal, manifest.languages),
                 settings=settings,
-                controller=deps.learning_controller,
             )
         except Exception as error:
             skill_runtime = SkillRuntimeContext()
@@ -761,9 +690,6 @@ async def _orchestrate_owned(
         "kind": "skills_selected",
         "names": list(skill_runtime.selected_names),
         "hashes": list(skill_runtime.selected_hashes),
-        "candidate": skill_runtime.candidate_name,
-        "experiment_id": skill_runtime.experiment_id,
-        "variant": skill_runtime.variant,
     }
     skill_event_hash = hashlib.sha256(
         json.dumps(skill_event, sort_keys=True).encode()
@@ -1072,34 +998,6 @@ async def _orchestrate_owned(
                 idempotency_key=f"verify:{ledger.iteration}",
             )
             if report["passed"]:
-                review_result: dict[str, Any] | None = None
-                if settings.final_reviewer_enabled:
-                    try:
-                        review_result = await ctx.run_node(
-                            review_node,
-                            node_input={
-                                "task_id": task_id,
-                                "base_revision": ledger.base_revision,
-                                "verification": report,
-                            },
-                        )
-                    except Exception as error:
-                        review_result = {
-                            "status": "unavailable",
-                            "error_type": type(error).__name__,
-                        }
-                    if not lease_guard.renew():
-                        yield _lease_blocked_result(
-                            task_id,
-                            "distributed task lease expired during final review",
-                        )
-                        return
-                    deps.event_store.append(
-                        task_id,
-                        EventKind.REVIEW_COMPLETED,
-                        review_result,
-                        idempotency_key="final-diff-review",
-                    )
                 if (
                     deps.steering_enabled
                     and deps.steering_at_work_batch_boundary
@@ -1126,7 +1024,7 @@ async def _orchestrate_owned(
                 deps.event_store.append(
                     task_id,
                     EventKind.TASK_FINISHED,
-                    {"verification": report, "review": review_result},
+                    {"verification": report},
                     idempotency_key="task-finished",
                 )
                 data = ledger.model_dump(mode="python")
@@ -1156,7 +1054,6 @@ async def _orchestrate_owned(
                         "task_id": task_id,
                         "changed_paths": verification["changed_paths"],
                         "verification": report,
-                        "review": review_result,
                         "metrics": deps.metrics_store.task_summary(task_id),
                     },
                     sort_keys=True,
@@ -1215,13 +1112,6 @@ def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
     async def verify_task(ctx: Context, node_input: dict[str, Any]) -> dict[str, Any]:
         return await _verify_task(deps, ctx, node_input)
 
-    @node
-    async def review_final_diff(
-        ctx: Context,
-        node_input: dict[str, Any],
-    ) -> dict[str, Any]:
-        return await _review_final_diff(deps, ctx, node_input)
-
     @node(rerun_on_resume=True)
     async def orchestrate(
         ctx: Context,
@@ -1254,7 +1144,6 @@ def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
                 node_input,
                 lease_guard,
                 verify_node=verify_task,
-                review_node=review_final_diff,
             ):
                 yield event
         finally:

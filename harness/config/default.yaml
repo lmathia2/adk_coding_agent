@@ -22,10 +22,6 @@ harness:
           exponential_base: 2
           initial_delay_seconds: 1
           retry_statuses: [429, 500, 502, 503, 504]
-      reviewer:
-        provider: google_adk
-        name: gemini-3.7-flash
-
     agents:
       coding_worker:
         kind: llm
@@ -36,61 +32,8 @@ harness:
         tools: [read, bash, edit, write]
         output_schema: agent_step
         mode: multi_turn
-      final_diff_reviewer:
-        kind: reviewer
-        model: reviewer
-        prompt:
-          source: builtin
-          name: final_diff_review_v1
-        tools: []
-        output_schema: final_diff_review
-        mode: single_turn
-
     workflow:
-      entry: initialize
       max_iterations: 40
-      nodes:
-        initialize:
-          kind: initialize
-          next: compile
-        compile:
-          kind: compile_context
-          next: code
-        code:
-          kind: invoke_agent
-          agent: coding_worker
-          next: reduce
-        reduce:
-          kind: reduce_step
-          next: route
-        route:
-          kind: route
-          routes:
-            continue: compile
-            compact: compact
-            replan: replan
-            verify: verify
-            blocked: blocked
-        compact:
-          kind: compact
-          next: compile
-        replan:
-          kind: replan
-          next: compile
-        verify:
-          kind: verify
-          routes:
-            passed: review
-            failed: compile
-        review:
-          kind: review
-          agent: final_diff_reviewer
-          enabled: false
-          next: finish
-        finish:
-          kind: finish
-        blocked:
-          kind: blocked
 
     tools:
       visible: [read, bash, edit, write]
@@ -157,16 +100,6 @@ harness:
     skills:
       project_root_enabled: true
       additional_roots: []
-
-    learning:
-      enabled: true
-      minimum_support: 3
-      trial_percent: 20
-
-    reviewer:
-      enabled: false
-      agent: final_diff_reviewer
-      max_chars: 60000
 
 persistence:
   session_backend: sqlite

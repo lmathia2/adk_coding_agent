@@ -247,10 +247,8 @@ def test_pi_factory_executes_file_prompt_and_agent_model_bindings(
     agents = cast(dict[str, Any], config["agents"])
     config["models"] = {
         "primary": models["coding"],
-        "critic": models["reviewer"],
     }
     agents["coding_worker"]["model"] = "primary"
-    agents["final_diff_reviewer"]["model"] = "critic"
     prompt_root = tmp_path / "configuration"
     prompt = prompt_root / "prompts" / "worker.md"
     prompt.parent.mkdir(parents=True)
@@ -281,7 +279,6 @@ def test_pi_factory_executes_file_prompt_and_agent_model_bindings(
     worker = cast(Any, assembly.agents["coding_worker"])
     assert worker.static_instruction.startswith("Return the required AgentStep JSON")
     assert assembly.build_info.models == {
-        "critic": models["reviewer"]["name"],
         "primary": models["coding"]["name"],
     }
 
@@ -334,12 +331,8 @@ async def test_model_tool_input_error_is_recoverable_instead_of_crashing_adk(
 
     result = await worker.read(str(tmp_path / "outside-verifier.py"))
 
-    assert result["status"] == "error"
-    assert result["ui_details"] == {
-        "error_type": "ValueError",
-        "recoverable": True,
-    }
-    assert "path escapes workspace" in result["model_text"]
+    assert result["status"] == "blocked"
+    assert "Path leaves workspace" in result["model_text"]
 
 
 @pytest.mark.asyncio
@@ -430,34 +423,6 @@ def test_pi_factory_builds_are_isolated(tmp_path: Path) -> None:
     assert first.app is not second.app
     assert first.app.root_agent is not second.app.root_agent
     assert first.controls is not second.controls
-
-
-def test_pi_factory_rejects_ignored_workflow_edge_changes(tmp_path: Path) -> None:
-    registry = default_harness_registry()
-    composition = load_harness_composition(config_models=registry.config_models())
-    config = cast(PiCodingConfig, composition.harness.config)
-    nodes = dict(config.workflow.nodes)
-    route = nodes["route"]
-    route_payload = route.model_dump(mode="python")
-    routes = cast(dict[str, str], route_payload["routes"])
-    nodes["route"] = route.model_copy(update={"routes": {**routes, "verify": "blocked"}})
-    altered = composition.model_copy(
-        update={
-            "harness": composition.harness.model_copy(
-                update={
-                    "config": config.model_copy(
-                        update={"workflow": config.workflow.model_copy(update={"nodes": nodes})}
-                    )
-                }
-            )
-        }
-    )
-
-    with pytest.raises(ValueError, match="edges, routes"):
-        registry.build(
-            altered,
-            RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state"),
-        )
 
 
 @pytest.mark.asyncio

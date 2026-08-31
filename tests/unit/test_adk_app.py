@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import pytest
 
 from harness.adk import SteeringPlugin
-from harness.memory.adk_plugin import VerifiedProjectMemoryPlugin
 from harness.state.postgres import TaskLease
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin
 from harness.tracing import (
@@ -39,25 +38,16 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert module.app.events_compaction_config.token_threshold == 96_000
     assert module.app.events_compaction_config.event_retention_size == 20
     assert any(isinstance(plugin, HarnessMetricsPlugin) for plugin in module.app.plugins)
-    assert any(isinstance(plugin, VerifiedProjectMemoryPlugin) for plugin in module.app.plugins)
     assert any(isinstance(plugin, CodingToolArtifactPlugin) for plugin in module.app.plugins)
     assert any(isinstance(plugin, SteeringPlugin) for plugin in module.app.plugins)
     trace_plugin = next(
         plugin for plugin in module.app.plugins if isinstance(plugin, HarnessTracePlugin)
     )
     assert trace_plugin.content_mode == TraceContentMode.METADATA_ONLY
-    learning = importlib.import_module("app.agent.learning")
-    assert any(
-        isinstance(plugin, learning.VerifiedTraceLearningPlugin) for plugin in module.app.plugins
-    )
     tool_names = {
         getattr(tool, "name", getattr(tool, "__name__", "")) for tool in module.coding_worker.tools
     }
     assert {"read", "bash", "edit", "write"}.issubset(tool_names)
-
-    reviewer = importlib.import_module("app.agent.reviewer")
-    assert reviewer.final_diff_reviewer.tools == []
-    assert reviewer.final_diff_reviewer.output_schema is not None
 
     workflow = importlib.import_module("app.agent.workflow")
     state: dict[str, object] = {}
@@ -88,23 +78,15 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
         skill_runtime.SkillRuntimeContext(
             selected_names=("python-review",),
             selected_hashes=("a" * 64,),
-            candidate_name="learned-python-change",
-            experiment_id="skill:learned-python-change:v1",
-            variant="candidate",
         ),
     )
     assert state["selected_skill_names"] == ["python-review"]
-    assert state["learning_variant"] == "candidate"
     assert workflow._skill_runtime_from_state(SimpleNamespace(state=state)) == (
         skill_runtime.SkillRuntimeContext(
             selected_names=("python-review",),
             selected_hashes=("a" * 64,),
-            candidate_name="learned-python-change",
-            experiment_id="skill:learned-python-change:v1",
-            variant="candidate",
         )
     )
-    assert workflow._workflow_kind_hint("Repair it", ["Python"]) == "python-change"
 
 
 def test_control_state_settings_are_environment_driven(monkeypatch, tmp_path) -> None:
@@ -125,9 +107,6 @@ def test_control_state_settings_are_environment_driven(monkeypatch, tmp_path) ->
     )
     monkeypatch.setenv("ADK_CODING_SKILL_MAX_SELECTED", "2")
     monkeypatch.setenv("ADK_CODING_SKILL_CONTEXT_BYTES", "12000")
-    monkeypatch.setenv("ADK_CODING_LEARNING_ENABLED", "false")
-    monkeypatch.setenv("ADK_CODING_LEARNING_MIN_SUPPORT", "4")
-    monkeypatch.setenv("ADK_CODING_LEARNING_TRIAL_PERCENT", "25")
     monkeypatch.setenv("ADK_CODING_TRUST_PROJECT", "1")
 
     settings = config.load_settings()
@@ -142,12 +121,8 @@ def test_control_state_settings_are_environment_driven(monkeypatch, tmp_path) ->
         (tmp_path / "team-skills").resolve(),
         (tmp_path / "personal-skills").resolve(),
     )
-    assert settings.learned_skill_root == tmp_path / "state" / "learned-skills"
     assert settings.skill_max_selected == 2
     assert settings.skill_context_bytes == 12000
-    assert not settings.learning_enabled
-    assert settings.learning_min_support == 4
-    assert settings.learning_trial_percent == 25
 
 
 def test_invalid_trace_mode_fails_closed(monkeypatch, tmp_path) -> None:

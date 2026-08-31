@@ -12,7 +12,6 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from harness.learning import SkillRegistry as LearnedSkillRegistry
 from harness.state import SteeringMessage, SteeringQueue
 from harness.tracing import TraceStore
 from harness.workspace import GitWorktreeManager, WorkspaceRecord
@@ -621,25 +620,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         exported = TraceStore(args.state_root.resolve() / "traces.db").export_jsonl(args.task_id)
         if exported:
             print(exported)
-        return 0
-    if args.command in {"learned-skills", "disable-skill"}:
-        registry = LearnedSkillRegistry(args.state_root.resolve() / "learned-skills")
-        if args.command == "disable-skill":
-            print(registry.disable(args.name).model_dump_json(indent=2))
-            return 0
-        lifecycles = []
-        for root in (
-            registry.active_root,
-            registry.candidate_root,
-            registry.disabled_root,
-        ):
-            for directory in sorted(root.iterdir(), key=lambda item: item.name):
-                if not directory.is_dir():
-                    continue
-                lifecycle = registry.load(directory.name)
-                if lifecycle is not None:
-                    lifecycles.append(lifecycle.model_dump(mode="json"))
-        print(json.dumps(lifecycles, sort_keys=True, indent=2))
         return 0
     if args.command == "cleanup":
         repository = args.repository.resolve()

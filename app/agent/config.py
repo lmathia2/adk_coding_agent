@@ -72,18 +72,11 @@ class HarnessSettings:
     recent_event_limit: int
     static_instruction: str
     static_prefix: str
-    final_reviewer_enabled: bool
-    review_model: str
-    review_max_chars: int
     trace_mode: str
     trace_max_content_bytes: int
     skill_roots: tuple[Path, ...]
-    learned_skill_root: Path
     skill_max_selected: int
     skill_context_bytes: int
-    learning_enabled: bool
-    learning_min_support: int
-    learning_trial_percent: int
     project_trusted: bool
 
 
@@ -160,7 +153,6 @@ def load_settings() -> HarnessSettings:
     workspace = Path(os.getenv("ADK_CODING_WORKSPACE", os.getcwd())).resolve()
     source_value = os.getenv("ADK_CODING_SOURCE_REPOSITORY")
     model = os.getenv("ADK_CODING_MODEL", "gemini-3.7-flash")
-    review_model = os.getenv("ADK_CODING_REVIEW_MODEL", model)
     worker_id = os.getenv("ADK_CODING_WORKER_ID", "").strip()
     if not worker_id:
         worker_id = f"{socket.gethostname()}:{os.getpid()}"
@@ -205,22 +197,12 @@ def load_settings() -> HarnessSettings:
             model_name=model,
             instruction=instruction,
         ),
-        final_reviewer_enabled=(
-            os.getenv("ADK_CODING_FINAL_REVIEWER", "0").strip().lower()
-            in {"1", "true", "yes", "on"}
-        ),
-        review_model=review_model,
-        review_max_chars=max(
-            1_000,
-            int(os.getenv("ADK_CODING_REVIEW_MAX_CHARS", "60000")),
-        ),
         trace_mode=_trace_mode(),
         trace_max_content_bytes=max(
             64,
             int(os.getenv("ADK_CODING_TRACE_MAX_CONTENT_BYTES", "8192")),
         ),
         skill_roots=_skill_roots(workspace, project_trusted=project_trusted),
-        learned_skill_root=state_root / "learned-skills",
         skill_max_selected=max(
             0,
             int(os.getenv("ADK_CODING_SKILL_MAX_SELECTED", "3")),
@@ -228,15 +210,6 @@ def load_settings() -> HarnessSettings:
         skill_context_bytes=max(
             0,
             int(os.getenv("ADK_CODING_SKILL_CONTEXT_BYTES", "24000")),
-        ),
-        learning_enabled=_enabled("ADK_CODING_LEARNING_ENABLED", "1"),
-        learning_min_support=max(
-            2,
-            int(os.getenv("ADK_CODING_LEARNING_MIN_SUPPORT", "3")),
-        ),
-        learning_trial_percent=min(
-            100,
-            max(0, int(os.getenv("ADK_CODING_LEARNING_TRIAL_PERCENT", "20"))),
         ),
         project_trusted=project_trusted,
     )
@@ -273,11 +246,6 @@ def settings_from_composition(
         instruction += "\n\nStable project instructions:\n" + project_instructions
 
     coding_model = config.models[worker_config.model].name
-    review_agent_name = config.reviewer.agent or "final_diff_reviewer"
-    review_agent = config.agents.get(review_agent_name)
-    review_model = (
-        config.models[review_agent.model].name if review_agent is not None else coding_model
-    )
     skill_roots: list[Path] = []
     if config.skills.project_root_enabled and bindings.project_trusted:
         skill_roots.append(workspace / ".agents" / "skills")
@@ -317,18 +285,11 @@ def settings_from_composition(
             model_name=coding_model,
             instruction=instruction,
         ),
-        final_reviewer_enabled=config.reviewer.enabled,
-        review_model=review_model,
-        review_max_chars=config.reviewer.max_chars,
         trace_mode=config.tracing.mode,
         trace_max_content_bytes=config.tracing.max_content_bytes,
         skill_roots=tuple(dict.fromkeys(skill_roots)),
-        learned_skill_root=state_root / "learned-skills",
         skill_max_selected=config.context.max_selected_skills,
         skill_context_bytes=config.context.skill_context_bytes,
-        learning_enabled=config.learning.enabled,
-        learning_min_support=config.learning.minimum_support,
-        learning_trial_percent=config.learning.trial_percent,
         project_trusted=bindings.project_trusted,
     )
 

@@ -61,35 +61,6 @@ _STOP_WORDS = frozenset(
 )
 
 
-def learned_skill_roots(
-    directory: Path,
-    *,
-    origin: str = "learned",
-    precedence: int = 500,
-) -> tuple[SkillRoot, SkillRoot]:
-    """Return conventional learned active/candidate roots.
-
-    Learned candidates remain discoverable in the catalog but cannot be
-    selected until the control plane promotes them into ``active``.
-    """
-
-    base = Path(directory)
-    return (
-        SkillRoot(
-            path=base / "active",
-            origin=f"{origin}:active",
-            lifecycle="enabled",
-            precedence=precedence,
-        ),
-        SkillRoot(
-            path=base / "candidates",
-            origin=f"{origin}:candidate",
-            lifecycle="candidate",
-            precedence=precedence + 1,
-        ),
-    )
-
-
 class SkillRegistry:
     """Immutable registry of validated skills from explicitly trusted roots."""
 
@@ -243,55 +214,6 @@ class SkillRegistry:
             truncated=truncated,
             byte_count=len(text.encode("utf-8")),
             estimated_tokens=_estimated_tokens(text),
-        )
-
-    def select_candidate(
-        self,
-        name: str,
-        *,
-        goal: str = "",
-        next_action: str = "",
-        max_bytes: int = 16_384,
-        max_tokens: int = 4_096,
-    ) -> SkillSelection:
-        """Select exactly one named candidate for a controlled trial.
-
-        This separate API prevents candidate content from entering ordinary
-        lexical or explicit-mention selection. Callers must supply the exact
-        canonical name selected by the learning control plane.
-        """
-
-        self._validate_budget(max_bytes=max_bytes, max_tokens=max_tokens)
-        if not _NAME_RE.fullmatch(name):
-            raise SkillValidationError("candidate name must be canonical lowercase kebab-case")
-        skill = self._by_name.get(name)
-        if skill is None:
-            raise KeyError(name)
-        if skill.lifecycle != "candidate":
-            raise SkillValidationError(f"skill {name!r} is not a candidate")
-        content, references = self._render_skill(skill, include_references=True)
-        bounded, truncated = _truncate_to_budgets(
-            content,
-            max_bytes=max_bytes,
-            max_tokens=max_tokens,
-        )
-        query_terms = _terms(f"{goal}\n{next_action}")
-        skill_terms = _terms(f"{skill.name.replace('-', ' ')} {skill.description}")
-        selected = SelectedSkill(
-            name=skill.name,
-            content=bounded,
-            explicit=True,
-            matched_terms=tuple(sorted(query_terms & skill_terms)),
-            included_references=references if not truncated else (),
-            content_hash=skill.content_hash,
-        )
-        return SkillSelection(
-            skills=(selected,),
-            text=bounded,
-            unmatched_explicit_names=(),
-            truncated=truncated,
-            byte_count=len(bounded.encode("utf-8")),
-            estimated_tokens=_estimated_tokens(bounded),
         )
 
     def _validate_roots(self) -> None:

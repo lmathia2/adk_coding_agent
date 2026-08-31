@@ -22,7 +22,6 @@ from .models import (
     ServerConfig,
     ToolSurfaceConfig,
     WorkflowConfig,
-    WorkflowNodeConfig,
 )
 
 __all__ = [
@@ -43,7 +42,6 @@ __all__ = [
     "ServerConfig",
     "ToolSurfaceConfig",
     "WorkflowConfig",
-    "WorkflowNodeConfig",
     "load_harness_composition",
     "parse_harness_composition",
 ]

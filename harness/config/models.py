@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
@@ -124,155 +123,18 @@ class PromptConfig(FrozenModel):
 
 
 class AgentConfig(FrozenModel):
-    kind: Literal["llm", "reviewer"]
+    kind: Literal["llm"] = "llm"
     model: str = Field(min_length=1, max_length=64)
-    prompt: PromptConfig
-    tools: tuple[Literal["read", "bash", "edit", "write"], ...]
-    output_schema: Literal["agent_step", "final_diff_review"]
-    mode: Literal["multi_turn", "single_turn"]
-
-    @model_validator(mode="after")
-    def validate_agent(self) -> AgentConfig:
-        if len(set(self.tools)) != len(self.tools):
-            raise ValueError("agent tools must be unique")
-        if self.kind == "reviewer" and self.tools:
-            raise ValueError("reviewer agents cannot expose tools")
-        if self.kind == "reviewer" and self.output_schema != "final_diff_review":
-            raise ValueError("reviewer agents require final_diff_review output")
-        return self
-
-
-class NodeKind(StrEnum):
-    INITIALIZE = "initialize"
-    COMPILE_CONTEXT = "compile_context"
-    INVOKE_AGENT = "invoke_agent"
-    REDUCE_STEP = "reduce_step"
-    ROUTE = "route"
-    COMPACT = "compact"
-    VERIFY = "verify"
-    REVIEW = "review"
-    REPLAN = "replan"
-    FINISH = "finish"
-    BLOCKED = "blocked"
-    PARALLEL = "parallel"
-
-
-class NextNode(FrozenModel):
-    kind: Literal[
-        NodeKind.INITIALIZE,
-        NodeKind.COMPILE_CONTEXT,
-        NodeKind.REDUCE_STEP,
-        NodeKind.COMPACT,
-        NodeKind.REPLAN,
-    ]
-    next: str = Field(min_length=1, max_length=64)
-
-
-class InvokeAgentNode(FrozenModel):
-    kind: Literal[NodeKind.INVOKE_AGENT]
-    agent: str = Field(min_length=1, max_length=64)
-    next: str = Field(min_length=1, max_length=64)
-
-
-class RouteNode(FrozenModel):
-    kind: Literal[NodeKind.ROUTE]
-    routes: dict[str, str] = Field(min_length=1)
-
-
-class VerifyNode(FrozenModel):
-    kind: Literal[NodeKind.VERIFY]
-    routes: dict[Literal["passed", "failed"], str]
-
-    @model_validator(mode="after")
-    def validate_routes(self) -> VerifyNode:
-        if set(self.routes) != {"passed", "failed"}:
-            raise ValueError("verify nodes require passed and failed routes")
-        return self
-
-
-class ReviewNode(FrozenModel):
-    kind: Literal[NodeKind.REVIEW]
-    agent: str = Field(min_length=1, max_length=64)
-    enabled: bool = False
-    next: str = Field(min_length=1, max_length=64)
-
-
-class ParallelNode(FrozenModel):
-    """Run registered ADK agents concurrently, then continue to the join node."""
-
-    kind: Literal[NodeKind.PARALLEL]
-    agents: tuple[str, ...] = Field(min_length=2)
-    next: str = Field(min_length=1, max_length=64)
-
-
-class TerminalNode(FrozenModel):
-    kind: Literal[NodeKind.FINISH, NodeKind.BLOCKED]
-
-
-WorkflowNodeConfig = Annotated[
-    NextNode
-    | InvokeAgentNode
-    | RouteNode
-    | VerifyNode
-    | ReviewNode
-    | ParallelNode
-    | TerminalNode,
-    Field(discriminator="kind"),
-]
+    prompt: PromptConfig = PromptConfig(name="coding_worker_v1")
+    tools: tuple[Literal["read", "bash", "edit", "write"], ...] = FOUR_CODING_TOOLS
+    output_schema: Literal["agent_step"] = "agent_step"
+    mode: Literal["multi_turn"] = "multi_turn"
 
 
 class WorkflowConfig(FrozenModel):
-    entry: str = Field(min_length=1, max_length=64)
+    """Only executable loop settings; topology belongs to the harness factory."""
+
     max_iterations: int = Field(default=40, ge=1, le=1_000)
-    nodes: dict[str, WorkflowNodeConfig]
-
-    @staticmethod
-    def _targets(node: WorkflowNodeConfig) -> tuple[str, ...]:
-        if isinstance(node, (RouteNode, VerifyNode)):
-            return tuple(node.routes.values())
-        if isinstance(node, (NextNode, InvokeAgentNode, ReviewNode, ParallelNode)):
-            return (node.next,)
-        return ()
-
-    @model_validator(mode="after")
-    def validate_graph(self) -> WorkflowConfig:
-        if self.entry not in self.nodes:
-            raise ValueError("workflow entry must reference a configured node")
-        if not any(node.kind == NodeKind.FINISH for node in self.nodes.values()):
-            raise ValueError("workflow must contain a finish node")
-        for name, node in self.nodes.items():
-            missing = sorted(
-                reference
-                for reference in self._targets(node)
-                if reference not in self.nodes
-            )
-            if missing:
-                raise ValueError(f"workflow node {name!r} references missing nodes: {missing}")
-
-        pending = [(self.entry, False)]
-        visited: set[tuple[str, bool]] = set()
-        reachable: set[str] = set()
-        reached_finish = False
-        while pending:
-            name, verified = pending.pop()
-            state = (name, verified)
-            if state in visited:
-                continue
-            visited.add(state)
-            reachable.add(name)
-            node = self.nodes[name]
-            verified = verified or node.kind == NodeKind.VERIFY
-            if node.kind == NodeKind.FINISH:
-                reached_finish = True
-                if not verified:
-                    raise ValueError("every workflow path to finish must pass through verify")
-            pending.extend((target, verified) for target in self._targets(node))
-        if not reached_finish:
-            raise ValueError("workflow entry cannot reach a finish node")
-        unreachable = sorted(set(self.nodes) - reachable)
-        if unreachable:
-            raise ValueError(f"workflow contains unreachable nodes: {unreachable}")
-        return self
 
 
 class ToolOutputConfig(FrozenModel):
@@ -414,18 +276,6 @@ class SkillConfig(FrozenModel):
     additional_roots: tuple[Path, ...] = ()
 
 
-class LearningConfig(FrozenModel):
-    enabled: bool = True
-    minimum_support: int = Field(default=3, ge=2)
-    trial_percent: int = Field(default=20, ge=0, le=100)
-
-
-class ReviewerConfig(FrozenModel):
-    enabled: bool = False
-    agent: str | None = "final_diff_reviewer"
-    max_chars: int = Field(default=60_000, ge=1_000, le=1_000_000)
-
-
 class PiCodingConfig(FrozenModel):
     """Typed behavior payload owned by the pi_coding_v1 implementation."""
 
@@ -440,91 +290,16 @@ class PiCodingConfig(FrozenModel):
     adk: AdkConfig = AdkConfig()
     tracing: TraceConfig = TraceConfig()
     skills: SkillConfig = SkillConfig()
-    learning: LearningConfig = LearningConfig()
-    reviewer: ReviewerConfig = ReviewerConfig()
 
     @model_validator(mode="after")
     def validate_references(self) -> PiCodingConfig:
         for name, agent in self.agents.items():
             if agent.model not in self.models:
                 raise ValueError(f"agent {name!r} references unknown model {agent.model!r}")
-        for name, node in self.workflow.nodes.items():
-            agent_names: tuple[str, ...] = ()
-            if isinstance(node, (InvokeAgentNode, ReviewNode)):
-                agent_names = (node.agent,)
-            elif isinstance(node, ParallelNode):
-                agent_names = node.agents
-            missing = sorted(agent for agent in agent_names if agent not in self.agents)
-            if missing:
-                raise ValueError(f"workflow node {name!r} references unknown agents: {missing}")
-        if self.reviewer.enabled and self.reviewer.agent not in self.agents:
-            raise ValueError("enabled reviewer references an unknown agent")
-        required_workflow = {
-            "entry": "initialize",
-            "nodes": {
-                "initialize": {"kind": "initialize", "next": "compile"},
-                "compile": {"kind": "compile_context", "next": "code"},
-                "code": {
-                    "kind": "invoke_agent",
-                    "agent": "coding_worker",
-                    "next": "reduce",
-                },
-                "reduce": {"kind": "reduce_step", "next": "route"},
-                "route": {
-                    "kind": "route",
-                    "routes": {
-                        "continue": "compile",
-                        "compact": "compact",
-                        "replan": "replan",
-                        "verify": "verify",
-                        "blocked": "blocked",
-                    },
-                },
-                "compact": {"kind": "compact", "next": "compile"},
-                "replan": {"kind": "replan", "next": "compile"},
-                "verify": {
-                    "kind": "verify",
-                    "routes": {"passed": "review", "failed": "compile"},
-                },
-                "review": {
-                    "kind": "review",
-                    "agent": "final_diff_reviewer",
-                    "enabled": self.reviewer.enabled,
-                    "next": "finish",
-                },
-                "finish": {"kind": "finish"},
-                "blocked": {"kind": "blocked"},
-            },
-        }
-        actual_workflow = self.workflow.model_dump(
-            mode="json",
-            exclude={"max_iterations"},
-        )
-        if actual_workflow != required_workflow:
-            raise ValueError(
-                "pi_coding_v1 has a fixed verified workflow graph; register another "
-                "harness implementation for a different topology"
-            )
-        if set(self.agents) != {"coding_worker", "final_diff_reviewer"}:
-            raise ValueError(
-                "pi_coding_v1 accepts only coding_worker and final_diff_reviewer"
-            )
-        worker = self.agents["coding_worker"]
-        reviewer = self.agents["final_diff_reviewer"]
-        if (
-            worker.kind != "llm"
-            or worker.tools != FOUR_CODING_TOOLS
-            or worker.output_schema != "agent_step"
-            or worker.mode != "multi_turn"
-        ):
-            raise ValueError("pi_coding_v1 requires the coding_worker contract")
-        if (
-            reviewer.kind != "reviewer"
-            or reviewer.tools
-            or reviewer.output_schema != "final_diff_review"
-            or reviewer.mode != "single_turn"
-        ):
-            raise ValueError("pi_coding_v1 requires the final_diff_reviewer contract")
+        if set(self.agents) != {"coding_worker"}:
+            raise ValueError("pi_coding_v1 accepts only coding_worker")
+        if self.agents["coding_worker"].tools != FOUR_CODING_TOOLS:
+            raise ValueError("coding_worker requires exactly read, bash, edit, write")
         referenced_models = {agent.model for agent in self.agents.values()}
         if set(self.models) != referenced_models:
             raise ValueError(
@@ -711,5 +486,4 @@ __all__ = [
     "ServerConfig",
     "ToolSurfaceConfig",
     "WorkflowConfig",
-    "WorkflowNodeConfig",
 ]
