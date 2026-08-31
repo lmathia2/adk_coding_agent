@@ -23,11 +23,27 @@ def parse_task_request(value: str | dict[str, Any] | TaskRequest) -> TaskRequest
             return TaskRequest.model_validate_json(text)
         except ValueError:
             pass
-    return TaskRequest(
-        goal=text,
-        acceptance_criteria=[
-            "The requested change is implemented and deterministic verification passes"
-        ],
+    return TaskRequest(goal=text, mode="auto")
+
+
+def can_answer_directly(
+    request: TaskRequest,
+    step: AgentStep,
+    *,
+    verification_required: bool,
+    workspace_unchanged: bool,
+) -> bool:
+    """An answer is not verified task completion; explicit work obligations win."""
+    return (
+        request.mode == "auto"
+        and step.status == "answer"
+        and bool(step.message.strip())
+        and not request.acceptance_criteria
+        and not request.verification_requirements
+        and request.verification_level == "auto"
+        and not step.completion_claims
+        and not verification_required
+        and workspace_unchanged
     )
 
 

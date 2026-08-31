@@ -85,6 +85,11 @@ def build_coding_worker(
             str(invocation_id) if invocation_id else None,
         )
 
+    def _require_verification(tool_context: ToolContext | None) -> None:
+        if tool_context is not None:
+            task_scope, _ = _runtime_identity(tool_context)
+            tool_context.state["verification_required_task"] = task_scope
+
     async def read(
         path: str,
         offset: int = 1,
@@ -108,6 +113,9 @@ def build_coding_worker(
         """Run a bounded command or an in-process indexed search operation."""
 
         task_scope, _ = _runtime_identity(tool_context)
+        # Even apparently read-only shell can contain redirections/substitutions.
+        # The direct-answer path conservatively permits only the read primitive.
+        _require_verification(tool_context)
         return await asyncio.to_thread(
             _invoke_tool,
             "bash",
@@ -128,6 +136,7 @@ def build_coding_worker(
         """Atomically replace one exact, unique preimage in a workspace file."""
 
         task_scope, invocation_id = _runtime_identity(tool_context)
+        _require_verification(tool_context)
         return await asyncio.to_thread(
             _invoke_tool,
             "edit",
@@ -151,6 +160,7 @@ def build_coding_worker(
         """Atomically write a complete file with optimistic concurrency."""
 
         task_scope, invocation_id = _runtime_identity(tool_context)
+        _require_verification(tool_context)
         return await asyncio.to_thread(
             _invoke_tool,
             "write",

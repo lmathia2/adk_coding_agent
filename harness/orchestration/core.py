@@ -32,6 +32,7 @@ def create_initial_ledger(
     return TaskLedger(
         task_id=task_id,
         goal=request.goal,
+        mode=request.mode,
         acceptance_criteria=request.acceptance_criteria,
         constraints=request.constraints,
         non_goals=request.non_goals,
@@ -43,7 +44,12 @@ def create_initial_ledger(
         base_revision=base_revision,
         workspace_id=workspace_id,
         branch_id=branch_id,
-        next_action="Inspect the repository and identify the smallest coherent change",
+        next_action=(
+            "Respond directly to conversation or explanation requests. For requested "
+            "code changes, inspect relevant code, implement and verify the change."
+            if request.mode == "auto" else
+            "Inspect the repository and identify the smallest coherent change"
+        ),
     )
 
 

@@ -41,3 +41,18 @@ the workflow. The worker's optional `message` field is published only after its
 typed result is reduced; completion replies wait for passing verification.
 Private partial/final JSON and child-node outputs remain in ADK history, not the
 public transcript. A live ADK Runner with a scripted model verifies this contract.
+
+## Conversation gate evidence
+
+The real ADK Runner, real worker and real tools pass scripted greeting, read-only
+explanation and adversarial write-then-answer fixtures. Greeting takes one model
+call, no tools and no verification; a read can finish as `answered`, explicitly
+`verified: false`. A write followed by a model `answer` is withheld and invokes
+verification. Explicit coding contracts, acceptance criteria, verification strength,
+completion claims and workspace changes also disallow the direct-answer path.
+All shell calls conservatively require verification: command classification alone
+is not proof that a shell expression has no side effects.
+
+The full Python unit/integration suite, Ruff, Pyright and compilation pass, as do
+the four terminal prototype tests. These are deterministic contract checks; fresh
+live-model quality/latency comparisons remain required before migration completion.

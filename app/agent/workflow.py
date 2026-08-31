@@ -35,6 +35,7 @@ from harness.orchestration import (
     resume_for_steering,
     task_id_for,
 )
+from harness.orchestration.runtime import can_answer_directly
 from harness.repo import StructuralIndex, build_repository_manifest
 from harness.state import (
     CheckpointStore,
@@ -340,7 +341,7 @@ def _record_outcome(
     *,
     task_id: str,
     ledger: TaskLedger,
-    status: Literal["complete", "blocked", "failed"],
+    status: Literal["complete", "answered", "blocked", "failed"],
     passed: bool,
     started: float,
     tests_passed: int = 0,
@@ -555,7 +556,6 @@ async def _orchestrate_owned(
             idempotency_key=f"workspace-reconcile-ledger:{current_fingerprint}",
         )
 
-    deps.repository_index.index_repository()
     compaction_summary, compaction_id = _latest_compaction(deps, task_id)
     owner = f"{settings.worker_id}:{session_id or task_id}"
     max_iterations = min(
@@ -628,16 +628,18 @@ async def _orchestrate_owned(
             )
 
         manifest = build_repository_manifest(settings.workspace)
-        deps.repository_index.index_repository()
-        query = " ".join(
-            part for part in (ledger.goal, ledger.next_action or "") if part
-        )
-        repository_map = deps.repository_index.render_map(
-            query,
-            changed_paths=ledger.files_modified,
-            recent_paths=ledger.files_read,
-            max_tokens=deps.repository_map_tokens,
-        )
+        repository_map = ""
+        if request.mode == "coding" or ledger.iteration:
+            deps.repository_index.index_repository()
+            query = " ".join(
+                part for part in (ledger.goal, ledger.next_action or "") if part
+            )
+            repository_map = deps.repository_index.render_map(
+                query,
+                changed_paths=ledger.files_modified,
+                recent_paths=ledger.files_read,
+                max_tokens=deps.repository_map_tokens,
+            )
         packet = build_work_packet(
             ledger,
             selected_skills=skill_runtime.text,
@@ -723,6 +725,61 @@ async def _orchestrate_owned(
                 idempotency_key=f"malformed-step:{ledger.iteration + 1}",
             )
             step = _malformed_step(error)
+
+        if step.status == "answer":
+            # Tool effects and explicit task obligations cannot be waived by a
+            # model choosing a conversational status. Bind effects to this task.
+            allowed = can_answer_directly(
+                request, step,
+                verification_required=(
+                    ctx.state.get("verification_required_task") == task_id
+                ),
+                workspace_unchanged=(
+                    _workspace_fingerprint(deps, task_id) == current_fingerprint
+                ),
+            )
+            if not allowed:
+                step = step.model_copy(update={"status": "verify"})
+            elif deps.steering_enabled and deps.steering_queue.has_pending(task_id):
+                step = step.model_copy(update={"status": "continue", "message": ""})
+            else:
+                previous = ledger
+                ledger = TaskLedger.model_validate({**ledger.model_dump(mode="python"),
+                    "status": "answered", "next_action": None,
+                    "iteration": ledger.iteration + 1,
+                })
+                deps.event_store.append(
+                    task_id, EventKind.LEDGER_PATCHED, _ledger_patch(previous, ledger),
+                    idempotency_key=f"answer:{ledger.iteration}",
+                )
+                delivered = deps.steering_queue.leased_by(task_id, owner)
+                if delivered:
+                    deps.steering_queue.ack([item.message_id for item in delivered], owner)
+                _save_checkpoint(
+                    deps, task_id=task_id, ledger=ledger,
+                    session_id=session_id, compaction_id=compaction_id,
+                )
+                _record_outcome(
+                    deps, task_id=task_id, ledger=ledger, status="answered",
+                    passed=False, started=started,
+                )
+                yield json.dumps({"status": "answered", "message": step.message})
+                return
+
+        if step.status in {"verify", "done"} and request.mode == "auto":
+            request = TaskRequest.model_validate({
+                **request.model_dump(mode="python"), "mode": "coding",
+            })
+            before_promotion = ledger
+            ledger = TaskLedger.model_validate({
+                **ledger.model_dump(mode="python"), "mode": "coding",
+                "acceptance_criteria": request.acceptance_criteria,
+            })
+            deps.event_store.append(
+                task_id, EventKind.LEDGER_PATCHED,
+                _ledger_patch(before_promotion, ledger),
+                idempotency_key="coding-contract-established",
+            )
 
         previous = ledger
         ledger = reduce_agent_step(ledger, step)

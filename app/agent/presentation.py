@@ -19,7 +19,9 @@ def message_event(message: str) -> Event:
 def result_events(result: Mapping[str, Any]) -> tuple[Event, Event]:
     """Publish one reply and a small result, after the workflow decides its outcome."""
     status = str(result.get("status", "blocked"))
-    if status == "complete":
+    if status == "answered":
+        reply = result["message"]
+    elif status == "complete":
         reply = result.get("message") or "Completed; deterministic verification passed."
     else:
         details = result.get("questions") or result.get("blockers") or [

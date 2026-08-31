@@ -22,6 +22,9 @@ historical feature checklist or book-rubric score.
   withheld until deterministic verification passes. Other ADK factories keep their
   ordinary text streaming by default.
 - Standalone Pi terminal toolkit prototype (not yet the default installed client).
+- Plain-language turns support a distinct `answered` outcome without inventing a
+  coding task. Direct answers permit no managed shell/write/edit action and no
+  explicit verification obligation; coding results still route through verification.
 - Gemini and Codex subscription adapters.
 - Fresh uv checkout installation and default TUI build; no Magnitude requirement.
 

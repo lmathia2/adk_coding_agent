@@ -3,7 +3,7 @@
 ## Pi terminal experience
 
 - [x] Prove standalone Pi toolkit reuse with deterministic rendering fixtures.
-- [ ] Separate public replies from workflow control and support non-coding turns.
+- [x] Separate public replies from workflow control and support non-coding turns.
 - [ ] Preserve conversations and wire queues, model/auth controls and resources.
 - [ ] Complete Pi-style UI and migrate installation/launching.
 - [ ] Verify conversational/coding examples, replay and harness swap; remove Go TUI.

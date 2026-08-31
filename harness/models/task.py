@@ -27,6 +27,7 @@ class TaskStatus(StrEnum):
     VERIFYING = "verifying"
     FAILED = "failed"
     COMPLETE = "complete"
+    ANSWERED = "answered"
 
 
 class PlanStepStatus(StrEnum):
@@ -40,6 +41,7 @@ class TaskRequest(StrictModel):
     """Normalized contract accepted by the coding workflow."""
 
     goal: str = Field(min_length=1, max_length=50_000)
+    mode: Literal["auto", "coding"] = "coding"
     acceptance_criteria: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     non_goals: list[str] = Field(default_factory=list)
@@ -53,7 +55,7 @@ class TaskRequest(StrictModel):
 
     @model_validator(mode="after")
     def ensure_acceptance_criteria(self) -> TaskRequest:
-        if not self.acceptance_criteria:
+        if not self.acceptance_criteria and self.mode == "coding":
             self.acceptance_criteria = ["The requested change is implemented and verified."]
         return self
 
@@ -85,6 +87,7 @@ class TaskLedger(StrictModel):
 
     task_id: str
     goal: str
+    mode: Literal["auto", "coding"] = "coding"
     acceptance_criteria: list[str]
     constraints: list[str] = Field(default_factory=list)
     non_goals: list[str] = Field(default_factory=list)
@@ -135,6 +138,7 @@ class TaskLedger(StrictModel):
         return cls(
             task_id=task_id,
             goal=request.goal,
+            mode=request.mode,
             acceptance_criteria=request.acceptance_criteria,
             constraints=request.constraints,
             non_goals=request.non_goals,
@@ -159,6 +163,7 @@ class TaskLedger(StrictModel):
         )
         return {
             "goal": self.goal,
+            "mode": self.mode,
             "acceptance_criteria": self.acceptance_criteria,
             "constraints": self.constraints,
             "non_goals": self.non_goals,

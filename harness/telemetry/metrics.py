@@ -60,7 +60,7 @@ class TaskOutcomeSample(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
-    status: Literal["complete", "blocked", "failed"]
+    status: Literal["complete", "answered", "blocked", "failed"]
     passed: bool
     iterations: int = Field(ge=0)
     compactions: int = Field(default=0, ge=0)
