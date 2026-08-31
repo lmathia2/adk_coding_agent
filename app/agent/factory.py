@@ -37,6 +37,7 @@ from harness.state import CheckpointStore, JsonlEventStore, SteeringQueue, rebui
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin, ModelPricing
 from harness.tools.adk_adapter import create_adk_tools, discover_known_secrets
 from harness.tracing import CodingToolArtifactPlugin, HarnessTracePlugin, TraceContentMode
+from harness.verification import ManagedValidationExecutor
 from harness.workspace import GitWorktreeManager
 
 from .builders import build_coding_worker
@@ -252,6 +253,14 @@ class PiCodingHarnessFactory:
             ),
             workspace_manager=workspace_manager,
             coding_worker=worker.agent,
+            validation_executor=lambda task_id: ManagedValidationExecutor(
+                settings.workspace,
+                state_root=settings.state_root,
+                task_id=task_id,
+                sandbox=sandbox,
+                policy=policy,
+                known_secrets=known_secrets,
+            ),
             static_prefix_hash=prefix_hash(settings.static_prefix),
             static_prefix_tokens=len(settings.static_prefix) // 4,
             repository_map_tokens=config.context.repository_map_tokens,

@@ -234,6 +234,52 @@ def test_default_pi_factory_builds_from_composition_without_credentials(
     assert not environment_state.exists()
 
 
+def test_verification_shares_yaml_sandbox_and_task_scoped_approvals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent import factory
+    from harness.sandbox import DockerSandbox
+    from harness.verification import ValidationCommand
+
+    captured: dict[str, Any] = {}
+    original_tools = factory.create_adk_tools
+    original_root = factory.build_root_agent
+
+    def tools(workspace, **kwargs):
+        captured["sandbox"] = kwargs["sandbox"]
+        captured["policy"] = kwargs["policy"]
+        return original_tools(workspace, **kwargs)
+
+    def root(deps):
+        captured["deps"] = deps
+        return original_root(deps)
+
+    monkeypatch.setattr(factory, "create_adk_tools", tools)
+    monkeypatch.setattr(factory, "build_root_agent", root)
+    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "wrong-state"))
+    monkeypatch.setenv("ADK_CODING_ALLOW_NETWORK", "true")
+    monkeypatch.setenv("ADK_CODING_SANDBOX", "local")
+    payload = load_harness_composition().model_dump(mode="json")
+    payload["harness"]["config"]["sandbox"] = {"kind": "docker", "image": "test:local"}
+    state = tmp_path / "state"
+    build_harness(parse_harness_composition(payload), RuntimeBindings(
+        workspace=tmp_path, state_root=state,
+    ))
+    first = captured["deps"].validation_executor("task-one")
+    second = captured["deps"].validation_executor("task-two")
+    assert first.sandbox is second.sandbox is captured["sandbox"]
+    assert isinstance(first.sandbox, DockerSandbox)
+    assert not first.policy.allow_network
+    first.policy.approved_fingerprints.add("task-one-only")
+    assert not second.policy.approved_fingerprints
+    assert not captured["policy"].approved_fingerprints
+    result = second(ValidationCommand(category="custom", command="curl https://example.com", source="task"))
+    assert result.status == "blocked"
+    assert second.approvals.list(task_id="task-two")[0].request_id == result.approval_request_id
+    assert (state / "approvals.db").is_file()
+    assert not (tmp_path / "wrong-state").exists()
+
+
 def test_pi_factory_executes_file_prompt_and_agent_model_bindings(
     tmp_path: Path,
 ) -> None:

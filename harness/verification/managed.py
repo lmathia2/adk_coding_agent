@@ -4,67 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import tempfile
+from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from harness.approvals import ApprovalStore
 from harness.safety import ApprovalAction, ApprovalPolicy, CommandRisk, SecretRedactor
-from harness.sandbox import CommandSandbox, SandboxRequest, create_command_sandbox
+from harness.sandbox import CommandSandbox, SandboxRequest
 from harness.telemetry import MetricsStore, ToolUsageSample
 
 from .contracts import CommandResult, ValidationCommand
-
-
-def _truthy(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _state_root(root: Path) -> Path:
-    configured = os.getenv("ADK_CODING_STATE_DIR")
-    if configured:
-        state = Path(configured).expanduser().resolve()
-    else:
-        digest = hashlib.sha256(root.resolve().as_posix().encode()).hexdigest()[:16]
-        state = Path.home() / ".cache" / "adk-coding-agent" / digest
-    state.mkdir(parents=True, exist_ok=True)
-    return state
-
-
-def _task_id(root: Path) -> str:
-    configured = os.getenv("ADK_CODING_TASK_ID")
-    if configured:
-        return configured
-    return hashlib.sha256(root.resolve().as_posix().encode()).hexdigest()[:24]
-
-
-def _known_secrets() -> list[str]:
-    names = {
-        name.strip()
-        for name in os.getenv("ADK_CODING_REDACT_ENV_VARS", "").split(",")
-        if name.strip()
-    }
-    for name in os.environ:
-        upper = name.upper()
-        if any(
-            marker in upper
-            for marker in (
-                "API_KEY",
-                "ACCESS_TOKEN",
-                "AUTH_TOKEN",
-                "CLIENT_SECRET",
-                "PASSWORD",
-            )
-        ):
-            names.add(name)
-    return [
-        value
-        for name in sorted(names)
-        if (value := os.getenv(name)) and len(value) >= 4
-    ]
 
 
 def _fingerprint(validation: ValidationCommand) -> str:
@@ -80,19 +29,6 @@ def _fingerprint(validation: ValidationCommand) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def _sandbox_environment() -> dict[str, str]:
-    environment = {"UV_OFFLINE": "1"}
-    configured_cache = os.getenv("ADK_CODING_UV_CACHE_DIR")
-    backend = os.getenv("ADK_CODING_SANDBOX", "local").strip().lower()
-    if configured_cache:
-        environment["UV_CACHE_DIR"] = configured_cache
-    elif backend == "local":
-        environment["UV_CACHE_DIR"] = str(
-            Path(tempfile.gettempdir()) / "adk-coding-agent-uv-cache"
-        )
-    return environment
-
-
 class ManagedValidationExecutor:
     """Run completion checks under approval, sandbox, redaction, and telemetry."""
 
@@ -100,38 +36,27 @@ class ManagedValidationExecutor:
         self,
         root: Path,
         *,
-        sandbox: CommandSandbox | None = None,
+        state_root: Path,
+        task_id: str,
+        sandbox: CommandSandbox,
+        policy: ApprovalPolicy | None = None,
+        known_secrets: Sequence[str] = (),
     ) -> None:
         self.root = root.resolve()
-        state = _state_root(self.root)
-        self.task_id = _task_id(self.root)
-        self.redactor = SecretRedactor(known_secrets=_known_secrets())
-        self.approvals = ApprovalStore(state / "approvals.db")
-        self.metrics = MetricsStore(state / "metrics.db")
-        self.sandbox = sandbox or create_command_sandbox(self.root, state)
-        approved = {
-            item.strip()
-            for item in os.getenv(
-                "ADK_CODING_APPROVED_COMMAND_FINGERPRINTS", ""
-            ).split(",")
-            if item.strip()
-        }
-        self.policy = ApprovalPolicy(
-            allow_dependency_install=_truthy(
-                "ADK_CODING_ALLOW_DEPENDENCY_INSTALL"
-            ),
-            allow_network=_truthy("ADK_CODING_ALLOW_NETWORK"),
-            allow_git_history_mutation=_truthy("ADK_CODING_ALLOW_GIT_MUTATION"),
-            allow_unknown=_truthy("ADK_CODING_ALLOW_UNKNOWN_COMMANDS"),
-            approved_fingerprints=approved,
-        )
+        self.task_id = task_id
+        self.redactor = SecretRedactor(known_secrets=known_secrets)
+        self.approvals = ApprovalStore(state_root / "approvals.db")
+        self.metrics = MetricsStore(state_root / "metrics.db")
+        self.sandbox = sandbox
+        # Approval fingerprints must never leak from one task into another.
+        self.policy = replace(policy or ApprovalPolicy(), approved_fingerprints=set())
 
     def _record(self, validation: ValidationCommand, result: CommandResult) -> None:
         payload = result.model_dump(mode="json")
         self.metrics.record_tool_usage(
             ToolUsageSample(
                 task_id=self.task_id,
-                invocation_id=os.getenv("ADK_CODING_INVOCATION_ID", "verification"),
+                invocation_id="verification",
                 tool_name=f"verify:{validation.category}",
                 status=result.status,
                 arguments_hash=_fingerprint(validation),
@@ -222,7 +147,7 @@ class ManagedValidationExecutor:
             SandboxRequest(
                 command=validation.command,
                 timeout_seconds=validation.timeout_seconds,
-                environment=_sandbox_environment(),
+                environment={"UV_OFFLINE": "1", "UV_NO_SYNC": "1"},
             )
         )
         result = CommandResult(
@@ -242,10 +167,3 @@ class ManagedValidationExecutor:
         )
         self._record(validation, result)
         return result
-
-
-def managed_executor_from_env(root: Path) -> ManagedValidationExecutor:
-    return ManagedValidationExecutor(root)
-
-
-__all__ = ["ManagedValidationExecutor", "managed_executor_from_env"]

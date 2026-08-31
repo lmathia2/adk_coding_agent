@@ -6,7 +6,7 @@ import hashlib
 import json
 import subprocess
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -46,6 +46,7 @@ from harness.state import (
 )
 from harness.telemetry import MetricsStore, TaskOutcomeSample
 from harness.verification import (
+    ManagedValidationExecutor,
     ValidationCommand,
     discover_validation_plan,
     run_validation_plan,
@@ -66,6 +67,7 @@ class PiWorkflowDependencies:
     repository_index: StructuralIndex
     workspace_manager: GitWorktreeManager | None
     coding_worker: BaseAgent
+    validation_executor: Callable[[str], ManagedValidationExecutor]
     static_prefix_hash: str
     static_prefix_tokens: int
     repository_map_tokens: int
@@ -472,6 +474,7 @@ async def _verify_task(
         acceptance_criteria=ledger.acceptance_criteria,
         criterion_evidence=evidence_map,
         required_strength=request.verification_level,
+        executor=deps.validation_executor(ledger.task_id),
     )
     return {
         "report": report.model_dump(mode="json"),

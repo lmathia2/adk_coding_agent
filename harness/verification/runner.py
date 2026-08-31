@@ -3,12 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
-import subprocess
-import sys
-import tempfile
-import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal, Protocol
@@ -20,75 +15,12 @@ from harness.models.verification import (
 )
 
 from .contracts import VerificationStrength
-from .managed import managed_executor_from_env
 from .models import CommandResult, ValidationCommand, ValidationPlan
 from .scope import check_scope
 
 
 class CommandExecutor(Protocol):
-    def __call__(self, command: ValidationCommand) -> CommandResult: ...
-
-
-def local_executor(root: Path, timeout_seconds: int = 600) -> CommandExecutor:
-    root = root.resolve()
-
-    def execute(command: ValidationCommand) -> CommandResult:
-        started = time.monotonic()
-        environment = os.environ.copy()
-        environment.setdefault("UV_OFFLINE", "1")
-        environment.setdefault("UV_NO_SYNC", "1")
-        environment.setdefault(
-            "UV_CACHE_DIR",
-            str(Path(tempfile.gettempdir()) / "adk-coding-agent-uv-cache"),
-        )
-        executable_directory = str(Path(sys.executable).parent)
-        environment["PATH"] = (
-            executable_directory + os.pathsep + environment.get("PATH", "")
-        )
-        try:
-            completed = subprocess.run(
-                command.command,
-                cwd=root,
-                shell=True,
-                executable="/bin/bash",
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                env=environment,
-            )
-            return CommandResult(
-                category=command.category,
-                command=command.command,
-                source=command.source,
-                required=command.required,
-                strength=command.effective_strength,
-                status="ok" if completed.returncode == 0 else "error",
-                exit_code=completed.returncode,
-                stdout=completed.stdout[-16_000:],
-                stderr=completed.stderr[-16_000:],
-                duration_ms=int((time.monotonic() - started) * 1000),
-            )
-        except subprocess.TimeoutExpired as exc:
-            stdout = (
-                exc.stdout.decode(errors="replace")
-                if isinstance(exc.stdout, bytes)
-                else (exc.stdout or "")
-            )
-            return CommandResult(
-                category=command.category,
-                command=command.command,
-                source=command.source,
-                required=command.required,
-                strength=command.effective_strength,
-                status="timeout",
-                exit_code=124,
-                stdout=stdout[-16_000:],
-                stderr="validation command timed out",
-                duration_ms=int((time.monotonic() - started) * 1000),
-            )
-
-    return execute
+    def __call__(self, command: ValidationCommand, /) -> CommandResult: ...
 
 
 def _test_counts(results: list[CommandResult]) -> tuple[int, int]:
@@ -241,14 +173,13 @@ def run_validation_plan(
     *,
     acceptance_criteria: list[str],
     criterion_evidence: Mapping[str, list[str]] | None = None,
-    executor: CommandExecutor | None = None,
+    executor: CommandExecutor,
     stop_on_failure: bool = True,
     required_strength: VerificationStrength | Literal["auto"] = "auto",
 ) -> tuple[VerificationReport, list[CommandResult]]:
-    execute = executor or managed_executor_from_env(root)
     results: list[CommandResult] = []
     for command in plan.commands:
-        raw_result = execute(command)
+        raw_result = executor(command)
         result = raw_result.model_copy(
             update={
                 "required": command.required,

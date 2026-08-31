@@ -6,6 +6,7 @@ from harness.repo.discovery import BuildCommand, RepositoryManifest
 from harness.sandbox import SandboxRequest, SandboxResult
 from harness.verification import (
     CommandResult,
+    ManagedValidationExecutor,
     ValidationCommand,
     ValidationPlan,
     check_scope,
@@ -109,15 +110,15 @@ def test_failed_command_stops_ladder_and_recommends_fix(tmp_path: Path) -> None:
     assert report.recommended_next_action
 
 
-def test_default_verifier_uses_configured_managed_sandbox(
+def test_verifier_uses_explicit_managed_sandbox(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     sandbox = _RecordingSandbox(tmp_path)
     monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setattr(
-        "harness.verification.managed.create_command_sandbox",
-        lambda root, state: sandbox,
+    executor = ManagedValidationExecutor(
+        tmp_path, state_root=tmp_path / "configured", task_id="test",
+        sandbox=sandbox,
     )
     plan = discover_validation_plan(
         RepositoryManifest(root=tmp_path),
@@ -127,15 +128,18 @@ def test_default_verifier_uses_configured_managed_sandbox(
     report, results = run_validation_plan(
         tmp_path,
         plan,
+        executor=executor,
         acceptance_criteria=["Verification is managed"],
         criterion_evidence={"Verification is managed": ["git diff --check"]},
     )
 
+    assert not (tmp_path / "state").exists()
     assert report.passed
     assert [result.status for result in results] == ["ok"]
     assert len(sandbox.requests) == 1
     assert sandbox.requests[0].command == "git diff --check"
     assert sandbox.requests[0].environment["UV_OFFLINE"] == "1"
+    assert sandbox.requests[0].environment["UV_NO_SYNC"] == "1"
 
 
 def test_executable_change_cannot_pass_with_syntax_and_diff_only(tmp_path: Path) -> None:

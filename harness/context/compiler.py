@@ -17,7 +17,9 @@ def truncate_to_tokens(text: str, token_limit: int) -> tuple[str, bool]:
         return text, False
 
     marker = "\n... [section truncated by context compiler] ...\n"
-    available = max(0, character_limit - len(marker))
+    if character_limit <= len(marker):
+        return text[:character_limit], True
+    available = character_limit - len(marker)
     head = available * 2 // 3
     tail = available - head
     return f"{text[:head]}{marker}{text[-tail:] if tail else ''}", True

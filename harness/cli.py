@@ -154,19 +154,6 @@ def _parser() -> argparse.ArgumentParser:
     trace_export.add_argument("--state-root", type=Path, required=True)
     trace_export.add_argument("--task-id", required=True)
 
-    learned = subparsers.add_parser(
-        "learned-skills",
-        help="List learned skill lifecycle records",
-    )
-    learned.add_argument("--state-root", type=Path, required=True)
-
-    disable = subparsers.add_parser(
-        "disable-skill",
-        help="Move a learned skill to the disabled lifecycle",
-    )
-    disable.add_argument("--state-root", type=Path, required=True)
-    disable.add_argument("name")
-
     def add_steering_target(command: argparse.ArgumentParser) -> None:
         target = command.add_mutually_exclusive_group(required=True)
         target.add_argument("--repository", type=Path)

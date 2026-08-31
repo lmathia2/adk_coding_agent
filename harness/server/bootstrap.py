@@ -163,7 +163,7 @@ def build_server_assembly(
     sandbox_kind = str(getattr(sandbox, "kind", "unknown"))
     if production and sandbox_kind == "local":
         raise ValueError(
-            "production mode requires docker, kubernetes, or remote sandbox; "
+            "production mode requires the docker sandbox; "
             "the local adapter is not an OS security boundary"
         )
     resolved_state_root.mkdir(parents=True, exist_ok=True, mode=0o700)

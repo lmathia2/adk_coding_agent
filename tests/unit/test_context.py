@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from harness.context import (
     CompactionPolicy,
     build_compaction_snapshot,
@@ -38,6 +40,14 @@ def test_truncation_preserves_head_and_tail() -> None:
     assert truncated is True
     assert bounded.startswith("HEAD")
     assert bounded.endswith("TAIL")
+
+
+@pytest.mark.parametrize("limit", [0, 1, 4, 12, 50, 500])
+def test_truncation_respects_tiny_and_full_budgets(limit: int) -> None:
+    text = "x" * 1_000
+    bounded, truncated = truncate_to_tokens(text, limit)
+    assert len(bounded) <= limit * 4
+    assert truncated == (len(text) > limit * 4)
 
 
 def test_compaction_snapshot_preserves_goal_files_and_validation() -> None:

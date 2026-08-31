@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 from harness.models.checkpoint import Checkpoint
 from harness.models.ledger import TaskLedger
 from harness.repo import build_repository_manifest
+from harness.sandbox import LocalSandbox
 from harness.state import (
     CheckpointStore,
     EventKind,
@@ -16,8 +19,8 @@ from harness.state import (
 )
 from harness.tools.adk_adapter import create_adk_tools
 from harness.verification import (
+    ManagedValidationExecutor,
     discover_validation_plan,
-    local_executor,
     run_validation_plan,
 )
 from harness.workspace import GitWorktreeManager
@@ -119,13 +122,19 @@ def test_interrupted_task_replays_state_and_mutation_without_duplication(
 
     manifest = build_repository_manifest(restored_workspace.path)
     plan = discover_validation_plan(manifest, ["calculator.py"])
-    report, _ = run_validation_plan(
+    report, results = run_validation_plan(
         restored_workspace.path,
         plan,
         acceptance_criteria=ledger.acceptance_criteria,
         criterion_evidence={
             "multiply(6, 7) returns 42": ["test_calculator.py::test_multiply"]
         },
-        executor=local_executor(restored_workspace.path),
+        executor=ManagedValidationExecutor(
+            restored_workspace.path, state_root=state, task_id=ledger.task_id,
+            sandbox=LocalSandbox(
+                restored_workspace.path, state / "artifacts",
+                environment={"PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]},
+            ),
+        ),
     )
-    assert report.passed
+    assert report.passed, "\n".join(f"{result.command}: {result.stderr}" for result in results)

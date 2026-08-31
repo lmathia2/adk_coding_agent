@@ -1,7 +1,7 @@
 """Resource-bounded local command runner for development and CI.
 
 This runner is not an OS security boundary. Production deployments should use the
-Docker or remote sandbox adapter; approval policy remains active for every backend.
+Docker sandbox adapter; approval policy remains active for every backend.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def _limit_resources(
         except (OSError, ValueError):
             # Some development hosts disallow selected limits in a pre-exec child.
             # The local adapter is not a security boundary; managed deployments use
-            # Docker or a remote sandbox for enforceable resource isolation.
+            # Docker for enforceable resource isolation.
             return
 
     set_limit(resource.RLIMIT_CORE, 0)
