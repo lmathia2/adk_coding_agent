@@ -24,10 +24,12 @@ from harness.server.protocol import AgUiEventType
 class ScriptedModel(BaseLlm):
     _responses: list[list[types.Part]] = PrivateAttr(default_factory=list)
     _calls: int = PrivateAttr(default=0)
+    _requests: list[str] = PrivateAttr(default_factory=list)
 
     async def generate_content_async(self, llm_request, stream=False) -> AsyncGenerator[LlmResponse, None]:
         assert self._responses, "unexpected extra model call"
         self._calls += 1
+        self._requests.append(llm_request.model_dump_json())
         yield LlmResponse(content=types.Content(role="model", parts=self._responses.pop(0)))
 
 
@@ -115,3 +117,55 @@ async def test_answer_after_write_is_withheld_and_forces_verification(tmp_path, 
     assert calls[0]["request"]["acceptance_criteria"]
     assert all(e.delta != "Unverified completion claim" for e in events)
     assert next(e.value for e in events if e.name == "coding.workflow.output")["status"] == "blocked"
+
+
+@pytest.mark.asyncio
+async def test_two_turns_keep_adk_history_but_reset_task_budgets_and_skills(tmp_path) -> None:
+    from harness.persistence import build_service_bundle, settings_from_composition
+    from harness.server.registry import SqliteRunEventStore
+    from harness.server.runtime import AdkRunExecutionFactory
+
+    model = ScriptedModel(model="fixture")
+    model._responses = [reply("answer", "First reply"), reply("answer", "Second reply")]
+    registry = default_harness_registry(model_providers=ClosedAdkModelProviderRegistry((Provider(model),)))
+    composition = load_harness_composition(config_models=registry.config_models())
+    config = composition.harness.config
+    config = config.model_copy(update={"models": {
+        name: value.model_copy(update={"provider": "scripted"})
+        for name, value in config.models.items()
+    }})
+    composition = composition.model_copy(update={"harness": composition.harness.model_copy(update={"config": config})})
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    services = build_service_bundle(settings_from_composition(composition.persistence, state_root=tmp_path / "state"))
+    factory = AdkRunExecutionFactory(composition=composition,
+        bindings=RuntimeBindings(workspace=workspace, state_root=tmp_path / "state"),
+        registry=registry, services=services)
+    store = SqliteRunEventStore(tmp_path / "runs.db")
+    for index, prompt in enumerate(["Remember conversation-marker-731", "What did I ask before?"]):
+        record, _ = store.create_run(request_id=str(index), idempotency_key=str(index),
+            thread_id="conversation", user_id="user", input=prompt)
+        store.update_status(record.run_id, "running")
+        execution = await factory.create(record)
+        try:
+            batches = [batch async for batch in execution.events()]
+        finally:
+            await execution.aclose()
+        public = [event for batch in batches for event in batch.events]
+        assert next(e.value for e in public if e.name == "coding.workflow.output")["status"] == "answered"
+        store.update_status(record.run_id, "completed")
+        session = await services.session_service.get_session(app_name=composition.app.name,
+            user_id="user", session_id="conversation")
+        assert session.state["harness_task_id"] == record.run_id
+        if index == 0:
+            # Poison only stale per-task state. The next turn must not inherit it.
+            from google.adk.events import Event, EventActions
+            await services.session_service.append_event(session, Event(author="fixture", actions=EventActions(state_delta={
+                "estimated_task_input_tokens": 999_999_999,
+                "verification_required_task": record.run_id,
+                "skill_selection_initialized": True,
+                "skill_context_text": "STALE_SKILL_SHOULD_NOT_LEAK",
+            })))
+    assert model._calls == 2
+    assert "conversation-marker-731" in model._requests[1]
+    assert "STALE_SKILL_SHOULD_NOT_LEAK" not in model._requests[1]

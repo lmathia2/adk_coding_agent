@@ -268,6 +268,7 @@ class PiCodingHarnessFactory:
             max_task_input_tokens=config.context.max_task_input_tokens,
             work_packet_section_tokens={
                 "TASK": config.context.ledger_tokens,
+                "CONVERSATION": config.context.conversation_tokens,
                 "SELECTED SKILLS": max(
                     config.context.skill_context_bytes // 4,
                     0,

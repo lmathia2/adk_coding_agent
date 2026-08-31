@@ -59,6 +59,7 @@ harness:
       manifest_tokens: 800
       compaction_tokens: 3000
       recent_event_tokens: 3500
+      conversation_tokens: 2000
       steering_tokens: 1000
 
     safety:

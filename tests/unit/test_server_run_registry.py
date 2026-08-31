@@ -58,6 +58,29 @@ def _create_run(
     return record
 
 
+def test_conversation_reuses_session_but_refuses_overlapping_runs(tmp_path: Path) -> None:
+    store = SqliteRunEventStore(tmp_path / "runs.db")
+    first = _create_run(store)
+    with pytest.raises(ValueError, match="active work"):
+        _create_run(store, idempotency_key="second")
+    store.update_status(first.run_id, "running")
+    store.update_status(first.run_id, "completed")
+    second = _create_run(store, idempotency_key="second")
+    assert first.session_id == second.session_id
+    assert first.run_id != second.run_id
+
+
+def test_conversation_cannot_be_rebound_to_another_workspace(tmp_path: Path) -> None:
+    store = SqliteRunEventStore(tmp_path / "runs.db")
+    first, _ = store.create_run(request_id="one", idempotency_key="one", thread_id="thread",
+        user_id="user", input="hello", metadata={"coding.workspace_identity": "workspace-a"})
+    store.update_status(first.run_id, "running")
+    store.update_status(first.run_id, "completed")
+    with pytest.raises(ValueError, match="different workspace"):
+        store.create_run(request_id="two", idempotency_key="two", thread_id="thread",
+            user_id="user", input="hello", metadata={"coding.workspace_identity": "workspace-b"})
+
+
 def test_durable_events_replay_after_store_reopen_from_exclusive_cursor(
     tmp_path: Path,
 ) -> None:

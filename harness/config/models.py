@@ -181,6 +181,7 @@ class ContextConfig(FrozenModel):
     manifest_tokens: int = Field(default=800, ge=100, le=8_000)
     compaction_tokens: int = Field(default=3_000, ge=0, le=64_000)
     recent_event_tokens: int = Field(default=3_500, ge=0, le=64_000)
+    conversation_tokens: int = Field(default=2_000, ge=0, le=16_000)
     steering_tokens: int = Field(default=1_000, ge=0, le=16_000)
 
     @model_validator(mode="after")

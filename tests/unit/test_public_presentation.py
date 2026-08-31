@@ -3,7 +3,8 @@ from __future__ import annotations
 from google.adk.events import Event
 from google.genai import types
 
-from app.agent.presentation import message_event, result_events
+from app.agent.presentation import conversation_history, message_event, result_events
+from harness.context import estimate_tokens
 from harness.server.adk_mapper import AdkAgUiNormalizer
 from harness.server.protocol import AgUiEventType
 
@@ -73,3 +74,17 @@ def test_private_worker_still_exposes_correlated_tools() -> None:
         AgUiEventType.TOOL_CALL_START, AgUiEventType.TOOL_CALL_ARGS,
         AgUiEventType.TOOL_CALL_END,
     ]
+
+
+def test_conversation_history_is_bounded_and_excludes_internal_and_current_messages() -> None:
+    events = [
+        Event(author="user", invocation_id="old", content=types.Content(parts=[types.Part(text="Remember 731")])),
+        Event(author="user", invocation_id="old", isolation_scope="private", content=types.Content(parts=[types.Part(text="PRIVATE_PACKET")])),
+        message_event("Public response").model_copy(update={"invocation_id": "old"}),
+        Event(author="user", invocation_id="current", content=types.Content(parts=[types.Part(text="CURRENT_INPUT")])),
+    ]
+    history = conversation_history(events, invocation_id="current", max_tokens=100)
+    assert "Remember 731" in history and "Public response" in history
+    assert "PRIVATE_PACKET" not in history and "CURRENT_INPUT" not in history
+    for limit in (0, 1, 2, 4, 5, 20):
+        assert estimate_tokens(conversation_history(events, invocation_id="current", max_tokens=limit)) <= limit

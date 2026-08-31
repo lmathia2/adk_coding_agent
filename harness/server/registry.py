@@ -219,6 +219,23 @@ class SqliteRunEventStore:
                     )
                 connection.execute("COMMIT")
                 return existing, False
+            active = connection.execute(
+                "SELECT run_id FROM agent_runs WHERE user_id=? AND session_id=? "
+                "AND status IN ('queued', 'running') LIMIT 1",
+                (user_id, resolved_session_id),
+            ).fetchone()
+            if active is not None:
+                raise ValueError("conversation already has active work; steer it or wait")
+            prior = connection.execute(
+                "SELECT metadata_json FROM agent_runs WHERE user_id=? AND session_id=? "
+                "ORDER BY created_at DESC LIMIT 1",
+                (user_id, resolved_session_id),
+            ).fetchone()
+            if prior is not None:
+                previous = json.loads(prior["metadata_json"])
+                for binding in ("coding.workspace_identity", "coding.harness_implementation"):
+                    if previous.get(binding) != candidate.metadata.get(binding):
+                        raise ValueError("conversation belongs to a different workspace or harness")
             connection.execute(
                 """
                 INSERT INTO agent_runs(

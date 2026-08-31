@@ -56,3 +56,18 @@ is not proof that a shell expression has no side effects.
 The full Python unit/integration suite, Ruff, Pyright and compilation pass, as do
 the four terminal prototype tests. These are deterministic contract checks; fresh
 live-model quality/latency comparisons remain required before migration completion.
+
+## Conversation continuity
+
+Sequential completed turns can reuse one authenticated WebSocket. Admission rejects
+overlapping runs in the same ADK session and prevents changing its workspace/harness
+binding. Task budgets, skill selection and effect markers reset for a new task but
+not a same-task resume. The reset is flushed before child nodes run: pending ADK
+parent-state deltas otherwise mask a child's newly written effect markers.
+
+ADK's workflow isolation does not itself carry prior turns into the coding worker.
+The harness retains that isolation and supplies up to 24 prior user/public-message
+events through the existing bounded context compiler (`context.conversation_tokens`,
+default 2000). It excludes private node inputs, thought content and the current
+invocation. A two-turn real ADK test verifies prior conversation reaches the next
+request without stale budgets/skills; no alternate session store or agent loop is added.

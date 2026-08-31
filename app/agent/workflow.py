@@ -55,7 +55,7 @@ from harness.verification import (
 from harness.workspace import GitWorktreeManager
 
 from .config import HarnessSettings
-from .presentation import message_event, result_events
+from .presentation import conversation_history, message_event, result_events
 from .skills import SkillRuntimeContext, build_skill_context
 
 
@@ -498,12 +498,40 @@ async def _orchestrate_owned(
     request = parse_task_request(node_input)
     session_id = _session_id(ctx)
     settings = deps.settings
+    history = conversation_history(
+        ctx.session.events,
+        invocation_id=ctx.get_invocation_context().invocation_id,
+        max_tokens=deps.work_packet_section_tokens.get("CONVERSATION", 2_000),
+    )
     task_id = settings.task_id_override or task_id_for(request, session_id)
+    if ctx.state.get("harness_task_id") != task_id:
+        # Keep ADK conversation history, not the previous turn's budgets, tool
+        # receipts, skill selection, or control decisions. Same-run resume keeps them.
+        ctx.state.update({
+            "harness_task_id": task_id,
+            "estimated_task_input_tokens": 0,
+            "tool_action_fingerprints": [],
+            "workflow_tool_action_sequence": 0,
+            "verification_required_task": None,
+            "skill_selection_initialized": False,
+            "skill_context_text": "",
+            "selected_skill_names": [],
+            "selected_skill_hashes": [],
+            "steering_packet_message_ids": [],
+        })
+        # Flush the parent's reset before child tools update these keys. Keeping
+        # pending parent deltas would mask/overwrite the child's new safety flags.
+        yield Event()
     manifest = build_repository_manifest(settings.workspace)
 
     events = deps.event_store.read(task_id)
     if events:
         ledger = rebuild_ledger(events)
+        if ledger.mode == "coding" and request.mode == "auto":
+            request = TaskRequest.model_validate({
+                **request.model_dump(mode="python"), "mode": "coding",
+                "acceptance_criteria": ledger.acceptance_criteria,
+            })
     else:
         ledger = create_initial_ledger(
             request,
@@ -642,6 +670,7 @@ async def _orchestrate_owned(
             )
         packet = build_work_packet(
             ledger,
+            conversation=history,
             selected_skills=skill_runtime.text,
             repository_manifest=manifest.to_compact_text(),
             repository_map=repository_map,

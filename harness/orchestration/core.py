@@ -122,6 +122,7 @@ def build_work_packet(
     ledger: TaskLedger,
     *,
     selected_skills: str = "",
+    conversation: str = "",
     repository_manifest: str = "",
     repository_map: str = "",
     compaction_summary: str = "",
@@ -134,6 +135,7 @@ def build_work_packet(
 
     limits = {
         "TASK": 2_000,
+        "CONVERSATION": 2_000,
         "SELECTED SKILLS": 6_000,
         "REPOSITORY MANIFEST": 800,
         "REPOSITORY MAP": 1_200,
@@ -144,6 +146,7 @@ def build_work_packet(
     limits.update(section_token_limits or {})
     sections: list[tuple[str, str]] = [
         ("TASK", json.dumps(ledger.compact_projection(), sort_keys=True, indent=2)),
+        ("CONVERSATION", conversation),
         ("SELECTED SKILLS", selected_skills.strip()),
         ("REPOSITORY MANIFEST", repository_manifest.strip()),
         ("REPOSITORY MAP", repository_map.strip()),

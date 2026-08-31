@@ -211,6 +211,29 @@ def _hello(socket: Any, versions: list[int] | None = None) -> dict[str, Any]:
     return socket.receive_json()
 
 
+def test_completed_turn_can_be_followed_by_another_on_the_same_socket() -> None:
+    coordinator = FakeCoordinator()
+    for key in ("first", "second"):
+        run_id = f"run-{key}"
+        terminal = _envelope(run_id, 2).model_copy(update={"event": AgUiEvent(
+            type=AgUiEventType.RUN_FINISHED, thread_id="conversation", run_id=run_id,
+        )})
+        coordinator.events[run_id] = (_envelope(run_id, 1), terminal)
+    app = create_websocket_app(coordinator, authenticator=_authenticated)
+    with TestClient(app) as client, client.websocket_connect("/ws") as socket:
+        _hello(socket)
+        for key in ("first", "second"):
+            socket.send_json({"type": "task.start", "request_id": key,
+                "idempotency_key": key, "thread_id": "conversation", "input": key})
+            assert socket.receive_json()["type"] == "task.accepted"
+            assert socket.receive_json()["event"]["type"] == "RUN_STARTED"
+            assert socket.receive_json()["event"]["type"] == "RUN_FINISHED"
+            socket.send_json({"type": "events.ack", "run_id": f"run-{key}", "through_sequence": 2})
+    assert len(coordinator.start_calls) == 2
+    assert all(message.thread_id == "conversation" for message, _ in coordinator.start_calls)
+    assert coordinator.cancel_calls == 0
+
+
 def test_start_stream_controls_ack_and_server_derived_identity() -> None:
     coordinator = FakeCoordinator()
     app = create_websocket_app(coordinator, authenticator=_authenticated)

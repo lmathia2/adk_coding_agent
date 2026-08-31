@@ -19,6 +19,7 @@ from harness.agent import ControlReceipt, HarnessDescriptor, PublicModelStatus
 from .protocol import (
     PROTOCOL_VERSION,
     AckMessage,
+    AgUiEventType,
     AttachTaskMessage,
     CancelTaskMessage,
     ControlResultMessage,
@@ -175,6 +176,7 @@ class _AgentWebSocketConnection:
         self.user_id = user_id
         self.settings = settings
         self.run_id: str | None = None
+        self._run_terminal = False
         self._outbound: asyncio.Queue[ServerMessage] = asyncio.Queue(
             maxsize=settings.outbound_queue_capacity
         )
@@ -306,6 +308,7 @@ class _AgentWebSocketConnection:
             await self._enqueue(PongMessage(nonce=message.nonce))
 
     async def _start(self, message: StartTaskMessage) -> None:
+        await self._release_terminal_attachment()
         if self.run_id is not None:
             await self._already_attached_error(message.request_id)
             return
@@ -342,6 +345,7 @@ class _AgentWebSocketConnection:
         self._start_attachment(record.run_id, after_sequence=0)
 
     async def _attach(self, message: AttachTaskMessage) -> None:
+        await self._release_terminal_attachment()
         if self.run_id is not None:
             await self._already_attached_error()
             return
@@ -349,6 +353,7 @@ class _AgentWebSocketConnection:
         self._start_attachment(message.run_id, after_sequence=message.after_sequence)
 
     def _start_attachment(self, run_id: str, *, after_sequence: int) -> None:
+        self._run_terminal = False
         self._attachment = asyncio.create_task(
             self._stream_run(run_id, after_sequence=after_sequence),
             name=f"agent-websocket-stream:{run_id}",
@@ -364,6 +369,10 @@ class _AgentWebSocketConnection:
             ):
                 emitted = True
                 await self._enqueue(envelope)
+                if envelope.event.type in {
+                    AgUiEventType.RUN_FINISHED, AgUiEventType.RUN_ERROR,
+                }:
+                    self._run_terminal = True
         except SubscriberBackpressureError:
             await self._close(1013, "live stream overflow; reconnect and replay")
         except KeyError:
@@ -391,6 +400,17 @@ class _AgentWebSocketConnection:
                     retryable=True,
                 )
             )
+
+    async def _release_terminal_attachment(self) -> None:
+        if not self._run_terminal:
+            return
+        if self._attachment is not None:
+            self._attachment.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._attachment
+            self._attachment = None
+        self.run_id = None
+        self._run_terminal = False
 
     async def _control(
         self,
