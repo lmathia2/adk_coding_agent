@@ -30,6 +30,13 @@ history, and `/approvals` reviews waiting commands. Escape defers an approval di
 Escape from the editor requests cancellation. See the migration design for remaining
 gates; the preview is not yet a claim of full Pi parity.
 
+The default prompt streams eligible conversational Markdown using a typed control
+header. Custom prompts returning the older JSON `message` format still work but
+remain buffered. Code-completion replies appear only after verification. Sensitive
+spans may wait until the reply ends so credentials split across chunks are redacted.
+Public partial replies are replayable from the server run database; cancelling a
+reply does not label it complete. No additional provider call is used for display.
+
 ## Setup and checks
 
 Follow [installation and TUI startup](../README.md). Development setup:

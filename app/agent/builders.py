@@ -17,6 +17,7 @@ from harness.config import ToolSurfaceConfig
 from harness.tools.adk_adapter import AdkCodingTools, create_adk_tools
 
 from .config import HarnessSettings
+from .streaming import PublicReplies
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ def build_coding_worker(
     tools: AdkCodingTools | None = None,
     tool_config: ToolSurfaceConfig | None = None,
     approvals: ApprovalWaiter | None = None,
+    replies: PublicReplies | None = None,
 ) -> CodingWorkerBundle:
     active_tools = tools or create_adk_tools(
         settings.workspace,
@@ -100,6 +102,8 @@ def build_coding_worker(
     ) -> dict[str, Any]:
         """Read a bounded range from a workspace file or recoverable artifact URI."""
 
+        if replies is not None:
+            replies.guard_tool(tool_context)
         del tool_context
         return await asyncio.to_thread(
             _invoke_tool,
@@ -115,6 +119,8 @@ def build_coding_worker(
         """Run a bounded command or an in-process indexed search operation."""
 
         task_scope, _ = _runtime_identity(tool_context)
+        if replies is not None:
+            replies.guard_tool(tool_context)
         # Even apparently read-only shell can contain redirections/substitutions.
         # The direct-answer path conservatively permits only the read primitive.
         _require_verification(tool_context)
@@ -143,6 +149,8 @@ def build_coding_worker(
         """Atomically replace one exact, unique preimage in a workspace file."""
 
         task_scope, invocation_id = _runtime_identity(tool_context)
+        if replies is not None:
+            replies.guard_tool(tool_context)
         _require_verification(tool_context)
         return await asyncio.to_thread(
             _invoke_tool,
@@ -167,6 +175,8 @@ def build_coding_worker(
         """Atomically write a complete file with optimistic concurrency."""
 
         task_scope, invocation_id = _runtime_identity(tool_context)
+        if replies is not None:
+            replies.guard_tool(tool_context)
         _require_verification(tool_context)
         return await asyncio.to_thread(
             _invoke_tool,
@@ -188,6 +198,8 @@ def build_coding_worker(
         static_instruction=settings.static_instruction,
         instruction="",
         tools=[read, bash, edit, write],
+        before_model_callback=replies.before_model if replies is not None else None,
+        after_model_callback=replies.after_model if replies is not None else None,
     )
     return CodingWorkerBundle(agent=agent, read=read, bash=bash, edit=edit, write=write)
 

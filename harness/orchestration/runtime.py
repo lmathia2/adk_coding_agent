@@ -11,6 +11,8 @@ from typing import Any
 from harness.models.agent_step import AgentStep
 from harness.models.task import TaskRequest
 
+from .reply import parse_reply
+
 
 def parse_task_request(value: str | dict[str, Any] | TaskRequest) -> TaskRequest:
     if isinstance(value, TaskRequest):
@@ -53,6 +55,11 @@ def parse_agent_step(value: str | dict[str, Any] | AgentStep) -> AgentStep:
     if isinstance(value, dict):
         return AgentStep.model_validate(value)
 
+    if not isinstance(value, str):
+        raise ValueError("model response did not contain a valid AgentStep")
+    reply = parse_reply(value)
+    if reply is not None:
+        return reply
     text = value.strip()
     decoder = json.JSONDecoder()
     last_error: ValueError | None = None

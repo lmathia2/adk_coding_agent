@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from google.adk import Runner
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.models import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.adk.sessions import InMemorySessionService
@@ -52,14 +53,14 @@ def reply(status: str, message: str) -> list[types.Part]:
     return [types.Part(text=json.dumps({"status": status, "message": message}))]
 
 
-async def run_fixture(tmp_path: Path, model: ScriptedModel, prompt: str, *, monkeypatch=None):
+async def run_fixture(tmp_path: Path, model: ScriptedModel, prompt: str, *, monkeypatch=None, observe=None, max_iterations=1):
     registry = default_harness_registry(model_providers=ClosedAdkModelProviderRegistry((Provider(model),)))
     composition = load_harness_composition(config_models=registry.config_models())
     config = composition.harness.config
     config = config.model_copy(update={
         "models": {name: value.model_copy(update={"provider": "scripted"})
                    for name, value in config.models.items()},
-        "workflow": config.workflow.model_copy(update={"max_iterations": 1}),
+        "workflow": config.workflow.model_copy(update={"max_iterations": max_iterations}),
     })
     composition = composition.model_copy(update={"harness": composition.harness.model_copy(update={"config": config})})
     workspace = tmp_path / "workspace"
@@ -81,9 +82,137 @@ async def run_fixture(tmp_path: Path, model: ScriptedModel, prompt: str, *, monk
                               explicit_public_messages=assembly.explicit_public_messages)
     events = []
     async for event in runner.run_async(user_id="user", session_id="conversation",
-            new_message=types.Content(role="user", parts=[types.Part(text=prompt)])):
-        events.extend(mapper.push(event))
+            new_message=types.Content(role="user", parts=[types.Part(text=prompt)]),
+            run_config=RunConfig(streaming_mode=StreamingMode.SSE)):
+        public = mapper.push(event)
+        events.extend(public)
+        if observe is not None:
+            observe(public)
     return events, workspace, verification_calls
+
+
+class StreamingModel(ScriptedModel):
+    _chunks: list[str] = PrivateAttr(default_factory=list)
+    _released: asyncio.Event | None = PrivateAttr(default=None)
+    _finished: bool = PrivateAttr(default=False)
+    _final_parts: list[types.Part] = PrivateAttr(default_factory=list)
+
+    async def generate_content_async(self, llm_request, stream=False):
+        assert stream
+        if self._responses:
+            async for item in super().generate_content_async(llm_request, stream):
+                yield item
+            return
+        self._calls += 1
+        for chunk in self._chunks:
+            yield LlmResponse(partial=True, content=types.Content(role="model", parts=[types.Part(text=chunk)]))
+        if self._released is not None:
+            await self._released.wait()
+        self._finished = True
+        yield LlmResponse(partial=False, content=types.Content(role="model", parts=self._final_parts or [types.Part(text="".join(self._chunks))]))
+
+
+@pytest.mark.asyncio
+async def test_real_adk_publishes_markdown_before_model_finishes_without_json_or_duplicate_reply(tmp_path) -> None:
+    model = StreamingModel(model="fixture")
+    model._chunks = ['{"status":', '"answer"}', '\nHello ', '**streaming** reader.\n']
+    model._released = asyncio.Event()
+    def observe(events):
+        if any(event.type == AgUiEventType.TEXT_MESSAGE_CONTENT for event in events) and not model._released.is_set():
+            assert not model._finished
+            model._released.set()
+    events, _, _ = await asyncio.wait_for(run_fixture(tmp_path, model, "hello", observe=observe), timeout=10)
+    assert model._calls == 1
+    assert "".join(e.delta for e in events if e.type == AgUiEventType.TEXT_MESSAGE_CONTENT) == "Hello **streaming** reader.\n"
+    assert sum(e.type == AgUiEventType.TEXT_MESSAGE_START for e in events) == 1
+    assert sum(e.type == AgUiEventType.TEXT_MESSAGE_END for e in events) == 1
+    assert next(e.value for e in events if e.name == "coding.workflow.output")["verified"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["write", "criteria", "coding", "done"])
+async def test_streamed_candidate_with_coding_obligations_stays_private(tmp_path, monkeypatch, mode) -> None:
+    model = StreamingModel(model="fixture")
+    status = "done" if mode == "done" else "answer"
+    model._chunks = [json.dumps({"status": status}), '\nUNVERIFIED_COMPLETION_CLAIM\n']
+    if mode == "write":
+        model._responses = [[types.Part(function_call=types.FunctionCall(id="write1", name="write", args={
+            "path": "hello.py", "content": "print('hello')\n",
+        }))]]
+    prompt = json.dumps({"goal": "Implement the requested feature", **(
+        {"acceptance_criteria": ["Behavior is tested"]} if mode == "criteria"
+        else {"mode": "coding"} if mode == "coding" else {"mode": "auto"}
+    )})
+    events, _, calls = await run_fixture(tmp_path, model, prompt, monkeypatch=monkeypatch)
+    assert calls
+    assert "UNVERIFIED_COMPLETION_CLAIM" not in "".join(e.delta or "" for e in events if e.type == AgUiEventType.TEXT_MESSAGE_CONTENT)
+
+
+@pytest.mark.asyncio
+async def test_streamed_reply_cannot_be_followed_by_a_real_tool_mutation(tmp_path) -> None:
+    model = StreamingModel(model="fixture")
+    model._chunks = ['{"status":"answer"}\nPublic explanation.\n']
+    model._final_parts = [types.Part(function_call=types.FunctionCall(id="bad", name="write", args={
+        "path": "must-not-exist.py", "content": "bad",
+    }))]
+    with pytest.raises(ValueError, match="tool call"):
+        await run_fixture(tmp_path, model, "hello")
+    assert not (tmp_path / "workspace" / "must-not-exist.py").exists()
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_public_partial_closes_adk_without_finishing_the_model(tmp_path, caplog) -> None:
+    model = StreamingModel(model="fixture")
+    model._chunks = ['{"status":"answer"}\nPartial reply ']
+    model._released = asyncio.Event()
+    visible = asyncio.Event()
+    def observe(events):
+        if any(event.type == AgUiEventType.TEXT_MESSAGE_CONTENT for event in events):
+            visible.set()
+    task = asyncio.create_task(run_fixture(tmp_path, model, "hello", observe=observe))
+    try:
+        await asyncio.wait_for(visible.wait(), timeout=10)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert not model._finished
+    assert "Failed to detach context" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_steering_during_public_stream_runs_next_batch_without_duplicating_first_reply(tmp_path) -> None:
+    from harness.state import SteeringQueue
+
+    model = StreamingModel(model="fixture")
+    model._chunks = ['{"status":"answer"}\nFirst streamed reply.\n']
+    steered = False
+    def observe(events):
+        nonlocal steered
+        if not steered and any(event.type == AgUiEventType.TEXT_MESSAGE_CONTENT for event in events):
+            steered = True
+            SteeringQueue(tmp_path / "state/state.db").enqueue("fixture-turn", "steering-marker-742")
+            model._responses = [reply("answer", "Reply after steering")]
+    events, _, _ = await run_fixture(tmp_path, model, "hello", observe=observe, max_iterations=2)
+    assert model._calls == 2
+    assert "steering-marker-742" in model._requests[-1]
+    assert "".join(e.delta for e in events if e.type == AgUiEventType.TEXT_MESSAGE_CONTENT) == "First streamed reply.\nReply after steering"
+    assert sum(e.type == AgUiEventType.TEXT_MESSAGE_START for e in events) == 2
+    assert next(e.value for e in events if e.name == "coding.workflow.output")["status"] == "answered"
+
+
+@pytest.mark.asyncio
+async def test_external_workspace_change_cannot_finish_a_streamed_answer(tmp_path, monkeypatch) -> None:
+    model = StreamingModel(model="fixture")
+    model._chunks = ['{"status":"answer"}\nPublic explanation.\n']
+    fingerprint = "initial"
+    monkeypatch.setattr("app.agent.workflow._workspace_fingerprint", lambda *_: fingerprint)
+    def observe(events):
+        nonlocal fingerprint
+        if any(event.type == AgUiEventType.TEXT_MESSAGE_CONTENT for event in events):
+            fingerprint = "changed externally"
+    with pytest.raises(ValueError, match="changed during a streamed reply"):
+        await run_fixture(tmp_path, model, "hello", observe=observe)
 
 
 @pytest.mark.asyncio
@@ -177,7 +306,7 @@ async def test_two_turns_keep_adk_history_but_reset_task_budgets_and_skills(tmp_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fixture", ["adk-client", "model-client", "approval-client"])
+@pytest.mark.parametrize("fixture", ["adk-client", "model-client", "approval-client", "stream-client"])
 async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture: str, monkeypatch) -> None:
     import asyncio
     import os
@@ -208,6 +337,10 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
     model._responses = [reply("answer", "First reply"), [types.Part(function_call=types.FunctionCall(
         id="read1", name="read", args={"path": "README.md"},
     ))], reply("answer", "Repository explanation"), reply("answer", "Final queued reply")]
+    if fixture == "stream-client":
+        model = StreamingModel(model="fixture")
+        model._chunks = ['{"status":"answer"}\nHello ', '**streaming** reader.\n']
+        model._released = asyncio.Event()
     models = {"alpha": model}
     commands: list[str] = []
     if fixture == "approval-client":
@@ -283,9 +416,19 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
                         break
                     await asyncio.sleep(0.01)
             model._gate.set()
+        if fixture == "stream-client":
+            assert isinstance(model, StreamingModel) and model._released is not None
+            assert process.stdout is not None
+            phase = await asyncio.wait_for(process.stdout.readline(), timeout=15)
+            assert json.loads(phase) == {"phase": "partial-resumed"}
+            assert not model._finished
+            model._released.set()
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=40)
         assert process.returncode == 0, stderr.decode()
-        if fixture == "model-client":
+        if fixture == "stream-client":
+            assert json.loads(stdout) == {"streamed": True, "resumed": True, "entries": 2}
+            assert model._calls == 1
+        elif fixture == "model-client":
             assert json.loads(stdout) == {"turns": 3, "active_model_preserved": True, "default": "gamma", "resumed": True}
             assert [(name, model._calls) for name, model in models.items()] == [("alpha", 1), ("beta", 1), ("gamma", 1)]
             assert load_model_default(state_root).name == "gamma"

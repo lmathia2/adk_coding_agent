@@ -35,7 +35,7 @@ from harness.config import (
 )
 from harness.context import prefix_hash
 from harness.repo import StructuralIndex, discover_instruction_files
-from harness.safety import ApprovalPolicy
+from harness.safety import ApprovalPolicy, SecretRedactor
 from harness.sandbox import create_configured_command_sandbox
 from harness.state import CheckpointStore, JsonlEventStore, SteeringQueue, rebuild_ledger
 from harness.telemetry.adk_plugin import HarnessMetricsPlugin, ModelPricing
@@ -47,6 +47,7 @@ from harness.workspace import GitWorktreeManager
 from .builders import build_coding_worker
 from .config import settings_from_composition
 from .skills import build_skill_registry
+from .streaming import PublicReplies
 from .workflow import PiWorkflowDependencies, build_root_agent
 
 LOGGER = logging.getLogger(__name__)
@@ -276,12 +277,14 @@ class PiCodingHarnessFactory:
                 ApprovalStore(settings.state_root / "approvals.db"), settings.task_id_override or "",
                 timeout=min(composition.server.approval_wait_timeout_seconds, composition.server.idle_timeout_seconds / 2),
             )
+        replies = PublicReplies(SecretRedactor(known_secrets=known_secrets))
         worker = build_coding_worker(
             settings,
             coding_model,
             tools=tools,
             tool_config=config.tools,
             approvals=approvals,
+            replies=replies,
         )
         event_store = JsonlEventStore(settings.state_root / "events")
         steering = SteeringQueue(settings.state_root / "state.db")
@@ -311,6 +314,7 @@ class PiCodingHarnessFactory:
             ),
             workspace_manager=workspace_manager,
             coding_worker=worker.agent,
+            replies=replies,
             validation_executor=lambda task_id: ManagedValidationExecutor(
                 settings.workspace,
                 state_root=settings.state_root,

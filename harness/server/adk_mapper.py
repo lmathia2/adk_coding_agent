@@ -330,6 +330,12 @@ class AdkAgUiNormalizer:
 
         content = event.content
         metadata = event.custom_metadata or {}
+        projection = metadata.get("coding.public_delta")
+        if self.explicit_public_messages and isinstance(projection, str) and projection:
+            public.extend(self._push_text(
+                event=event.model_copy(update={"author": "coding_reply", "partial": True}),
+                event_id=event_id, part_index=0, text=projection,
+            ))
         public_text = (
             not self.explicit_public_messages
             or metadata.get("coding.public_message") is True
@@ -342,7 +348,8 @@ class AdkAgUiNormalizer:
                 if text and public_text:
                     public.extend(
                         self._push_text(
-                            event=event,
+                            event=(event.model_copy(update={"author": "coding_reply"})
+                                   if self.explicit_public_messages else event),
                             event_id=event_id,
                             part_index=index,
                             text=text,

@@ -14,7 +14,8 @@
 - [ ] Complete Pi-style UI and migrate installation/launching.
   - [x] Prevent stored approvals from leaking across tasks or surviving expiration in a shared adapter.
   - [x] Wire command approval decisions to waiting worker/verification execution and terminal controls.
-  - [ ] Complete public-response streaming and quiet activity presentation.
+  - [x] Stream eligible public replies with immutable control headers, verification gates and reconnect tests.
+  - [ ] Finish quiet activity presentation and live visual/latency comparisons.
   - [ ] Migrate installation/launching after the new client passes the delivery gates.
 - [ ] Verify conversational/coding examples, replay and harness swap; remove Go TUI.
 

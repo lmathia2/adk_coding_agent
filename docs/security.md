@@ -206,6 +206,18 @@ configuration. There is no automatic skill-learning or promotion lifecycle.
 
 ## Logging and privacy
 
+Public conversational streaming validates the complete control header before
+publishing Markdown. It cannot authorize coding completion, waive verification,
+or dispatch tools after publication starts. Partial replies remain partial when
+cancelled; a changed final result or workspace fails closed. Stream state is scoped
+to the ADK invocation and discarded on exit, including failure and cancellation.
+
+Words, incomplete known secrets, and potentially sensitive spans are buffered for
+redaction before entering the public event log. Pattern-based redaction is not a
+guarantee of detecting every secret. Raw model content remains in ADK's local
+session history (`STATE_ROOT/adk/sessions.db` with SQLite); protect the whole state
+directory, not only exported traces. The terminal receives only the public projection.
+
 Audit logs should contain operation hashes, classifications, approval decisions, paths, exit status, byte counts, and redacted diagnostics. Avoid storing source bodies, complete prompts, secrets, or customer data in centralized telemetry unless retention and access controls explicitly allow it.
 
 The local trace store has only `metadata` and `redacted` content modes (plus `off`).

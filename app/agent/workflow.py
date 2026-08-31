@@ -60,6 +60,7 @@ from harness.workspace import GitWorktreeManager
 from .config import HarnessSettings
 from .presentation import conversation_history, message_event, result_events
 from .skills import SkillRuntimeContext, build_skill_context
+from .streaming import PublicReplies
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +84,7 @@ class PiWorkflowDependencies:
     steering_enabled: bool
     steering_at_work_batch_boundary: bool
     approvals: ApprovalWaiter | None = None
+    replies: PublicReplies | None = None
 
 def _session_id(ctx: Context) -> str | None:
     direct = getattr(ctx, "session_id", None)
@@ -383,7 +385,7 @@ def _malformed_step(error: ValueError) -> AgentStep:
         status="continue",
         progress=[],
         next_action=(
-            "Continue the task, then return exactly one valid AgentStep JSON object"
+            "Continue the task, then return a valid single-line AgentStep control header followed by Markdown"
         ),
         decisions=[],
         questions=[],
@@ -513,6 +515,7 @@ async def _orchestrate_owned(
     verify_node: BaseNode,
 ) -> AsyncGenerator[Event | str, None]:
     started = time.monotonic()
+    reply_stream = deps.replies.for_invocation(ctx.get_invocation_context().invocation_id) if deps.replies else None
     request = parse_task_request(node_input)
     session_id = _session_id(ctx)
     settings = deps.settings
@@ -756,6 +759,18 @@ async def _orchestrate_owned(
                 message.message_id for message in leased
             ),
         )
+        async def allow_reply(step: AgentStep, active_request: TaskRequest = request) -> bool:
+            eligible = can_answer_directly(
+                active_request, step,
+                verification_required=ctx.state.get("verification_required_task") == task_id,
+                workspace_unchanged=True,
+            )
+            return eligible and (
+                await asyncio.to_thread(_workspace_fingerprint, deps, task_id) == current_fingerprint
+            ) and not (deps.steering_enabled and deps.steering_queue.has_pending(task_id))
+
+        if reply_stream is not None:
+            reply_stream.prepare(allow_reply)
         try:
             raw_step = await ctx.run_node(deps.coding_worker, node_input=packet)
         except BaseException:
@@ -776,6 +791,9 @@ async def _orchestrate_owned(
             )
             step = _malformed_step(error)
 
+        if reply_stream is not None:
+            step = reply_stream.finish(step)
+
         if step.status == "answer":
             # Tool effects and explicit task obligations cannot be waived by a
             # model choosing a conversational status. Bind effects to this task.
@@ -789,8 +807,12 @@ async def _orchestrate_owned(
                 ),
             )
             if not allowed:
+                if reply_stream is not None and reply_stream.started:
+                    raise ValueError("Workspace or verification obligations changed during a streamed reply")
                 step = step.model_copy(update={"status": "verify"})
             elif deps.steering_enabled and deps.steering_queue.has_pending(task_id):
+                if reply_stream is not None and reply_stream.started:
+                    yield message_event(step.message)
                 step = step.model_copy(update={"status": "continue", "message": ""})
             else:
                 previous = ledger
@@ -1119,14 +1141,18 @@ def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
         # FunctionNode adapter unwraps that message only when this boundary
         # directly expects ``str``; structured requests remain supported as
         # JSON text by ``parse_task_request``.
-        async for event in _orchestrate_owned(
-            deps, ctx, node_input, verify_node=verify_task,
-        ):
-            if isinstance(event, str):
-                for public_event in result_events(json.loads(event)):
-                    yield public_event
-            else:
-                yield event
+        try:
+            async for event in _orchestrate_owned(
+                deps, ctx, node_input, verify_node=verify_task,
+            ):
+                if isinstance(event, str):
+                    for public_event in result_events(json.loads(event)):
+                        yield public_event
+                else:
+                    yield event
+        finally:
+            if deps.replies is not None:
+                deps.replies.release(ctx.get_invocation_context().invocation_id)
 
     return Workflow(
         name="coding_harness",

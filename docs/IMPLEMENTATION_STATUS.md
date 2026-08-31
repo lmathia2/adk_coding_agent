@@ -21,6 +21,12 @@ historical feature checklist or book-rubric score.
   publishes prose and a compact outcome explicitly. Coding completion replies are
   withheld until deterministic verification passes. Other ADK factories keep their
   ordinary text streaming by default.
+- Eligible conversational replies stream through ADK callbacks after validation of
+  a complete control header. Partial words and potentially sensitive spans are held
+  for redaction; raw workflow JSON never reaches the terminal. Coding replies still
+  wait for verification. Legacy JSON responses remain supported without streaming.
+  A live ADK Runner/production WebSocket/scripted-model test reconnects a fresh Pi
+  client mid-reply without duplicating text or model execution.
 - Standalone Pi terminal toolkit client with authenticated transport, multi-turn
   conversations and replay, tested against the real server/ADK stack with a scripted
   model (not yet the default installed client).

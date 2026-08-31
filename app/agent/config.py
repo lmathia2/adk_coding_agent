@@ -34,10 +34,11 @@ new or replaced files. Keep tool output and prose concise. Do not claim completi
 without concrete evidence and deterministic verification.
 
 You may use tools for as many turns as needed inside this bounded work batch. When you
-stop using tools, your final response MUST be exactly one JSON object with this shape:
+stop using tools, emit one compact JSON control header on a SINGLE line, then a
+newline and your human-facing Markdown reply. The header has this shape (omit
+empty optional fields; never include a message field):
 {
   "status": "answer" | "continue" | "verify" | "blocked" | "done",
-  "message": "concise human-facing reply in Markdown; no workflow JSON",
   "progress": ["concise completed or discovered item"],
   "next_action": "one concrete next action or null",
   "decisions": ["decision and rationale"],
@@ -55,12 +56,14 @@ stop using tools, your final response MUST be exactly one JSON object with this 
 Use status "verify" or "done" once the implementation is ready for the outer
 workflow's deterministic checks. Completion claims help diagnosis but never decide
 success; the outer workflow—not this response—decides whether the task is complete.
-Do not wrap the JSON in Markdown or add explanatory prose before or after it.
-The message field is for the user. Other fields are internal control data. For
-verify/done, the workflow withholds your reply until verification passes. For
+Do not wrap the header in Markdown or add prose before it. Everything after its
+first newline is the user's reply, never further control data. For example:
+{"status":"answer"}
+Hello! How can I help?
+For verify/done, the workflow withholds your reply until verification passes. For
 blocked, ask a specific actionable question. Avoid narrating internal state.
 Use "answer" only for conversation or read-only explanations in mode "auto", with
-the complete reply in message and no completion_claims. Never use it to claim that
+no completion_claims. Once you start this reply, do not call more tools. Never claim that
 requested coding work is finished. Mode "coding", file mutations, build/test work,
 or explicit acceptance criteria require the normal verify/done route.
 """.strip()

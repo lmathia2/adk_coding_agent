@@ -39,8 +39,9 @@ The assembly opts into explicit public messages. The generic ADK mapper still
 streams tools and errors, but accepts prose/results only from events tagged by
 the workflow. The worker's optional `message` field is published only after its
 typed result is reduced; completion replies wait for passing verification.
-Private partial/final JSON and child-node outputs remain in ADK history, not the
-public transcript. A live ADK Runner with a scripted model verifies this contract.
+Private control text and child-node outputs remain in ADK history, not the public
+transcript. The newer typed-header streaming path is described below; legacy JSON
+responses retain this buffered behavior.
 
 ## Conversation gate evidence
 
@@ -308,3 +309,47 @@ evidence, not live-provider quality or complete visual-parity evidence.
 
 Validation at this milestone: 490 Python unit/integration tests and 39 terminal
 tests pass, with Ruff, Pyright, compilation and diff checks clean.
+
+## Public Markdown streaming
+
+The default worker emits a complete, single-line AgentStep control header, then a
+newline and Markdown. Empty optional fields are omitted; `message` belongs only
+to the parsed internal representation. The rest of the reply is never reparsed as
+control data. A legacy JSON object containing `message` still works, buffered.
+This changes the default static prompt/prefix hash, not the four-tool surface,
+provider, verification rules or volatile-state placement.
+
+An ADK callback with invocation-isolated state validates the entire header before considering
+publication. Only `answer` with no coding obligations, completion claims, tool
+effects or workspace changes can stream. Once public text starts, that work batch
+cannot execute another tool or make another model call. A contradictory final
+aggregate, invalid result, or changed workspace fails the run instead of granting
+completion. Steering arriving mid-reply closes that reply and continues at the next
+work-batch boundary. Cancellation retains partial text without claiming success.
+Verification-required and coding completion replies still wait for passing checks.
+
+The callback leaves ADK content untouched and attaches only a redacted public
+delta. The generic server maps it to ordinary AG-UI text events; the terminal has
+no AgentStep parser or ADK dependency. Word endings and incomplete known secrets
+are buffered across chunks. Sensitive labels/private-key spans conservatively hold
+the remaining reply until its final redaction, so this is not unconditional token-
+by-token delivery. Bounds are 16,000 characters each for header and Markdown.
+
+Deterministic evidence uses a gated scripted model: public text must reach the
+client before generation can finish. A fresh Pi client reopens that still-active
+conversation, replays its partial reply, and receives the final outcome without
+duplicated text or another model call. Rendering is checked at 20/40/80/120 columns.
+Additional tests cover secret splits, legacy responses, immutable control, forbidden
+post-reply tools, cancellation cleanup and coding verification gates. No extra
+presenter model call, simulated typing or sleep is used by the implementation.
+
+Connection setup also now retries only requests that existed before the greeting;
+new model/resource discovery requests are sent once, avoiding intermittent busy
+errors. Fresh live-provider quality/latency, full PTY visual comparisons, quiet
+activity polish, installer migration and Go-client removal remain delivery gates.
+
+Validation at this milestone: 516 Python unit/integration tests and 40 terminal
+tests pass, with Ruff, Pyright, compilation and diff checks clean. The existing
+Go client's race tests also pass (cached). Streaming state is released on normal
+exit, failure and cancellation; concurrent invocations have separate authorization
+and buffers. These are deterministic contract results, not live-model benchmarks.
