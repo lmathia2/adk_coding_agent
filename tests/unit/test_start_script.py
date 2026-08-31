@@ -242,7 +242,8 @@ def test_run_owns_server_and_forwards_exact_magnitude_model(tmp_path: Path) -> N
     )
 
     assert f"Workspace: {workspace}" in completed.stdout
-    assert f"Magnitude model: {model}" in completed.stdout
+    assert "Model provider: magnitude" in completed.stdout
+    assert f"Model: {model}" in completed.stdout
     assert f"Server log: {state_root}/server/foreground.log" in completed.stdout
     assert "Lifecycle: this command owns and stops its harness server child" in completed.stdout
     assert "token-present=yes" in completed.stdout
@@ -250,3 +251,32 @@ def test_run_owns_server_and_forwards_exact_magnitude_model(tmp_path: Path) -> N
     assert "arg=inspect this repository" in completed.stdout
     assert model in (state_root / "server/foreground.log").read_text(encoding="utf-8")
     assert "managed-test-token" not in completed.stdout
+
+
+def test_server_can_select_codex_provider_without_login(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _fake_command(fake_bin, "adk-coding-agent")
+    home = tmp_path / "home"
+    home.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    completed = subprocess.run(
+        (
+            str(root / "start.sh"),
+            "server",
+            "--provider",
+            "codex",
+            "--workspace",
+            str(workspace),
+        ),
+        env=_environment(fake_bin, home),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "Model provider: codex" in completed.stdout
+    assert "arg=serve-codex" in completed.stdout

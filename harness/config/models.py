@@ -706,6 +706,7 @@ class RuntimeBindings(FrozenModel):
 
     workspace: Path
     state_root: Path
+    auth_state_root: Path | None = None
     configuration_root: Path | None = None
     source_repository: Path | None = None
     task_id: str | None = Field(default=None, max_length=256)

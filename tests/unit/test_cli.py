@@ -60,6 +60,48 @@ def test_prepare_cli_prints_machine_readable_launch_contract(
     assert payload["command"] == ["agents-cli", "run", "Fix the app"]
 
 
+def test_codex_status_is_redacted_and_does_not_require_network(tmp_path: Path, capsys) -> None:
+    exit_code = main(["codex", "--state-root", str(tmp_path / "state"), "status"])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "authenticated": False,
+        "provider": "openai_codex",
+    }
+
+
+def test_serve_codex_prints_selected_model_without_requiring_login(tmp_path: Path, capsys) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state = tmp_path / "state"
+
+    exit_code = main(
+        [
+            "serve-codex",
+            "--workspace",
+            str(workspace),
+            "--state-root",
+            str(state),
+            "--model",
+            "gpt-5.3-codex-spark",
+            "--print-config",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Model: gpt-5.3-codex-spark" in captured.err
+    payload = json.loads(captured.out)
+    assert payload["workspace"] == workspace.as_posix()
+    assert payload["state_root"] == state.as_posix()
+    assert payload["coding_model"] == {
+        "name": "gpt-5.3-codex-spark",
+        "provider": "openai_codex",
+        "readiness": "authentication_required",
+        "role": "coding",
+    }
+
+
 def test_trace_export_and_learned_skill_controls(tmp_path: Path, capsys) -> None:
     state = tmp_path / "state"
     traces = TraceStore(state / "traces.db")

@@ -10,7 +10,7 @@
   ],
   "expected_total_matches": 33,
   "fixture_content_hash": "2b17f4b0054bf4c1c438f4001d7701c184b2e335a68d932d1d0b9927a3a069fe",
-  "harness_content_hash": "b94bf0ddc9f68d0e10839362e52a692c8c4f37560ffde373f18fea09b6d5c4c7",
+  "harness_content_hash": "4ca22b070811fb421ecec82f6fbe6e0c736045e38b6a135313ef49f09a5aa5c0",
   "fff_version": "0.10.5",
   "backends": [
     "rg",

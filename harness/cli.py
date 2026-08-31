@@ -48,6 +48,10 @@ def _default_state_root(repository: Path) -> Path:
     return Path.home() / ".cache" / "adk-coding-agent" / digest
 
 
+def _default_shared_state_root() -> Path:
+    return Path.home() / ".local" / "state" / "adk-coding-agent"
+
+
 def prepare_run(
     *,
     repository: Path,
@@ -253,6 +257,58 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resolve and print server settings without starting the harness listener",
     )
+
+    codex_serve = subparsers.add_parser(
+        "serve-codex",
+        help="Serve the harness with a ChatGPT subscription Codex model",
+    )
+    codex_serve.add_argument("--workspace", type=Path, default=Path.cwd())
+    codex_serve.add_argument("--state-root", type=Path)
+    codex_serve.add_argument("--model", help="Override the saved Codex model selection")
+    codex_serve.add_argument(
+        "--reasoning",
+        choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
+        help="Override the saved reasoning effort",
+    )
+    codex_serve.add_argument("--client-version")
+    codex_serve.add_argument("--production", action="store_true")
+    codex_serve.add_argument("--trust-project", action="store_true")
+    codex_serve.add_argument("--print-config", action="store_true")
+
+    codex = subparsers.add_parser(
+        "codex",
+        help="Manage ChatGPT subscription authentication and model selection",
+    )
+    codex.add_argument("--state-root", type=Path, default=_default_shared_state_root())
+    codex_commands = codex.add_subparsers(dest="codex_command", required=True)
+    login = codex_commands.add_parser("login", help="Login with a ChatGPT subscription")
+    login.add_argument("--no-browser", action="store_true")
+    codex_commands.add_parser("status", help="Show redacted subscription status")
+    codex_commands.add_parser("logout", help="Remove the stored subscription credential")
+    codex_commands.add_parser("models", help="List models enabled for this account")
+    select = codex_commands.add_parser(
+        "select",
+        help="Save an account-enabled model for the next server start",
+    )
+    select.add_argument("model")
+    select.add_argument(
+        "--reasoning",
+        choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
+        default="low",
+    )
+    benchmark = codex_commands.add_parser(
+        "benchmark",
+        help="Measure enabled low-latency models and save the fastest selection",
+    )
+    benchmark.add_argument("--model", action="append", dest="models")
+    benchmark.add_argument("--runs", type=int, choices=range(1, 6), default=2)
+    benchmark.add_argument(
+        "--reasoning",
+        choices=("none", "minimal", "low", "medium", "high"),
+        default="low",
+    )
+    benchmark.add_argument("--limit", type=int, choices=range(1, 11), default=6)
+    benchmark.add_argument("--no-save", action="store_true")
     return parser
 
 
@@ -295,6 +351,11 @@ def _serve(args: argparse.Namespace) -> int:
                         else "environment:ADK_CODING_AGENT_TOKEN"
                     ),
                     "config_sha256": assembly.composition.composition_sha256,
+                    "coding_model": (
+                        assembly.coordinator.coding_model_status.model_dump(mode="json")
+                        if assembly.coordinator.coding_model_status is not None
+                        else None
+                    ),
                     "harness": assembly.coordinator.descriptor.implementation,
                     "host": server.host,
                     "port": server.port,
@@ -385,12 +446,207 @@ def _serve_magnitude(args: argparse.Namespace) -> int:
             os.environ["MAGNITUDE_API_KEY"] = previous_token
 
 
+def _serve_codex(args: argparse.Namespace) -> int:
+    from harness.codex import prepare_codex_config
+
+    workspace = args.workspace.expanduser().resolve()
+    state_root = (
+        args.state_root.expanduser().resolve()
+        if args.state_root is not None
+        else _default_shared_state_root().resolve()
+    )
+    config_path, selection = prepare_codex_config(
+        state_root,
+        model=args.model,
+        reasoning=args.reasoning,
+        client_version=args.client_version,
+    )
+    print(
+        "ChatGPT subscription coding model:\n"
+        f"  Model: {selection.model}\n"
+        f"  Reasoning: {selection.reasoning}\n"
+        "  Authentication: resolved lazily from private harness state\n"
+        f"  Credential: {state_root / 'auth' / 'openai-codex.json'}",
+        file=sys.stderr,
+        flush=True,
+    )
+    args.config = config_path
+    args.workspace = workspace
+    args.state_root = state_root
+    return _serve(args)
+
+
+def _codex_command(args: argparse.Namespace) -> int:
+    import time
+
+    import httpx
+
+    from harness.ai.codex_auth import (
+        CodexAuthenticationError,
+        CodexCredentialStore,
+        CodexOAuthClient,
+    )
+    from harness.codex import (
+        CodexModelError,
+        CodexSelection,
+        benchmark_codex_models,
+        credential_manager,
+        discover_codex_models,
+        fastest_candidates,
+        save_codex_selection,
+    )
+
+    state_root = args.state_root.expanduser().resolve()
+    store = CodexCredentialStore(state_root)
+    try:
+        if args.codex_command == "login":
+            oauth = CodexOAuthClient()
+            authorization = oauth.start_device_authorization()
+            print(
+                "Open this URL and enter the code:\n"
+                f"  {authorization.verification_url}\n"
+                f"  Code: {authorization.user_code}\n\n"
+                "Waiting for authorization (Ctrl+C to cancel)...",
+                flush=True,
+            )
+            if not args.no_browser:
+                import webbrowser
+
+                webbrowser.open(authorization.verification_url)
+            credential = oauth.complete_device_authorization(authorization)
+            with store.locked():
+                store.save(credential)
+            print(
+                json.dumps(
+                    {
+                        "credential_path": store.path.as_posix(),
+                        "provider": "openai_codex",
+                        "status": "authenticated",
+                    },
+                    sort_keys=True,
+                    indent=2,
+                )
+            )
+            return 0
+        if args.codex_command == "status":
+            credential = store.load()
+            payload = (
+                credential.public_status(now_ms=int(time.time() * 1000))
+                if credential is not None
+                else {"authenticated": False}
+            )
+            print(json.dumps({"provider": "openai_codex", **payload}, sort_keys=True, indent=2))
+            return 0
+        if args.codex_command == "logout":
+            with store.locked():
+                removed = store.delete()
+            print(json.dumps({"provider": "openai_codex", "removed": removed}, sort_keys=True))
+            return 0
+
+        manager = credential_manager(state_root)
+        catalog = discover_codex_models(manager)
+        if args.codex_command == "models":
+            print(
+                json.dumps(
+                    {
+                        "models": [
+                            {
+                                "client_version": model.client_version,
+                                "display_name": model.display_name,
+                                "id": model.id,
+                            }
+                            for model in catalog
+                        ],
+                        "provider": "openai_codex",
+                    },
+                    sort_keys=True,
+                    indent=2,
+                )
+            )
+            return 0
+
+        if args.codex_command == "select":
+            selected = next((model for model in catalog if model.id == args.model), None)
+            if selected is None:
+                raise CodexModelError(f"model is not enabled for this account: {args.model}")
+            path = save_codex_selection(
+                state_root,
+                CodexSelection(
+                    model=selected.id,
+                    reasoning=args.reasoning,
+                    client_version=selected.client_version,
+                ),
+            )
+            print(
+                json.dumps(
+                    {
+                        "model": selected.id,
+                        "reasoning": args.reasoning,
+                        "restart_required": True,
+                        "selection_path": path.as_posix(),
+                    },
+                    sort_keys=True,
+                    indent=2,
+                )
+            )
+            return 0
+
+        by_id = {model.id: model for model in catalog}
+        if args.models:
+            unknown = sorted(set(args.models) - set(by_id))
+            if unknown:
+                raise CodexModelError(
+                    "models are not enabled for this account: " + ", ".join(unknown)
+                )
+            candidates = tuple(by_id[model_id] for model_id in dict.fromkeys(args.models))
+        else:
+            candidates = fastest_candidates(catalog, limit=args.limit)
+        results = benchmark_codex_models(
+            manager,
+            candidates,
+            reasoning=args.reasoning,
+            runs=args.runs,
+        )
+        winner = next((result for result in results if result.successful_runs == args.runs), None)
+        saved_path: str | None = None
+        if winner is not None and not args.no_save:
+            saved_path = save_codex_selection(
+                state_root,
+                CodexSelection(
+                    model=winner.model,
+                    reasoning=args.reasoning,
+                    client_version=winner.client_version,
+                ),
+            ).as_posix()
+        print(
+            json.dumps(
+                {
+                    "criterion": "median_time_to_first_token_ms",
+                    "results": [asdict(result) for result in results],
+                    "runs_per_model": args.runs,
+                    "selection_path": saved_path,
+                    "winner": winner.model if winner is not None else None,
+                },
+                sort_keys=True,
+                indent=2,
+            )
+        )
+        return 0 if winner is not None else 1
+    except (CodexAuthenticationError, CodexModelError, httpx.HTTPError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "serve":
         return _serve(args)
     if args.command == "serve-magnitude":
         return _serve_magnitude(args)
+    if args.command == "serve-codex":
+        return _serve_codex(args)
+    if args.command == "codex":
+        return _codex_command(args)
     if args.command in {"steer", "steering-status"}:
         state_root = _steering_state_root(
             repository=args.repository,

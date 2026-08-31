@@ -39,6 +39,7 @@ class HarnessDescriptor(FrozenModel):
 
 
 class ModelReadiness(StrEnum):
+    AUTHENTICATION_REQUIRED = "authentication_required"
     ADAPTER_INITIALIZED = "adapter_initialized"
     RESPONDING = "responding"
 

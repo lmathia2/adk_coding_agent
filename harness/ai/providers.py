@@ -133,7 +133,7 @@ class OpenAiCodexModelProvider:
             retry_statuses=retry.retry_statuses,
             client_version=config.client_version,
             credential_manager=CodexCredentialManager(
-                CodexCredentialStore(bindings.state_root)
+                CodexCredentialStore(bindings.auth_state_root or bindings.state_root)
             ),
         )
 

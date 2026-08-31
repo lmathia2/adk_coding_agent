@@ -14,7 +14,7 @@ from typing import Protocol
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
-from harness.agent import ControlReceipt, HarnessDescriptor
+from harness.agent import ControlReceipt, HarnessDescriptor, PublicModelStatus
 
 from .protocol import (
     PROTOCOL_VERSION,
@@ -43,6 +43,9 @@ class RunCoordinatorContract(Protocol):
 
     @property
     def descriptor(self) -> HarnessDescriptor: ...
+
+    @property
+    def coding_model_status(self) -> PublicModelStatus | None: ...
 
     async def start(self, message: StartTaskMessage, *, user_id: str) -> tuple[RunRecord, bool]: ...
 
@@ -188,6 +191,7 @@ class _AgentWebSocketConnection:
             ServerHello(
                 protocol_version=PROTOCOL_VERSION,
                 harness=self.coordinator.descriptor,
+                coding_model=self.coordinator.coding_model_status,
             )
         )
         self._writer = asyncio.create_task(self._write_messages(), name="agent-websocket-writer")

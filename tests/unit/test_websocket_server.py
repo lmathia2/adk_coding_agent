@@ -105,6 +105,7 @@ def _envelope(run_id: str, sequence: int) -> ServerEnvelope:
 
 class FakeCoordinator:
     def __init__(self) -> None:
+        self.coding_model_status = None
         self.descriptor = HarnessDescriptor(
             implementation="fake_harness",
             display_name="Fake Harness",

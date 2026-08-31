@@ -71,7 +71,11 @@ def test_google_provider_preserves_native_gemini_adapter() -> None:
 
 
 def test_openai_codex_provider_uses_runtime_oauth_and_never_api_key(tmp_path: Path) -> None:
-    bindings = RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state")
+    bindings = RuntimeBindings(
+        workspace=tmp_path,
+        state_root=tmp_path / "state" / "runs" / "run-1",
+        auth_state_root=tmp_path / "state",
+    )
     model = OpenAiCodexModelProvider().build_model(
         ModelConfig(
             provider="openai_codex",

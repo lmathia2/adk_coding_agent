@@ -77,6 +77,9 @@ class RunExecutionFactory(Protocol):
     def descriptor(self) -> HarnessDescriptor: ...
 
     @property
+    def coding_model_status(self) -> PublicModelStatus | None: ...
+
+    @property
     def run_metadata(self) -> Mapping[str, str]: ...
 
     async def create(self, record: RunRecord) -> RunExecution: ...
@@ -297,17 +300,23 @@ class AdkRunExecutionFactory:
         bindings: RuntimeBindings,
         registry: HarnessRegistry,
         services: AdkServiceBundle,
+        startup_coding_model_status: PublicModelStatus | None = None,
     ) -> None:
         self.composition = composition
         self.bindings = bindings
         self.registry = registry
         self.services = services
+        self._coding_model_status = startup_coding_model_status
         implementation = composition.harness.implementation
         self._descriptor = registry.descriptor(implementation)
 
     @property
     def descriptor(self) -> HarnessDescriptor:
         return self._descriptor
+
+    @property
+    def coding_model_status(self) -> PublicModelStatus | None:
+        return self._coding_model_status
 
     @property
     def run_metadata(self) -> Mapping[str, str]:
@@ -400,6 +409,10 @@ class RunCoordinator:
     @property
     def descriptor(self) -> HarnessDescriptor:
         return self.execution_factory.descriptor
+
+    @property
+    def coding_model_status(self) -> PublicModelStatus | None:
+        return self.execution_factory.coding_model_status
 
     @staticmethod
     def _default_thread_id(user_id: str, idempotency_key: str) -> str:

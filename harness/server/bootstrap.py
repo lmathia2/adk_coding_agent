@@ -13,6 +13,8 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from app.agent.factory import default_harness_registry
+from harness.agent import ModelReadiness, PublicModelStatus
+from harness.ai.codex_auth import CodexAuthenticationError, CodexCredentialStore
 from harness.config import (
     DEFAULT_COMPOSITION_PATH,
     HarnessComposition,
@@ -30,6 +32,33 @@ from .websocket import (
 )
 
 LOCAL_TOKEN_ENV = "ADK_CODING_AGENT_TOKEN"
+
+
+def _startup_coding_model_status(
+    composition: HarnessComposition,
+    state_root: Path,
+) -> PublicModelStatus | None:
+    config = composition.harness.config
+    agents = getattr(config, "agents", None)
+    models = getattr(config, "models", None)
+    if not isinstance(agents, dict) or not isinstance(models, dict):
+        return None
+    coding_agent = agents.get("coding_worker")
+    model_key = getattr(coding_agent, "model", None)
+    model = models.get(model_key)
+    provider = getattr(model, "provider", None)
+    name = getattr(model, "name", None)
+    if not isinstance(provider, str) or not isinstance(name, str):
+        return None
+    readiness = ModelReadiness.ADAPTER_INITIALIZED
+    if provider == "openai_codex":
+        try:
+            credential = CodexCredentialStore(state_root).load()
+        except CodexAuthenticationError:
+            credential = None
+        if credential is None:
+            readiness = ModelReadiness.AUTHENTICATION_REQUIRED
+    return PublicModelStatus(provider=provider, name=name, readiness=readiness)
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +172,7 @@ def build_server_assembly(
     bindings = RuntimeBindings(
         workspace=resolved_workspace,
         state_root=resolved_state_root,
+        auth_state_root=resolved_state_root,
         configuration_root=resolved_config.parent,
         source_repository=resolved_workspace,
         project_trusted=trust_project,
@@ -163,6 +193,10 @@ def build_server_assembly(
             bindings=bindings,
             registry=registry,
             services=services,
+            startup_coding_model_status=_startup_coding_model_status(
+                composition,
+                resolved_state_root,
+            ),
         ),
         liveness=RunLivenessPolicy(
             first_event_timeout=composition.server.first_event_timeout_seconds,

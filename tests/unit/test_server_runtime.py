@@ -887,8 +887,9 @@ class _BlockingModelProvider:
         config: ModelConfig,
         *,
         secrets: Mapping[str, SecretRef],
+        bindings: RuntimeBindings | None = None,
     ) -> BaseLlm:
-        del secrets
+        del secrets, bindings
         return _BlockingTestLlm(model=config.name)
 
 

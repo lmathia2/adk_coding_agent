@@ -5,7 +5,12 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from harness.agent import HarnessDescriptor, RuntimeCapability
+from harness.agent import (
+    HarnessDescriptor,
+    ModelReadiness,
+    PublicModelStatus,
+    RuntimeCapability,
+)
 from harness.server import (
     PROTOCOL_VERSION,
     AckMessage,
@@ -252,10 +257,19 @@ def test_coding_specific_events_use_a_namespaced_custom_event() -> None:
 
 
 def test_server_hello_negotiates_capabilities_without_tui_knowledge() -> None:
-    hello = ServerHello(harness=_descriptor())
+    hello = ServerHello(
+        harness=_descriptor(),
+        coding_model=PublicModelStatus(
+            provider="openai_codex",
+            name="gpt-5.3-codex-spark",
+            readiness=ModelReadiness.AUTHENTICATION_REQUIRED,
+        ),
+    )
 
     assert hello.protocol_version == PROTOCOL_VERSION
     assert RuntimeCapability.STEERING in hello.harness.capabilities
+    assert hello.coding_model is not None
+    assert hello.coding_model.readiness == ModelReadiness.AUTHENTICATION_REQUIRED
     assert "tui" not in hello.model_dump_json()
 
 

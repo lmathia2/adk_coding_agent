@@ -16,7 +16,7 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_camel
 
-from harness.agent import HarnessDescriptor
+from harness.agent import HarnessDescriptor, PublicModelStatus
 
 PROTOCOL_VERSION = 1
 
@@ -239,6 +239,7 @@ class ServerHello(FrozenModel):
     type: Literal["server.hello"] = "server.hello"
     protocol_version: Literal[1] = 1
     harness: HarnessDescriptor
+    coding_model: PublicModelStatus | None = None
 
 
 class ServerEnvelope(SparseWireModel):
