@@ -21,7 +21,9 @@ historical feature checklist or book-rubric score.
   publishes prose and a compact outcome explicitly. Coding completion replies are
   withheld until deterministic verification passes. Other ADK factories keep their
   ordinary text streaming by default.
-- Standalone Pi terminal toolkit prototype (not yet the default installed client).
+- Standalone Pi terminal toolkit client with authenticated transport, multi-turn
+  conversations and replay, tested against the real server/ADK stack with a scripted
+  model (not yet the default installed client; selectors and follow-ups pending).
 - Plain-language turns support a distinct `answered` outcome without inventing a
   coding task. Direct answers permit no managed shell/write/edit action and no
   explicit verification obligation; coding results still route through verification.

@@ -1,6 +1,6 @@
 import { Container, Editor, Text, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import type { SessionActions, SessionView } from "./contracts.js";
-import { Transcript } from "./transcript.js";
+import { Transcript, safeText } from "./transcript.js";
 import { editorTheme, theme } from "./theme.js";
 
 /** Presentation depends on a tiny session port, not Pi's AgentSession or ADK. */
@@ -48,8 +48,8 @@ export class TerminalView {
     this.refresh();
   }
   refresh(): void {
-    this.status.setText(theme.dim(this.state.notice || (this.state.status === "running" ? "Working…" : "")));
-    this.footer.setText(theme.dim(`${this.state.workspace}  ·  ${this.state.model}  ·  ${this.state.status}`));
+    this.status.setText(theme.dim(safeText(this.state.notice || (this.state.status === "running" ? "Working…" : ""))));
+    this.footer.setText(theme.dim(safeText(`${this.state.workspace}  ·  ${this.state.model}  ·  ${this.state.status}`)));
     this.tui.requestRender();
   }
   dispose(): void { this.removeListener(); }

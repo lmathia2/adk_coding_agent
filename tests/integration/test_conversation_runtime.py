@@ -169,3 +169,76 @@ async def test_two_turns_keep_adk_history_but_reset_task_budgets_and_skills(tmp_
     assert model._calls == 2
     assert "conversation-marker-731" in model._requests[1]
     assert "STALE_SKILL_SHOULD_NOT_LEAK" not in model._requests[1]
+
+
+@pytest.mark.asyncio
+async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path) -> None:
+    import asyncio
+    import os
+    import shutil
+    import socket
+
+    import uvicorn
+
+    from harness.persistence import build_service_bundle, settings_from_composition
+    from harness.server.registry import RunEventBroker, SqliteRunEventStore
+    from harness.server.runtime import AdkRunExecutionFactory, RunCoordinator
+    from harness.server.websocket import (
+        LocalBearerAuthenticator,
+        WebSocketServerSettings,
+        create_websocket_app,
+    )
+
+    client = Path(__file__).resolve().parents[2] / "clients/terminal/dist/test/adk-client-fixture.js"
+    node = shutil.which("node")
+    if not node or not client.is_file():
+        pytest.skip("run npm ci && npm run build in clients/terminal for the cross-language gate")
+    model = ScriptedModel(model="fixture")
+    model._responses = [reply("answer", "First reply"), [types.Part(function_call=types.FunctionCall(
+        id="read1", name="read", args={"path": "README.md"},
+    ))], reply("answer", "Repository explanation")]
+    registry = default_harness_registry(model_providers=ClosedAdkModelProviderRegistry((Provider(model),)))
+    composition = load_harness_composition(config_models=registry.config_models())
+    config = composition.harness.config
+    config = config.model_copy(update={"models": {
+        name: value.model_copy(update={"provider": "scripted"}) for name, value in config.models.items()
+    }})
+    composition = composition.model_copy(update={"harness": composition.harness.model_copy(update={"config": config})})
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "README.md").write_text("Bridge fixture.\n")
+    state_root = tmp_path / "state"
+    services = build_service_bundle(settings_from_composition(composition.persistence, state_root=state_root))
+    coordinator = RunCoordinator(store=SqliteRunEventStore(state_root / "runs.db"), broker=RunEventBroker(),
+        execution_factory=AdkRunExecutionFactory(composition=composition,
+            bindings=RuntimeBindings(workspace=workspace, state_root=state_root), registry=registry, services=services))
+    token = "synthetic-test-token-" + "x" * 32
+    app = create_websocket_app(coordinator, authenticator=LocalBearerAuthenticator(token),
+        settings=WebSocketServerSettings(path="/v1/agent"))
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
+    serving = asyncio.create_task(server.serve(sockets=[listener]))
+    process = None
+    try:
+        async with asyncio.timeout(10):
+            while not server.started:
+                if serving.done():
+                    await serving
+                await asyncio.sleep(0.01)
+        process = await asyncio.create_subprocess_exec(node, str(client),
+            env={"PATH": os.environ.get("PATH", ""), "ADK_TEST_URL": f"ws://127.0.0.1:{port}/v1/agent", "ADK_TEST_TOKEN": token},
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=40)
+        assert process.returncode == 0, stderr.decode()
+        assert json.loads(stdout) == {"turns": 2, "entries": 5, "status": "answered"}
+        assert model._calls == 3
+        assert "bridge-marker-731" in model._requests[1]
+    finally:
+        if process is not None and process.returncode is None:
+            process.kill()
+            await process.wait()
+        server.should_exit = True
+        await asyncio.wait_for(serving, timeout=10)
+        listener.close()

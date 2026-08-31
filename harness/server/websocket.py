@@ -447,7 +447,9 @@ class _AgentWebSocketConnection:
                 operation=typed_operation,
                 run_id=message.run_id,
                 accepted=receipt.accepted,
-                command_id=receipt.command_id,
+                # Correlate the public reply to the caller's retry key. A harness
+                # may assign a different internal receipt/message identifier.
+                command_id=message.idempotency_key,
                 detail=receipt.detail,
             )
         )

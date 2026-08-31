@@ -162,7 +162,7 @@ class FakeCoordinator:
         self.control_calls.append(("steer", message.run_id, user_id))
         return ControlReceipt(
             accepted=True,
-            command_id=message.idempotency_key,
+            command_id="internal-steering-receipt",
             detail="queued for the next safe point",
         )
 
@@ -279,6 +279,7 @@ def test_start_stream_controls_ack_and_server_derived_identity() -> None:
         assert control["type"] == "control.result"
         assert control["operation"] == "steer"
         assert control["accepted"] is True
+        assert control["command_id"] == "steer-1"
 
         socket.send_json(
             {

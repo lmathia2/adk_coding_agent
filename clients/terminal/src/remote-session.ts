@@ -1,0 +1,157 @@
+import { randomUUID } from "node:crypto";
+import WebSocket from "ws";
+import { decode, object, string, type WireObject } from "./protocol.js";
+import { SessionState } from "./session.js";
+
+export interface RemoteOptions {
+  url: string;
+  token: string;
+  reconnectMs?: number;
+}
+
+/** Authenticated local transport; no model calls or tool execution in this process. */
+export class RemoteSession {
+  readonly state = new SessionState();
+  private socket?: WebSocket;
+  private stopped = true;
+  private negotiated = false;
+  private timer?: NodeJS.Timeout;
+  private heartbeat?: NodeJS.Timeout;
+  private helloTimer?: NodeJS.Timeout;
+  private lastPong = 0;
+  private attempts = 0;
+  private pendingStart?: WireObject;
+  private controls = new Map<string, WireObject>();
+  private listeners = new Set<() => void>();
+  constructor(private readonly options: RemoteOptions) {
+    const url = new URL(options.url);
+    if (url.protocol !== "ws:" || !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+      || url.username || url.password || url.search || url.hash) throw new Error("Use a loopback ws:// server URL without credentials or query parameters");
+    if (Buffer.byteLength(options.token) < 32) throw new Error("Local server token must contain at least 32 bytes");
+  }
+  subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  private changed(): void { for (const listener of this.listeners) listener(); }
+  connect(): void { if (this.stopped) { this.stopped = false; this.open(); } }
+  private open(): void {
+    if (this.stopped) return;
+    const socket = new WebSocket(this.options.url, {
+      headers: {Authorization: `Bearer ${this.options.token}`}, maxPayload: 1_048_576,
+      handshakeTimeout: 5_000,
+    });
+    this.socket = socket;
+    this.negotiated = false;
+    socket.on("open", () => {
+      if (this.stopped || this.socket !== socket) return;
+      this.send({type: "client.hello", protocol_versions: [1], client_name: "pi-adk-terminal"});
+      this.helloTimer = setTimeout(() => socket.terminate(), 5_000);
+    });
+    socket.on("message", (data) => {
+      if (this.stopped || this.socket !== socket) return;
+      try { this.receive(decode(data.toString())); }
+      catch { this.state.error("Invalid server protocol message; connection stopped"); this.close(); }
+      this.changed();
+    });
+    socket.on("error", () => {
+      if (this.stopped || this.socket !== socket) return;
+      this.state.view.notice = "Server unavailable — reconnecting…"; this.changed();
+    });
+    socket.on("close", (code) => {
+      if (this.stopped || this.socket !== socket) return;
+      this.negotiated = false;
+      clearInterval(this.heartbeat); clearTimeout(this.helloTimer);
+      if (code === 1008) {
+        this.stopped = true;
+        this.state.view.status = "disconnected";
+        this.state.error("Server authentication rejected. Check the server token and state directory.");
+      }
+      if (!this.stopped) {
+        this.state.view.notice = "Disconnected — reconnecting and replaying…";
+        this.timer = setTimeout(() => this.open(), Math.min(10_000, (this.options.reconnectMs ?? 250) * 2 ** this.attempts++));
+      }
+      this.changed();
+    });
+  }
+  private send(message: WireObject): void {
+    if (this.socket?.readyState !== WebSocket.OPEN) return;
+    if (this.socket.bufferedAmount > 1_048_576) { this.socket.terminate(); return; }
+    this.socket.send(JSON.stringify(message.type === "client.hello" ? message : {protocol_version: 1, ...message}));
+  }
+  private receive(message: WireObject): void {
+    switch (message.type) {
+      case "server.hello": {
+        clearTimeout(this.helloTimer);
+        this.negotiated = true; this.attempts = 0;
+        this.state.view.notice = "";
+        if (!this.state.active) this.state.view.status = "ready";
+        const capabilities = object(message.harness).capabilities;
+        this.state.capabilities = new Set(Array.isArray(capabilities) ? capabilities.filter((item): item is string => typeof item === "string") : []);
+        this.state.model(message.coding_model);
+        if (this.pendingStart) this.send(this.pendingStart);
+        else if (this.state.runId) this.send({type: "task.attach", run_id: this.state.runId, after_sequence: this.state.cursor});
+        for (const control of this.controls.values()) this.send(control);
+        this.lastPong = Date.now();
+        clearInterval(this.heartbeat);
+        this.heartbeat = setInterval(() => {
+          if (Date.now() - this.lastPong > 30_000) this.socket?.terminate();
+          else this.send({type: "ping", nonce: randomUUID()});
+        }, 10_000);
+        break;
+      }
+      case "task.accepted":
+        if (message.request_id !== this.pendingStart?.request_id) break;
+        this.state.runId = string(message.run_id); this.state.threadId = string(message.thread_id);
+        this.pendingStart = undefined; break;
+      case "event": {
+        const outcome = this.state.envelope(message);
+        if (outcome === "gap") { this.socket?.terminate(); break; }
+        if (outcome === "applied" && message.durable) this.send({type: "events.ack", run_id: this.state.runId, through_sequence: this.state.cursor});
+        if (outcome === "applied" && !this.state.active) this.controls.clear();
+        break;
+      }
+      case "control.result":
+        if (message.run_id !== this.state.runId || !this.controls.has(string(message.command_id))) break;
+        this.controls.delete(string(message.command_id));
+        this.state.view.notice = typeof message.detail === "string" ? message.detail
+          : `${message.operation} ${message.accepted ? "accepted" : "rejected"}`;
+        break;
+      case "error":
+        this.state.error(string(message.message));
+        if (message.request_id === this.pendingStart?.request_id) {
+          this.pendingStart = undefined; this.state.view.status = "failed";
+        }
+        break;
+      case "pong": this.lastPong = Date.now(); break;
+    }
+  }
+  submit(text: string, mode: "steer" | "followUp" = "steer"): void {
+    if (!text.trim()) return;
+    if (!this.negotiated) throw new Error("Wait for the server connection before sending");
+    if (this.pendingStart) throw new Error("Waiting for the current request to be accepted");
+    const id = randomUUID();
+    if (this.state.active) {
+      if (mode === "followUp") throw new Error("Queued follow-ups are not supported by this server yet");
+      if (Buffer.byteLength(text) > 4096) throw new Error("Steering is limited to 4096 UTF-8 bytes");
+      this.control("steer", {content: text, priority: 0}, id);
+    } else {
+      if (Buffer.byteLength(text) > 50_000) throw new Error("Request exceeds 50000 UTF-8 bytes");
+      this.state.begin();
+      this.pendingStart = {type: "task.start", request_id: id, idempotency_key: id, thread_id: this.state.threadId, input: text};
+      this.send(this.pendingStart);
+    }
+    this.state.user(id, text); this.changed();
+  }
+  private control(operation: "steer" | "cancel", extra: WireObject = {}, id = randomUUID()): void {
+    const capability = operation === "steer" ? "steering" : "cancel";
+    if (!this.state.capabilities.has(capability)) throw new Error(`Harness does not support ${operation}`);
+    const message = {type: `task.${operation}`, run_id: this.state.runId, idempotency_key: id, ...extra};
+    this.controls.set(id, message); this.send(message);
+    this.state.view.notice = `${operation} requested`; this.changed();
+  }
+  cancel(): void { if (this.state.active && this.state.runId) this.control("cancel"); }
+  newConversation(): void { this.state.newConversation(); this.changed(); }
+  close(): void {
+    this.stopped = true; this.negotiated = false;
+    clearTimeout(this.timer); clearInterval(this.heartbeat); clearTimeout(this.helloTimer);
+    this.socket?.close();
+  }
+}

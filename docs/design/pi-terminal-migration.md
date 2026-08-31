@@ -71,3 +71,19 @@ events through the existing bounded context compiler (`context.conversation_toke
 default 2000). It excludes private node inputs, thought content and the current
 invocation. A two-turn real ADK test verifies prior conversation reaches the next
 request without stale budgets/skills; no alternate session store or agent loop is added.
+
+## Remote terminal transport
+
+The new terminal now uses authenticated loopback WebSockets with a deterministic
+view reducer, contiguous replay cursors, bounded display buffers, reconnection,
+heartbeat and acknowledged steering/cancellation. The public control ID echoes
+the caller's idempotency key even when a harness returns a separate internal receipt.
+Internal state and workflow JSON are not transcript entries.
+
+The cross-language integration gate builds the terminal and runs its real Node
+client against Uvicorn, the production WebSocket coordinator and ADK Runner with
+a scripted model. Two turns retain conversation context; a real read tool is shown
+as a compact card. Rendering at 40/80/120 columns remains bounded and excludes
+workflow diagnostics. This is stronger than separate fake-socket tests but is not
+live-model quality or end-to-end visual parity evidence. Model/auth selectors,
+durable follow-ups and launcher migration are still pending.
