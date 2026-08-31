@@ -26,6 +26,8 @@ historical feature checklist or book-rubric score.
   model (not yet the default installed client; selectors pending).
 - Server-owned durable follow-ups, bounded conversation queries, queue continuation
   and removal controls; the terminal catches up through successor runs in order.
+- Authenticated server-owned provider login/status/cancel/logout controls. OAuth
+  workers never block the server event loop; credential tokens remain server-side.
 - Plain-language turns support a distinct `answered` outcome without inventing a
   coding task. Direct answers permit no managed shell/write/edit action and no
   explicit verification obligation; coding results still route through verification.

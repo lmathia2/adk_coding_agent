@@ -133,3 +133,25 @@ Enter/Ctrl+S, empty results, Unicode width bounds, command availability and draf
 preservation. A real PTY fixture exercised `/help`, search/selection, Tab completion,
 Escape and clean Ctrl+D exit. Login/model/session pickers still need their backend
 actions; the selector component alone is not evidence those features work.
+
+## Provider authentication controls
+
+The server advertises `provider_controls` only when its local provider service is
+wired. `provider.request` / `provider.result` provide status, login, cancel-login
+and logout outside the run transcript. The existing Codex device flow runs in a
+worker thread with cooperative cancellation. Only instructions, masked account
+status and the credential path reach clients, never token values or provider
+error bodies. Credentials continue to use the private atomic server-side store.
+
+One pending login is shared across local clients. Login receipts and attempts are
+bounded and process-local; clients must reconcile `/auth`, not automatically replay
+authentication mutations after a disconnect or restart. Logout cancels pending
+login and removes the local credential file; it neither revokes the remote account
+session nor recalls an already-authorized model request. Invalid saved credentials
+do not prevent inspecting status or removing the invalid cache.
+
+Ten focused tests exercise a real credential store and synthetic HTTP transport,
+including success, cancellation before token exchange, shutdown, logout retry,
+ownership, secret-safe failures and an authenticated production-server socket that
+still answers ping during login. The full Python unit/integration suite passes
+460 tests. This does not constitute fresh live-provider authentication evidence.

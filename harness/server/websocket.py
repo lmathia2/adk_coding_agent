@@ -15,6 +15,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from harness.agent import ControlReceipt, HarnessDescriptor, PublicModelStatus
+from harness.ai.controls import ProviderControlError, ProviderControlRequest
 
 from .protocol import (
     PROTOCOL_VERSION,
@@ -27,6 +28,8 @@ from .protocol import (
     PauseTaskMessage,
     PingMessage,
     PongMessage,
+    ProviderRequestMessage,
+    ProviderResultMessage,
     ServerEnvelope,
     ServerErrorMessage,
     ServerHello,
@@ -310,6 +313,23 @@ class _AgentWebSocketConnection:
             await self._enqueue(PongMessage(nonce=message.nonce))
         elif isinstance(message, SessionRequestMessage):
             await self._session_request(message)
+        elif isinstance(message, ProviderRequestMessage):
+            await self._provider_request(message)
+
+    async def _provider_request(self, message: ProviderRequestMessage) -> None:
+        handler = getattr(self.coordinator, "provider_request", None)
+        if handler is None:
+            await self._enqueue(ServerErrorMessage(code="unsupported_control", message="Provider controls are not supported", request_id=message.request_id))
+            return
+        try:
+            command = ProviderControlRequest.model_validate(message.model_dump(exclude={"type", "protocol_version"}))
+            result = await handler(command, user_id=self.user_id)
+        except ProviderControlError as error:
+            await self._enqueue(ServerErrorMessage(code="provider_request_failed", message=str(error), request_id=message.request_id))
+        except Exception:
+            await self._enqueue(ServerErrorMessage(code="provider_request_failed", message="Provider request failed. Check authentication storage and connectivity, then retry.", request_id=message.request_id))
+        else:
+            await self._enqueue(ProviderResultMessage(request_id=message.request_id, operation=message.operation, data=result))
 
     async def _session_request(self, message: SessionRequestMessage) -> None:
         # Session management is a server capability, not a model-visible tool.

@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from app.agent.factory import default_harness_registry
 from harness.agent import ModelReadiness, PublicModelStatus
 from harness.ai.codex_auth import CodexAuthenticationError, CodexCredentialStore
+from harness.ai.controls import LocalProviderControls
 from harness.config import (
     DEFAULT_COMPOSITION_PATH,
     HarnessComposition,
@@ -184,6 +185,7 @@ def build_server_assembly(
         )
     )
     coordinator = RunCoordinator(
+        provider_controls=LocalProviderControls(resolved_state_root),
         store=SqliteRunEventStore(resolved_state_root / "server" / "runs.db"),
         broker=RunEventBroker(
             queue_capacity=composition.server.outbound_queue_size,

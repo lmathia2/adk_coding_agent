@@ -29,6 +29,7 @@ class RuntimeCapability(StrEnum):
     APPROVALS = "approvals"
     ARTIFACTS = "artifacts"
     SESSIONS = "sessions"
+    PROVIDER_CONTROLS = "provider_controls"
 
 
 class HarnessDescriptor(FrozenModel):

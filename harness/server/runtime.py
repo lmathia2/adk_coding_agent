@@ -26,6 +26,7 @@ from harness.agent import (
     RuntimeCapability,
     SteeringCommand,
 )
+from harness.ai.controls import LocalProviderControls, ProviderControlError, ProviderControlRequest
 from harness.config import HarnessComposition, RuntimeBindings
 from harness.persistence import AdkServiceBundle
 from harness.safety import SecretRedactor
@@ -402,6 +403,7 @@ class RunCoordinator:
         execution_factory: RunExecutionFactory,
         redactor: SecretRedactor | None = None,
         liveness: RunLivenessPolicy | None = None,
+        provider_controls: LocalProviderControls | None = None,
     ) -> None:
         self.store = store
         self.broker = broker
@@ -413,14 +415,23 @@ class RunCoordinator:
         self._workspace_lock = asyncio.Lock()
         self._lifecycle_lock = asyncio.Lock()
         self.conversations = ConversationController(self)
+        self.provider_controls = provider_controls
 
     @property
     def descriptor(self) -> HarnessDescriptor:
         descriptor = self.execution_factory.descriptor
-        return descriptor.model_copy(update={"capabilities": descriptor.capabilities | {RuntimeCapability.SESSIONS}})
+        capabilities = descriptor.capabilities | {RuntimeCapability.SESSIONS}
+        if self.provider_controls is not None:
+            capabilities |= {RuntimeCapability.PROVIDER_CONTROLS}
+        return descriptor.model_copy(update={"capabilities": capabilities})
 
     async def session_request(self, message: SessionRequestMessage, *, user_id: str) -> dict[str, object]:
         return await self.conversations.request(message, user_id)
+
+    async def provider_request(self, message: ProviderControlRequest, *, user_id: str) -> dict[str, object]:
+        if self.provider_controls is None:
+            raise ProviderControlError("Provider controls are not supported")
+        return await self.provider_controls.request(message, user_id=user_id)
 
     @property
     def coding_model_status(self) -> PublicModelStatus | None:
@@ -1017,6 +1028,8 @@ class RunCoordinator:
             with suppress(asyncio.CancelledError):
                 await item.task
             await self._close_unstarted(run_id, item)
+        if self.provider_controls is not None:
+            await self.provider_controls.aclose()
 
 
 __all__ = [

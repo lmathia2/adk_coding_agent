@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import stat
+import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
@@ -190,8 +191,13 @@ class CodexOAuthClient:
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._client = client or httpx.Client(timeout=30)
+        self._owns_client = client is None
         self._now = now
         self._sleep = sleep
+
+    def close(self) -> None:
+        if self._owns_client:
+            self._client.close()
 
     def start_device_authorization(self) -> CodexDeviceAuthorization:
         response = self._client.post(
@@ -218,10 +224,13 @@ class CodexOAuthClient:
         authorization: CodexDeviceAuthorization,
         *,
         timeout_seconds: float = 15 * 60,
+        cancelled: threading.Event | None = None,
     ) -> CodexCredential:
         deadline = self._now() + timeout_seconds
         interval = max(1.0, authorization.interval_seconds)
         while self._now() < deadline:
+            if cancelled is not None and cancelled.is_set():
+                raise CodexAuthenticationError("OpenAI device authorization cancelled")
             response = self._client.post(
                 CODEX_DEVICE_TOKEN_URL,
                 json={
@@ -229,6 +238,8 @@ class CodexOAuthClient:
                     "user_code": authorization.user_code,
                 },
             )
+            if cancelled is not None and cancelled.is_set():
+                raise CodexAuthenticationError("OpenAI device authorization cancelled")
             if response.is_success:
                 payload = response.json()
                 try:
@@ -236,14 +247,20 @@ class CodexOAuthClient:
                     verifier = str(payload["code_verifier"])
                 except (KeyError, TypeError) as error:
                     raise CodexAuthenticationError("OpenAI device authorization is invalid") from error
-                return self.exchange_authorization_code(code, verifier)
+                credential = self.exchange_authorization_code(code, verifier)
+                if cancelled is not None and cancelled.is_set():
+                    raise CodexAuthenticationError("OpenAI device authorization cancelled")
+                return credential
             if response.status_code not in {403, 404}:
                 error_code = self._error_code(response)
                 if error_code == "slow_down":
                     interval += 5
                 elif error_code != "deviceauth_authorization_pending":
                     self._raise_for_status(response, "device authorization")
-            self._sleep(interval)
+            if cancelled is not None:
+                cancelled.wait(interval)
+            else:
+                self._sleep(interval)
         raise CodexAuthenticationError("OpenAI device authorization timed out")
 
     def exchange_authorization_code(self, code: str, verifier: str) -> CodexCredential:

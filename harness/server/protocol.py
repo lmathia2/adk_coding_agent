@@ -17,6 +17,7 @@ from pydantic import (
 from pydantic.alias_generators import to_camel
 
 from harness.agent import HarnessDescriptor, PublicModelStatus
+from harness.ai.controls import ProviderControlRequest
 
 PROTOCOL_VERSION = 1
 
@@ -131,6 +132,11 @@ class SessionRequestMessage(FrozenModel):
         return self
 
 
+class ProviderRequestMessage(ProviderControlRequest):
+    type: Literal["provider.request"]
+    protocol_version: Literal[1] = 1
+
+
 ClientMessage = Annotated[
     HelloMessage
     | StartTaskMessage
@@ -140,7 +146,8 @@ ClientMessage = Annotated[
     | CancelTaskMessage
     | AckMessage
     | PingMessage
-    | SessionRequestMessage,
+    | SessionRequestMessage
+    | ProviderRequestMessage,
     # Session operations extend v1 by capability; old clients never receive their replies.
     Field(discriminator="type"),
 ]
@@ -326,6 +333,14 @@ class SessionResultMessage(FrozenModel):
     data: dict[str, object]
 
 
+class ProviderResultMessage(FrozenModel):
+    type: Literal["provider.result"] = "provider.result"
+    protocol_version: Literal[1] = 1
+    request_id: str
+    operation: str
+    data: dict[str, object]
+
+
 ServerMessage = Annotated[
     ServerHello
     | TaskAcceptedMessage
@@ -333,7 +348,8 @@ ServerMessage = Annotated[
     | PongMessage
     | ServerErrorMessage
     | ServerEnvelope
-    | SessionResultMessage,
+    | SessionResultMessage
+    | ProviderResultMessage,
     Field(discriminator="type"),
 ]
 _SERVER_MESSAGE_ADAPTER = TypeAdapter(ServerMessage)
