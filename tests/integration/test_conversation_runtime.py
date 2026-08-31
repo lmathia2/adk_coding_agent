@@ -177,17 +177,19 @@ async def test_two_turns_keep_adk_history_but_reset_task_budgets_and_skills(tmp_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fixture", ["adk-client", "model-client"])
-async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture: str) -> None:
+@pytest.mark.parametrize("fixture", ["adk-client", "model-client", "approval-client"])
+async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture: str, monkeypatch) -> None:
     import asyncio
     import os
     import shutil
     import socket
+    import subprocess
 
     import uvicorn
 
     from harness.ai.selection import ModelChoice, load_model_default
     from harness.persistence import build_service_bundle, settings_from_composition
+    from harness.sandbox import LocalSandbox
     from harness.server.models import CatalogModel
     from harness.server.registry import RunEventBroker, SqliteRunEventStore
     from harness.server.runtime import AdkRunExecutionFactory, RunCoordinator
@@ -207,6 +209,21 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
         id="read1", name="read", args={"path": "README.md"},
     ))], reply("answer", "Repository explanation"), reply("answer", "Final queued reply")]
     models = {"alpha": model}
+    commands: list[str] = []
+    if fixture == "approval-client":
+        model._gate = None
+        model._responses = []
+        for action in ("approved", "denied", "cancelled"):
+            model._responses.append([types.Part(function_call=types.FunctionCall(
+                id=f"bash-{action}", name="bash", args={"command": f"printf fixture-{action}"}))])
+            if action != "cancelled":
+                model._responses.append(reply("blocked", "Fixture stops after the tool result"))
+        execute = LocalSandbox.execute
+        def recorded_execute(self, request):
+            commands.append(request.command)
+            return execute(self, request)
+        monkeypatch.setattr(LocalSandbox, "execute", recorded_execute)
+        model._responses.append(reply("done", "Verification complete"))
     if fixture == "model-client":
         model.model = "alpha"
         model._responses = [reply("answer", "Alpha fixture reply")]
@@ -223,6 +240,8 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "README.md").write_text("Bridge fixture.\n")
+    if fixture == "approval-client":
+        subprocess.run(["git", "init", "--quiet", str(workspace)], check=True)
     if fixture == "model-client":
         skill = workspace / ".agents/skills/python-checks"
         skill.mkdir(parents=True)
@@ -253,16 +272,17 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
         process = await asyncio.create_subprocess_exec(node, str(client),
             env={"PATH": os.environ.get("PATH", ""), "ADK_TEST_URL": f"ws://127.0.0.1:{port}/v1/agent", "ADK_TEST_TOKEN": token},
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        async with asyncio.timeout(15):
-            while True:
-                if process.returncode is not None:
-                    stdout, stderr = await process.communicate()
-                    pytest.fail(f"Terminal exited before queuing follow-ups: {stderr.decode()}")
-                threads = coordinator.conversations.store.threads("local-user")
-                if threads and len(coordinator.conversations.store.pending("local-user", threads[0].thread_id)) == (1 if fixture == "model-client" else 2):
-                    break
-                await asyncio.sleep(0.01)
-        model._gate.set()
+        if model._gate is not None:
+            async with asyncio.timeout(15):
+                while True:
+                    if process.returncode is not None:
+                        stdout, stderr = await process.communicate()
+                        pytest.fail(f"Terminal exited before queuing follow-ups: {stderr.decode()}")
+                    threads = coordinator.conversations.store.threads("local-user")
+                    if threads and len(coordinator.conversations.store.pending("local-user", threads[0].thread_id)) == (1 if fixture == "model-client" else 2):
+                        break
+                    await asyncio.sleep(0.01)
+            model._gate.set()
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=40)
         assert process.returncode == 0, stderr.decode()
         if fixture == "model-client":
@@ -271,6 +291,10 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
             assert load_model_default(state_root).name == "gamma"
             assert "First fixture turn" in models["beta"]._requests[0]
             assert "PRIVATE_SKILL_BODY" in models["alpha"]._requests[0]
+        elif fixture == "approval-client":
+            assert json.loads(stdout) == {"approved": True, "denied": True, "cancelled": True, "resumed": True, "verified": True}
+            assert commands == ["printf fixture-approved", "git diff --check", "printf fixture-verification"]
+            assert model._calls == 6
         else:
             assert json.loads(stdout) == {"turns": 3, "entries": 7, "status": "answered"}
             assert model._calls == 4

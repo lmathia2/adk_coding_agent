@@ -29,6 +29,7 @@ from harness.agent import (
 )
 from harness.ai.controls import LocalProviderControls, ProviderControlError, ProviderControlRequest
 from harness.ai.selection import ModelChoice
+from harness.approvals.waiting import ApprovalWaiter
 from harness.config import HarnessComposition, RuntimeBindings
 from harness.persistence import AdkServiceBundle
 from harness.safety import SecretRedactor
@@ -38,6 +39,7 @@ from .models import MODEL_METADATA, ModelControlError, ModelControls
 from .protocol import (
     AgUiEvent,
     AgUiEventType,
+    ApprovalRequestMessage,
     CancelTaskMessage,
     ModelRequestMessage,
     PauseTaskMessage,
@@ -144,6 +146,7 @@ class AdkRunExecution:
         max_llm_calls: int,
         coding_model_status: PublicModelStatus | None = None,
         explicit_public_messages: bool = False,
+        approvals: ApprovalWaiter | None = None,
     ) -> None:
         self.record = record
         self.runner = runner
@@ -154,6 +157,7 @@ class AdkRunExecution:
         self._coding_model_status = coding_model_status
         self._explicit_public_messages = explicit_public_messages
         self._closed = False
+        self.approvals = approvals
 
     @property
     def coding_model_status(self) -> PublicModelStatus | None:
@@ -359,6 +363,7 @@ class AdkRunExecutionFactory:
                 "invocation_id": record.invocation_id,
                 "state_root": state_root,
                 "task_id": record.run_id,
+                "interactive_approvals": record.metadata.get("interactive_approvals") == "true",
             }
         )
         assembly = await asyncio.to_thread(
@@ -395,6 +400,7 @@ class AdkRunExecutionFactory:
             max_llm_calls=max(1, min(5_000, max_iterations * 4)),
             coding_model_status=coding_model_status,
             explicit_public_messages=assembly.explicit_public_messages,
+            approvals=assembly.approvals,
         )
 
 
@@ -435,7 +441,8 @@ class RunCoordinator:
     @property
     def descriptor(self) -> HarnessDescriptor:
         descriptor = self.execution_factory.descriptor
-        capabilities = descriptor.capabilities | {RuntimeCapability.SESSIONS, RuntimeCapability.SESSION_HISTORY}
+        capabilities = descriptor.capabilities | {RuntimeCapability.SESSIONS, RuntimeCapability.SESSION_HISTORY,
+                                                  RuntimeCapability.CANCEL, RuntimeCapability.REPLAY}
         if self.provider_controls is not None:
             capabilities |= {RuntimeCapability.PROVIDER_CONTROLS}
         if self.models is not None:
@@ -475,6 +482,26 @@ class RunCoordinator:
         public = self.redactor.redact(data)
         if len(json.dumps(public, ensure_ascii=False).encode()) > 512_000:
             raise ValueError("resource inventory exceeds the public response limit")
+        return cast(dict[str, object], public)
+
+    async def approval_request(self, message: ApprovalRequestMessage, *, user_id: str) -> dict[str, object]:
+        record = self._owned_run(message.run_id, user_id)
+        if any(record.metadata.get(key) != self.execution_factory.run_metadata.get(key)
+               for key in ("coding.workspace_identity", "coding.harness_implementation")):
+            raise ValueError("run belongs to another workspace or harness")
+        active = self._active.get(record.run_id)
+        waiter = getattr(active.execution, "approvals", None) if active else None
+        if message.operation == "list":
+            data = {"run_id": record.run_id, "requests": waiter.pending() if waiter else [], "status": record.status}
+        else:
+            if active is None or active.task.done() or active.task.cancelling() or not isinstance(waiter, ApprovalWaiter):
+                raise ValueError("run is no longer accepting approval decisions")
+            assert message.approval_id is not None and message.fingerprint is not None and message.decision is not None
+            result = await waiter.decide(message.approval_id, message.fingerprint, message.decision, actor=user_id)
+            data = {"run_id": record.run_id, "request": result.model_dump(mode="json")}
+        public = self.redactor.redact(data)
+        if len(json.dumps(public, ensure_ascii=False).encode()) > 512_000:
+            raise ValueError("approval response exceeds its public size limit")
         return cast(dict[str, object], public)
 
     @property

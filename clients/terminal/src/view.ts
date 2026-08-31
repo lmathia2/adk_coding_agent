@@ -20,6 +20,7 @@ export class TerminalView {
   private readonly inputRegion = new Container();
   private dialog?: Dialog;
   private disposed = false;
+  get hasDialog(): boolean { return this.dialog !== undefined; }
   private readonly removeListener: () => void;
   constructor(readonly tui: TUI, readonly state: SessionView, private readonly actions: SessionActions) {
     this.editor = new Editor(tui, editorTheme, { paddingX: 1 });
@@ -90,7 +91,8 @@ export class TerminalView {
     const lines = pending.slice(0, 3).map(item => `↳ queued: ${safeText(item.preview).split("\n")[0].slice(0, 120)}`);
     if (pending.length > 3) lines.push(`… ${pending.length - 3} more queued follow-ups`);
     this.queue.setText(theme.dim(lines.join("\n")));
-    this.status.setText(theme.dim(safeText(this.state.notice || (this.state.status === "running" ? "Working…" : ""))));
+    const approval = this.state.approvals?.length ? `Approval required (${this.state.approvals.length}) · /approvals · Esc interrupts\n` : "";
+    this.status.setText(theme.dim(safeText(approval + (this.state.notice || (this.state.status === "running" ? "Working…" : "")))));
     this.footer.setText(theme.dim(safeText(`${this.state.workspace}  ·  ${this.state.model}  ·  ${this.state.status}`)));
     this.tui.requestRender();
   }

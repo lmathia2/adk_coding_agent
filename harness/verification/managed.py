@@ -102,14 +102,15 @@ class ManagedValidationExecutor:
     def __call__(self, validation: ValidationCommand) -> CommandResult:
         fingerprint = _fingerprint(validation)
         persisted = self.approvals.for_fingerprint(self.task_id, fingerprint)
+        policy = self.policy
         if persisted and persisted.status == "approved":
-            self.policy.approved_fingerprints.add(fingerprint)
-        elif persisted and persisted.status == "denied":
+            policy = replace(policy, approved_fingerprints=policy.approved_fingerprints | {fingerprint})
+        elif persisted and persisted.status in {"denied", "expired"}:
             return self._blocked(
                 validation,
                 risk=CommandRisk(persisted.risk),
                 reason=(
-                    f"approval denied by {persisted.decided_by or 'reviewer'}"
+                    f"approval {persisted.status} by {persisted.decided_by or 'reviewer'}"
                     + (
                         f": {persisted.decision_note}"
                         if persisted.decision_note
@@ -119,7 +120,7 @@ class ManagedValidationExecutor:
                 request_id=persisted.request_id,
             )
 
-        decision = self.policy.decide(
+        decision = policy.decide(
             validation.command,
             fingerprint=fingerprint,
         )

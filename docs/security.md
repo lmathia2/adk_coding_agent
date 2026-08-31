@@ -81,6 +81,27 @@ An approved fingerprint is never copied into the shared policy: switching tasks
 requires a separate approval, and an expired approval stops authorizing execution
 even if the same adapter used it successfully earlier.
 
+The new Pi terminal opts into asynchronous approval waits for worker commands and
+deterministic verification. The authenticated server checks run owner, workspace,
+harness, request ID and exact fingerprint; clients cannot supply the decision actor.
+Decisions are stored in `STATE_ROOT/runs/RUN_ID/approvals.db`. The receipt authorizes
+that exact operation in that task, not one guaranteed execution; repeated model
+attempts within the task may reuse approval. Tool results report actual execution.
+
+Pending waits are bounded to 32 per run and expire after the smaller of
+`server.approval_wait_timeout_seconds` (default 120 seconds) and half the server's
+idle timeout (90 seconds with defaults). Cancellation and expiry close pending
+requests without executing them. Disconnecting a terminal does not cancel its run;
+another authenticated terminal can resume it and inspect `/approvals`. Restarted
+runs are failed closed and are never automatically reinvoked. Uncertain decisions
+are not automatically replayed. Once a command has launched, cancellation remains
+best-effort: closing a dialog does not revoke an approval or undo effects.
+
+The approval UI defaults to Deny and does not offer approval for a command too large
+to display in full. Commands can contain redacted secrets. Existing non-interactive
+clients retain immediate blocked results instead of entering invisible human waits.
+No additional network, destructive, publication or Git mutation permission is enabled.
+
 ### Indexed-search branch
 
 Commands whose first token is the reserved word `search` are parsed before shell

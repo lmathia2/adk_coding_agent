@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from harness.approvals import ApprovalStore
 from harness.repo.discovery import BuildCommand, RepositoryManifest
 from harness.sandbox import SandboxRequest, SandboxResult
 from harness.verification import (
@@ -13,6 +15,7 @@ from harness.verification import (
     discover_validation_plan,
     run_validation_plan,
 )
+from harness.verification.managed import _fingerprint
 
 
 class _RecordingSandbox:
@@ -29,6 +32,22 @@ class _RecordingSandbox:
             stderr="",
             duration_ms=21,
         )
+
+
+def test_validation_does_not_cache_an_expired_approval(tmp_path: Path, monkeypatch) -> None:
+    now = datetime.now(UTC)
+    sandbox = _RecordingSandbox(tmp_path)
+    executor = ManagedValidationExecutor(tmp_path, state_root=tmp_path / "state", task_id="task", sandbox=sandbox)
+    validation = ValidationCommand(category="custom", command="printf approved", source="fixture")
+    request = executor.approvals.request(task_id="task", fingerprint=_fingerprint(validation), operation=validation.command,
+        risk="unknown", reason="review", expires_at=(now + timedelta(seconds=60)).isoformat())
+    executor.approvals.decide(request.request_id, decision="approved", actor="reviewer")
+    assert executor(validation).passed
+    monkeypatch.setattr(ApprovalStore, "_now", lambda self: now + timedelta(seconds=120))
+    expired = executor(validation)
+    assert expired.status == "blocked" and "expired" in expired.stderr
+    assert len(sandbox.requests) == 1
+    assert executor.policy.approved_fingerprints == set()
 
 
 def test_discovery_selects_syntax_targeted_tests_and_diff(tmp_path: Path) -> None:

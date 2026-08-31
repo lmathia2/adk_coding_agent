@@ -22,6 +22,8 @@ from .protocol import (
     PROTOCOL_VERSION,
     AckMessage,
     AgUiEventType,
+    ApprovalRequestMessage,
+    ApprovalResultMessage,
     AttachTaskMessage,
     CancelTaskMessage,
     ControlResultMessage,
@@ -194,6 +196,7 @@ class _AgentWebSocketConnection:
         self._writer: asyncio.Task[None] | None = None
         self._attachment: asyncio.Task[None] | None = None
         self._resource_task: asyncio.Task[None] | None = None
+        self._approval_task: asyncio.Task[None] | None = None
         self._closing = False
 
     async def run(self) -> None:
@@ -323,6 +326,11 @@ class _AgentWebSocketConnection:
             await self._provider_request(message)
         elif isinstance(message, ModelRequestMessage):
             await self._model_request(message)
+        elif isinstance(message, ApprovalRequestMessage):
+            if self._approval_task is not None and not self._approval_task.done():
+                await self._enqueue(ServerErrorMessage(code="approval_request_busy", message="An approval control is still pending. Check /approvals before retrying.", request_id=message.request_id))
+            else:
+                self._approval_task = asyncio.create_task(self._approval_request(message), name="approval-control")
         elif isinstance(message, ResourceRequestMessage):
             if self._resource_task is not None and not self._resource_task.done():
                 await self._enqueue(ServerErrorMessage(code="resource_request_busy", message="Resource discovery is still running; try again shortly.", request_id=message.request_id))
@@ -339,6 +347,17 @@ class _AgentWebSocketConnection:
             await self._enqueue_or_close(ServerErrorMessage(code="resource_request_failed", message="Resource discovery failed. Check the server configuration and trusted resource files.", request_id=message.request_id))
         else:
             await self._enqueue_or_close(ResourceResultMessage(request_id=message.request_id, data=result))
+
+    async def _approval_request(self, message: ApprovalRequestMessage) -> None:
+        handler = getattr(self.coordinator, "approval_request", None)
+        try:
+            if handler is None:
+                raise ValueError("unsupported")
+            result = await handler(message, user_id=self.user_id)
+        except Exception:
+            await self._enqueue_or_close(ServerErrorMessage(code="approval_request_failed", message="Approval control was not confirmed. Inspect /approvals and the run status before retrying.", request_id=message.request_id))
+        else:
+            await self._enqueue_or_close(ApprovalResultMessage(request_id=message.request_id, operation=message.operation, data=result))
 
     async def _model_request(self, message: ModelRequestMessage) -> None:
         handler = getattr(self.coordinator, "model_request", None)
@@ -649,7 +668,7 @@ class _AgentWebSocketConnection:
     async def _stop_connection_tasks(self) -> None:
         tasks = tuple(
             task
-            for task in (self._attachment, self._writer, self._resource_task)
+            for task in (self._attachment, self._writer, self._resource_task, self._approval_task)
             if task is not None and task is not asyncio.current_task()
         )
         for task in tasks:

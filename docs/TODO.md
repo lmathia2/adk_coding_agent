@@ -13,7 +13,7 @@
   - [x] Expose trusted resource metadata and actual skill selection through the server.
 - [ ] Complete Pi-style UI and migrate installation/launching.
   - [x] Prevent stored approvals from leaking across tasks or surviving expiration in a shared adapter.
-  - [ ] Wire command approval decisions to paused tool execution and terminal controls.
+  - [x] Wire command approval decisions to waiting worker/verification execution and terminal controls.
   - [ ] Complete public-response streaming and quiet activity presentation.
   - [ ] Migrate installation/launching after the new client passes the delivery gates.
 - [ ] Verify conversational/coding examples, replay and harness swap; remove Go TUI.

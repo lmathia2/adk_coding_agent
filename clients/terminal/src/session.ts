@@ -19,7 +19,7 @@ export class SessionState {
   }
   user(id: string, text: string): void { this.append({kind: "user", id, text: bounded(text)}); }
   error(text: string): void { this.append({kind: "error", id: randomUUID(), text: bounded(text)}); }
-  begin(): void { this.runId = ""; this.cursor = 0; this.view.status = "starting"; this.view.notice = ""; this.view.selectedSkills = []; }
+  begin(): void { this.runId = ""; this.cursor = 0; this.view.status = "starting"; this.view.notice = ""; this.view.selectedSkills = []; this.view.approvals = []; }
   restore(history: SessionState): void {
     this.threadId = history.threadId; this.runId = history.runId; this.cursor = history.cursor;
     Object.assign(this.view, history.view, {workspace: this.view.workspace});
@@ -30,6 +30,7 @@ export class SessionState {
     this.view.entries = []; this.view.status = "ready"; this.view.notice = "";
     this.view.pending = [];
     this.view.selectedSkills = [];
+    this.view.approvals = [];
   }
   resources(data: WireObject): void {
     const workspace = string(data.workspace);
@@ -78,12 +79,13 @@ export class SessionState {
         break;
       case "RUN_FINISHED": {
         this.closeTools();
+        this.view.approvals = [];
         const result = event.result && typeof event.result === "object" ? object(event.result) : {};
         this.view.status = typeof result.status === "string" ? result.status : "completed";
         this.view.notice = result.verified === true ? "Verification passed" : "";
         break;
       }
-      case "RUN_ERROR": this.closeTools(); this.view.status = "failed"; this.error(string(event.message)); break;
+      case "RUN_ERROR": this.closeTools(); this.view.approvals = []; this.view.status = "failed"; this.error(string(event.message)); break;
       case "TEXT_MESSAGE_START": break;
       case "TEXT_MESSAGE_CONTENT": {
         const id = `${this.runId}:message:${string(event.messageId)}`;

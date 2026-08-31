@@ -30,7 +30,16 @@ export interface SessionView {
   notice: string;
   resources?: ResourceView;
   selectedSkills?: string[];
+  approvals?: ApprovalView[];
   pending?: {item_id: string; preview: string}[];
+}
+export interface ApprovalView {
+  request_id: string;
+  fingerprint: string;
+  operation: string;
+  risk: string;
+  reason: string;
+  wait_deadline: string;
 }
 export interface SessionActions {
   submit(text: string, mode: "steer" | "followUp"): void;

@@ -3,6 +3,7 @@ import WebSocket from "ws";
 import { decode, object, string, type WireObject } from "./protocol.js";
 import { SessionState } from "./session.js";
 import { loadHistory } from "./history.js";
+import type { ApprovalView } from "./contracts.js";
 
 export interface RemoteOptions {
   url: string;
@@ -25,6 +26,7 @@ export class RemoteSession {
   private get loadingHistory(): boolean { return this.historyLoad !== undefined && !this.historyLoad.aborted; }
   private refreshAgain = false;
   private resourcesRequest?: Promise<void>;
+  private approvalsRequest?: Promise<void>;
   private latestSnapshot?: WireObject;
   private lastPong = 0;
   private attempts = 0;
@@ -69,9 +71,9 @@ export class RemoteSession {
       this.negotiated = false;
       clearInterval(this.heartbeat); clearTimeout(this.helloTimer); clearInterval(this.sessionPoll);
       for (const [id, request] of this.requests) {
-        if (request.message.type !== "provider.request" && request.message.type !== "model.request") continue;
+        if (request.message.type !== "provider.request" && request.message.type !== "model.request" && request.message.type !== "approval.request") continue;
         clearTimeout(request.timer); this.requests.delete(id);
-        request.reject(new Error(`Management request interrupted. Reconnect and check ${request.message.type === "model.request" ? "/model" : "/auth"} before retrying.`));
+        request.reject(new Error(`Management request interrupted. Reconnect and check ${request.message.type === "approval.request" ? "/approvals" : request.message.type === "model.request" ? "/model" : "/auth"} before retrying.`));
       }
       if (code === 1008) {
         this.stopped = true;
@@ -109,6 +111,7 @@ export class RemoteSession {
         clearInterval(this.sessionPoll);
         this.sessionPoll = setInterval(() => {
           if (this.state.active || this.state.view.pending?.length) this.refreshConversation();
+          if (this.state.active && this.state.capabilities.has("approvals")) void this.refreshApprovals().catch(error => this.notice(error.message));
         }, 1_000);
         this.refreshConversation();
         this.lastPong = Date.now();
@@ -154,7 +157,8 @@ export class RemoteSession {
       case "session.result":
       case "provider.result":
       case "model.result":
-      case "resource.result": {
+      case "resource.result":
+      case "approval.result": {
         const id = string(message.request_id), request = this.requests.get(id);
         if (!request) break;
         if (message.type !== String(request.message.type).replace(".request", ".result") || message.operation !== request.message.operation) throw new Error("Mismatched response");
@@ -184,6 +188,7 @@ export class RemoteSession {
       if (Buffer.byteLength(text) > 50_000) throw new Error("Request exceeds 50000 UTF-8 bytes");
       this.state.begin();
       this.pendingStart = {type: "task.start", request_id: id, idempotency_key: id, thread_id: this.state.threadId, input: text};
+      if (this.state.capabilities.has("approvals")) this.pendingStart.metadata = {interactive_approvals: "true"};
       this.send(this.pendingStart);
     }
     this.state.user(id, text); this.changed();
@@ -206,6 +211,25 @@ export class RemoteSession {
     }).finally(() => { this.resourcesRequest = undefined; });
     return this.resourcesRequest;
   }
+  refreshApprovals(): Promise<void> {
+    const run = this.state.runId;
+    if (!run) return Promise.resolve();
+    this.approvalsRequest ??= this.approvalRequest("list", {run_id: run}).then(data => {
+      if (this.stopped || run !== this.state.runId || !this.state.active) return;
+      if (!Array.isArray(data.requests) || data.requests.length > 32) throw new Error("Invalid approval inventory");
+      this.state.view.approvals = data.requests.map(value => {
+        const item = object(value);
+        const result: ApprovalView = {request_id: string(item.request_id), fingerprint: string(item.fingerprint),
+          operation: string(item.operation), risk: string(item.risk), reason: string(item.reason), wait_deadline: string(item.wait_deadline)};
+        return result;
+      });
+      this.changed();
+    }).finally(() => { this.approvalsRequest = undefined; });
+    return this.approvalsRequest;
+  }
+  approvalRequest(operation: "list" | "decide", parameters: WireObject): Promise<WireObject> {
+    return this.managementRequest("approval", "approvals", operation, parameters);
+  }
   providerRequest(operation: "status" | "login" | "cancel_login" | "logout", parameters: WireObject = {}): Promise<WireObject> {
     return this.managementRequest("provider", "provider_controls", operation, parameters);
   }
@@ -227,7 +251,7 @@ export class RemoteSession {
     if (this.requests.size >= 32) return Promise.reject(new Error("Waiting for outstanding requests"));
     const id = randomUUID(), message = {...parameters, type: `${domain}.request`, request_id: id, operation};
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.requests.delete(id); reject(new Error(`${domain} request timed out; check ${domain === "provider" ? "/auth" : domain === "model" ? "/model" : "/queue"} before retrying`)); }, 15_000);
+      const timer = setTimeout(() => { this.requests.delete(id); reject(new Error(`${domain} request timed out; check ${domain === "approval" ? "/approvals" : domain === "provider" ? "/auth" : domain === "model" ? "/model" : "/queue"} before retrying`)); }, 15_000);
       this.requests.set(id, {message, resolve, reject, timer}); this.send(message);
     });
   }

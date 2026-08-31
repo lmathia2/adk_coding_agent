@@ -77,6 +77,28 @@ test("local token is never sent to arbitrary hosts or URL query strings", () => 
     assert.throws(() => new RemoteSession({url, token}));
 });
 
+test("uncertain approval mutations are not replayed when the socket reconnects", async () => {
+  const server = new WebSocketServer({host: "127.0.0.1", port: 0});
+  await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  let connections = 0, decisions = 0;
+  server.on("connection", socket => {
+    connections++;
+    socket.on("message", data => {
+      const message = JSON.parse(data.toString());
+      if (message.type === "client.hello") send(socket, {type: "server.hello", harness: {display_name: "Fixture", capabilities: ["approvals"]}});
+      if (message.type === "approval.request" && message.operation === "decide") { decisions++; socket.terminate(); }
+    });
+  });
+  const session = new RemoteSession({url: `ws://127.0.0.1:${address.port}`, token, reconnectMs: 1});
+  try {
+    session.connect(); await until(() => session.state.view.status === "ready");
+    await assert.rejects(session.approvalRequest("decide", {run_id: "run", approval_id: "request", fingerprint: "f".repeat(64), decision: "approved"}), /\/approvals/);
+    await until(() => connections === 2); await delay(20);
+    assert.equal(decisions, 1); assert.deepEqual(session.state.view.entries, []);
+  } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
+});
+
 test("model status reconciles new conversations and reconnect without replaying selection", async () => {
   const server = new WebSocketServer({host: "127.0.0.1", port: 0});
   await once(server, "listening");

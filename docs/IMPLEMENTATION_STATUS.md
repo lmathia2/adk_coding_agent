@@ -42,6 +42,11 @@ historical feature checklist or book-rubric score.
   configuration paths and trust; `/skills` and `/skill:NAME` use the runtime's trusted
   directory loader. Ctrl+O shows metadata, not file bodies. Actual selected skill
   names arrive before model execution and are distinct from available resources.
+- Pi terminal command approvals: worker and verification checks wait asynchronously
+  for exact task-scoped decisions. Deny is the dialog default; deferred requests
+  remain visible through `/approvals`. Cancellation, expiration, reconnect and
+  uncertain decision retries are tested against the real server/ADK/tool stack.
+  This is in the new terminal; the installed Go client is not yet migrated.
 - Plain-language turns support a distinct `answered` outcome without inventing a
   coding task. Direct answers permit no managed shell/write/edit action and no
   explicit verification obligation; coding results still route through verification.

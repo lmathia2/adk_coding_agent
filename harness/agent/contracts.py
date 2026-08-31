@@ -11,6 +11,7 @@ from google.adk.agents import BaseAgent
 from google.adk.apps import App
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from harness.approvals.waiting import ApprovalWaiter
 from harness.config import HarnessComposition, ModelConfig, RuntimeBindings
 
 
@@ -150,6 +151,7 @@ class AdkHarnessAssembly:
     # Structured workers opt in: only explicitly tagged prose/results cross the
     # public boundary. Other registered ADK harnesses retain normal text streaming.
     explicit_public_messages: bool = False
+    approvals: ApprovalWaiter | None = None
 
 
 @runtime_checkable

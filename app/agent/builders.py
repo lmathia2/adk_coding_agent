@@ -12,6 +12,7 @@ from google.adk import Agent
 from google.adk.models import BaseLlm
 from google.adk.tools import ToolContext
 
+from harness.approvals.waiting import ApprovalWaiter
 from harness.config import ToolSurfaceConfig
 from harness.tools.adk_adapter import AdkCodingTools, create_adk_tools
 
@@ -37,6 +38,7 @@ def build_coding_worker(
     *,
     tools: AdkCodingTools | None = None,
     tool_config: ToolSurfaceConfig | None = None,
+    approvals: ApprovalWaiter | None = None,
 ) -> CodingWorkerBundle:
     active_tools = tools or create_adk_tools(
         settings.workspace,
@@ -116,15 +118,20 @@ def build_coding_worker(
         # Even apparently read-only shell can contain redirections/substitutions.
         # The direct-answer path conservatively permits only the read primitive.
         _require_verification(tool_context)
-        return await asyncio.to_thread(
-            _invoke_tool,
-            "bash",
-            lambda: active_tools.bash(
+        def invoke() -> dict[str, Any]:
+            return _invoke_tool("bash", lambda: active_tools.bash(
                 command=command,
                 timeout_seconds=timeout_seconds,
                 task_scope=task_scope,
-            ),
-        )
+            ))
+        result = await asyncio.to_thread(invoke)
+        if approvals is not None and result.get("approval_required") is True:
+            decision = await approvals.wait(str(result["approval_request_id"]), task_scope or "")
+            if decision.status == "approved":
+                return await asyncio.to_thread(invoke)
+            return {**result, "approval_required": False,
+                    "model_text": f"Command not executed: approval {decision.status}."}
+        return result
 
     async def edit(
         path: str,

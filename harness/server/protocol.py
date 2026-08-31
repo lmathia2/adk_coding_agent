@@ -170,6 +170,24 @@ class ResourceRequestMessage(FrozenModel):
     operation: Literal["list"] = "list"
 
 
+class ApprovalRequestMessage(FrozenModel):
+    type: Literal["approval.request"]
+    protocol_version: Literal[1] = 1
+    request_id: str = Field(min_length=1, max_length=256)
+    run_id: str = Field(min_length=1, max_length=256)
+    operation: Literal["list", "decide"]
+    approval_id: str | None = Field(default=None, min_length=1, max_length=256)
+    fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    decision: Literal["approved", "denied"] | None = None
+
+    @model_validator(mode="after")
+    def validate_decision(self) -> ApprovalRequestMessage:
+        fields = (self.approval_id, self.fingerprint, self.decision)
+        if (self.operation == "decide" and any(value is None for value in fields)) or (self.operation == "list" and any(value is not None for value in fields)):
+            raise ValueError("decide requires approval_id, fingerprint and decision; list accepts none")
+        return self
+
+
 ClientMessage = Annotated[
     HelloMessage
     | StartTaskMessage
@@ -182,7 +200,8 @@ ClientMessage = Annotated[
     | SessionRequestMessage
     | ProviderRequestMessage
     | ModelRequestMessage
-    | ResourceRequestMessage,
+    | ResourceRequestMessage
+    | ApprovalRequestMessage,
     # Session operations extend v1 by capability; old clients never receive their replies.
     Field(discriminator="type"),
 ]
@@ -392,6 +411,14 @@ class ResourceResultMessage(FrozenModel):
     data: dict[str, object]
 
 
+class ApprovalResultMessage(FrozenModel):
+    type: Literal["approval.result"] = "approval.result"
+    protocol_version: Literal[1] = 1
+    request_id: str
+    operation: Literal["list", "decide"]
+    data: dict[str, object]
+
+
 ServerMessage = Annotated[
     ServerHello
     | TaskAcceptedMessage
@@ -402,7 +429,8 @@ ServerMessage = Annotated[
     | SessionResultMessage
     | ProviderResultMessage
     | ModelResultMessage
-    | ResourceResultMessage,
+    | ResourceResultMessage
+    | ApprovalResultMessage,
     Field(discriminator="type"),
 ]
 _SERVER_MESSAGE_ADAPTER = TypeAdapter(ServerMessage)

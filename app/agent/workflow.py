@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import subprocess
@@ -16,6 +17,7 @@ from google.adk.agents import BaseAgent
 from google.adk.events import EventActions
 from google.adk.workflow import BaseNode, node
 
+from harness.approvals.waiting import ApprovalWaiter
 from harness.context import build_compaction_snapshot, estimate_tokens
 from harness.models import CompactionSnapshot
 from harness.models.agent_step import AgentStep
@@ -49,8 +51,9 @@ from harness.telemetry import MetricsStore, TaskOutcomeSample
 from harness.verification import (
     ManagedValidationExecutor,
     ValidationCommand,
+    build_report,
+    check_scope,
     discover_validation_plan,
-    run_validation_plan,
 )
 from harness.workspace import GitWorktreeManager
 
@@ -79,6 +82,7 @@ class PiWorkflowDependencies:
     steering_batch_limit: int
     steering_enabled: bool
     steering_at_work_batch_boundary: bool
+    approvals: ApprovalWaiter | None = None
 
 def _session_id(ctx: Context) -> str | None:
     direct = getattr(ctx, "session_id", None)
@@ -470,13 +474,27 @@ async def _verify_task(
     evidence_map: dict[str, list[str]] = {
         claim["criterion"]: list(claim.get("evidence", [])) for claim in claims
     }
-    report, command_results = run_validation_plan(
-        deps.settings.workspace,
-        plan,
-        acceptance_criteria=ledger.acceptance_criteria,
+    executor = deps.validation_executor(ledger.task_id)
+    command_results = []
+    for command in plan.commands:
+        result = await asyncio.to_thread(executor, command)
+        if deps.approvals is not None and result.status == "blocked" and result.approval_request_id:
+            decision = await deps.approvals.wait(result.approval_request_id, ledger.task_id)
+            if decision.status == "approved":
+                result = await asyncio.to_thread(executor, command)
+            else:
+                result = result.model_copy(update={"stderr": f"Validation command not executed: approval {decision.status}."})
+        result = result.model_copy(update={"required": command.required, "strength": command.effective_strength})
+        command_results.append(result)
+        if command.required and not result.passed:
+            break
+    report = build_report(
+        criteria=ledger.acceptance_criteria,
+        results=command_results,
+        scope_violations=check_scope(plan.changed_paths, allowed_paths=plan.allowed_paths, forbidden_paths=plan.forbidden_paths),
         criterion_evidence=evidence_map,
         required_strength=request.verification_level,
-        executor=deps.validation_executor(ledger.task_id),
+        changed_paths=plan.changed_paths,
     )
     return {
         "report": report.model_dump(mode="json"),

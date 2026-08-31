@@ -9,6 +9,7 @@ import { providerCommand } from "./provider-ui.js";
 import { ModelPicker } from "./model-picker.js";
 import { HistoryDialog, SessionInfo, SessionPicker } from "./session-ui.js";
 import { ResourceDialog, skillPrompt } from "./resources.js";
+import { ApprovalPresenter } from "./approvals.js";
 
 const {values} = parseArgs({options: {
   server: {type: "string", default: "ws://127.0.0.1:8765/v1/agent"},
@@ -26,6 +27,7 @@ try {
   const commands = (): SelectItem[] => [
     {value: "/help", label: "/help", description: "Commands and keyboard hints"},
     {value: "/new", label: "/new", description: "Start a new conversation"},
+    ...(session.state.capabilities.has("approvals") ? [{value: "/approvals", label: "/approvals", description: "Review exact commands waiting for authorization"}] : []),
     ...(session.state.capabilities.has("cancel") ? [{value: "/cancel", label: "/cancel", description: "Interrupt the active run"}] : []),
     ...(session.state.capabilities.has("sessions") ? [
       {value: "/queue", label: "/queue", description: "Manage durable follow-ups"},
@@ -76,6 +78,9 @@ try {
         if (command === "/quit") return quit();
         if (command === "/new") return session.newConversation();
         if (command === "/cancel") return session.cancel();
+        if (command === "/approvals") {
+          background(session.refreshApprovals().then(() => showApproval(true))); return;
+        }
         if (command === "/resources" || command === "/skills") {
           view.showDialog(close => new ResourceDialog(session, session.state.view, command === "/skills",
             () => view.refresh(), close, name => view.editor.setText(`$${name} `))); return;
@@ -123,7 +128,13 @@ try {
     quit,
   });
   view.setCommands(commands);
-  const unsubscribe = session.subscribe(() => view.refresh());
+  const approvals = new ApprovalPresenter(view, session, text => {
+    if (!stopped) { session.state.view.notice = text; view.refresh(); }
+  });
+  const showApproval = (explicit = false) => {
+    if (!stopped) approvals.update(session.state.runId, session.state.active, session.state.view.approvals ?? [], explicit);
+  };
+  const unsubscribe = session.subscribe(() => { view.refresh(); showApproval(); });
   process.on("SIGTERM", quit);
   process.on("SIGINT", quit);
   tui.start(); session.connect();

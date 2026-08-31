@@ -152,6 +152,16 @@ class ApprovalStore:
             ).fetchone()
         return self._from_row(row)
 
+    def expire(self, request_id: str, *, task_id: str) -> None:
+        """Close an abandoned wait without overwriting a concurrent human decision."""
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE approval_requests SET status='expired', decided_at=?, "
+                "decided_by='system', decision_note='approval wait ended' "
+                "WHERE request_id=? AND task_id=? AND status='pending'",
+                (self._now().isoformat(), request_id, task_id),
+            )
+
     def for_fingerprint(
         self,
         task_id: str,

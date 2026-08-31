@@ -24,6 +24,8 @@ from harness.agent import (
 )
 from harness.agent.resources import HarnessResources, ResourceItem
 from harness.ai import AdkModelProviderRegistry, default_adk_model_provider_registry
+from harness.approvals import ApprovalStore
+from harness.approvals.waiting import ApprovalWaiter
 from harness.config import (
     FOUR_CODING_TOOLS,
     HarnessComposition,
@@ -139,6 +141,7 @@ class PiCodingHarnessFactory:
                     RuntimeCapability.TOOL_EVENTS,
                     RuntimeCapability.STATE_SNAPSHOTS,
                     RuntimeCapability.ARTIFACTS,
+                    RuntimeCapability.APPROVALS,
                 }
             ),
             protocol_versions=(1,),
@@ -267,11 +270,18 @@ class PiCodingHarnessFactory:
 
         worker_config = config.agents["coding_worker"]
         coding_model = build_model(worker_config.model)
+        approvals = None
+        if bindings.interactive_approvals:
+            approvals = ApprovalWaiter(
+                ApprovalStore(settings.state_root / "approvals.db"), settings.task_id_override or "",
+                timeout=min(composition.server.approval_wait_timeout_seconds, composition.server.idle_timeout_seconds / 2),
+            )
         worker = build_coding_worker(
             settings,
             coding_model,
             tools=tools,
             tool_config=config.tools,
+            approvals=approvals,
         )
         event_store = JsonlEventStore(settings.state_root / "events")
         steering = SteeringQueue(settings.state_root / "state.db")
@@ -330,6 +340,7 @@ class PiCodingHarnessFactory:
             steering_batch_limit=config.steering.batch_limit,
             steering_enabled=config.steering.enabled,
             steering_at_work_batch_boundary=("work_batch_boundary" in config.steering.safe_points),
+            approvals=approvals,
         )
         root_agent = build_root_agent(deps)
         plugins: list[BasePlugin] = []
@@ -408,6 +419,7 @@ class PiCodingHarnessFactory:
             ),
             agents=agents,
             explicit_public_messages=True,
+            approvals=approvals,
             controls=_PiControlHooks(
                 steering=steering,
                 deps=deps,

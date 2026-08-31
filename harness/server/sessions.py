@@ -270,7 +270,8 @@ class ConversationController:
         if latest.status in {"queued", "running"}:
             return
         message = StartTaskMessage(type="task.start", request_id=f"followup:{item_id}",
-            idempotency_key=f"followup:{item_id}", thread_id=thread_id, input=str(item["content"]))
+            idempotency_key=f"followup:{item_id}", thread_id=thread_id, input=str(item["content"]),
+            metadata={"interactive_approvals": "true"} if latest.metadata.get("interactive_approvals") == "true" else {})
         try:
             record, _ = await self.coordinator.start(message, user_id=user_id, queued_follow_up=True)
         except Exception:

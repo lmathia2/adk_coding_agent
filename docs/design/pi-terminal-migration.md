@@ -272,3 +272,39 @@ worker but not the terminal. Tests also cover trust, configured roots, disabled
 budgets, invalid manifests, bounded discovery, responsive ping, safe errors,
 dialog dismissal and terminal widths. Live-model/visual comparisons and installation
 migration still remain; this is not a claim of full Pi parity.
+
+## Interactive approvals
+
+The new terminal opts in with `interactive_approvals: "true"` task metadata; queued
+turns inherit it. Clients without that opt-in retain immediate blocked tool results.
+An optional assembly approval primitive joins the existing SQLite requests to
+cancellable async waits, shared by worker shell calls and deterministic verification.
+Verification commands now run off the server event loop; verdict rules are unchanged.
+The coordinator advertises its own implemented cancellation and replay capabilities
+independently of the chosen harness descriptor.
+
+`approval.request` supports bounded listing and exact-request decisions, with owner,
+workspace, harness and fingerprint checks. SQLite decisions remain authoritative;
+the existing approval CLI can still resolve a live wait. A decision retry cannot
+dispatch a command: only the original tool/verification continuation can do that.
+Timeout/cancellation expires pending requests; finished runs reject decisions.
+
+The Pi client shows a persistent approval indicator and opens a dialog when it will
+not displace another dialog. Deny is selected initially. Escape defers and preserves
+the draft; `/approvals` reopens it, while Escape from the editor interrupts the run.
+Approval scope, command, risk, deadline and fingerprint are visible. Oversized
+previews cannot be approved. Completed/cancelled requests close stale dialogs.
+An uncertain mutation is never resent on reconnect and never labelled cancelled
+merely because its dialog closed.
+
+The cross-language fixture uses the production authenticated WebSocket server,
+real ADK Runner, actual Pi widgets and local shell. It resumes a waiting run from a
+fresh terminal, approves its command, denies another, cancels a third, then approves
+a deterministic verification command and reaches `verified: true`. Execution counts
+prove denied/cancelled commands did not run. Focused tests cover expiry, duplicate
+decisions, wrong owner/binding/fingerprint, responsive sockets and verification,
+secret-safe failures, draft restoration and width bounds. This remains scripted-model
+evidence, not live-provider quality or complete visual-parity evidence.
+
+Validation at this milestone: 490 Python unit/integration tests and 39 terminal
+tests pass, with Ruff, Pyright, compilation and diff checks clean.

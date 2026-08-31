@@ -1,5 +1,35 @@
 # Development
 
+## New Pi terminal client (migration preview)
+
+The default installer still builds the Go client until the migration gates pass.
+To exercise the new client, use Node.js 22.19+ and build from this checkout:
+
+```bash
+npm ci --prefix clients/terminal
+npm run build --prefix clients/terminal
+```
+
+Start the usual server in terminal 1:
+
+```bash
+adk-agent-start server --workspace /absolute/path/to/project
+```
+
+From this checkout in terminal 2:
+
+```bash
+npm start --prefix clients/terminal -- --state-root "$HOME/.local/state/adk-coding-agent"
+```
+
+For a custom server, also pass `--server ws://127.0.0.1:PORT/v1/agent` and use its
+state root. The client reads `ADK_CODING_AGENT_TOKEN` when set, otherwise
+`STATE_ROOT/server/auth-token`; provider credentials stay on the server. `/resources`
+shows server paths, `/login` and `/model` control the provider, `/resume` restores
+history, and `/approvals` reviews waiting commands. Escape defers an approval dialog;
+Escape from the editor requests cancellation. See the migration design for remaining
+gates; the preview is not yet a claim of full Pi parity.
+
 ## Setup and checks
 
 Follow [installation and TUI startup](../README.md). Development setup:

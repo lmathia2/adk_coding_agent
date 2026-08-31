@@ -346,6 +346,7 @@ class PersistenceConfig(FrozenModel):
 
 class ServerConfig(FrozenModel):
     use_saved_model_default: bool = False
+    approval_wait_timeout_seconds: float = Field(default=120, gt=0, le=3_600)
     host: str = "127.0.0.1"
     port: int = Field(default=8_765, ge=1, le=65_535)
     websocket_path: str = Field(default="/v1/agent", pattern=r"^/")
@@ -451,6 +452,7 @@ class RuntimeBindings(FrozenModel):
     worker_id: str | None = Field(default=None, max_length=256)
     invocation_id: str | None = Field(default=None, max_length=256)
     project_trusted: bool = False
+    interactive_approvals: bool = False
 
 
 __all__ = [
