@@ -118,3 +118,18 @@ and terminalizes its run. Completed attachments can be released from the durable
 run status even when a reconnect cursor is already past the final event. Focused
 tests cover all three cases; these changes do not claim automatic task resumption
 after an unknown-effect process crash.
+
+## Shared terminal dialogs
+
+The terminal uses Pi's Input, SelectList and fuzzy filtering for a shared inline
+selector. `/help` discovers currently supported commands, `/queue` manages pending
+turns, and the real Pi editor completes slash commands without scanning client
+files. Selection and saving a default are separate callbacks for the upcoming
+model picker. Escape closes a dialog and restores the draft before it can reach
+the run-interrupt handler.
+
+Deterministic tests cover filtering by labels rather than opaque IDs, arrow keys,
+Enter/Ctrl+S, empty results, Unicode width bounds, command availability and draft
+preservation. A real PTY fixture exercised `/help`, search/selection, Tab completion,
+Escape and clean Ctrl+D exit. Login/model/session pickers still need their backend
+actions; the selector component alone is not evidence those features work.

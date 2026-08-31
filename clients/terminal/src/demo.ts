@@ -7,9 +7,12 @@ const state: SessionView = { entries: [], workspace: "synthetic workspace", mode
 const tui = new TuiMainScreen(new ProcessTerminal());
 const view = new TerminalView(tui, state, {
   submit(text) {
-    if (text === "/quit") return quit();
+    if (text.trim() === "/quit") return quit();
+    if (text.trim() === "/help") {
+      view.select("Commands", commands, item => view.editor.setText(item.value)); return;
+    }
     state.entries.push({ kind: "user", id: crypto.randomUUID(), text });
-    if (text === "/tools") state.entries.push({
+    if (text.trim() === "/tools") state.entries.push({
       kind: "tool", id: crypto.randomUUID(), name: "read", arguments: '{"path":"README.md"}',
       result: JSON.stringify({ status: "ok", model_text: Array.from({length: 30}, (_, i) => `${i + 1} | example line`).join("\n") }), done: true,
     });
@@ -18,4 +21,10 @@ const view = new TerminalView(tui, state, {
   cancel() { state.notice = "No active run"; }, quit,
 });
 function quit(): void { view.dispose(); tui.stop(); }
+const commands = [
+  {value: "/help", label: "/help", description: "Search commands"},
+  {value: "/tools", label: "/tools", description: "Render a compact tool card"},
+  {value: "/quit", label: "/quit", description: "Exit the fixture"},
+];
+view.setCommands(() => commands);
 tui.start();

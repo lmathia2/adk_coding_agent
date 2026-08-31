@@ -1,7 +1,9 @@
-import { Container, Editor, Text, matchesKey, type TUI } from "@earendil-works/pi-tui";
+import { Container, Editor, Text, matchesKey, type TUI, type SelectItem } from "@earendil-works/pi-tui";
 import type { SessionActions, SessionView } from "./contracts.js";
 import { Transcript, safeText } from "./transcript.js";
 import { editorTheme, theme } from "./theme.js";
+import { CommandCompletion } from "./commands.js";
+import { Selector } from "./selector.js";
 
 /** Presentation depends on a tiny session port, not Pi's AgentSession or ADK. */
 export class TerminalView {
@@ -11,6 +13,8 @@ export class TerminalView {
   private readonly status = new Text("", 1, 0);
   private readonly queue = new Text("", 1, 0);
   private readonly footer = new Text("", 1, 0);
+  private readonly inputRegion = new Container();
+  private dialog?: Selector;
   private readonly removeListener: () => void;
   constructor(readonly tui: TUI, readonly state: SessionView, private readonly actions: SessionActions) {
     this.editor = new Editor(tui, editorTheme, { paddingX: 1 });
@@ -20,12 +24,16 @@ export class TerminalView {
     this.root.addChild(this.transcript);
     this.root.addChild(this.queue);
     this.root.addChild(this.status);
-    this.root.addChild(this.editor);
+    this.inputRegion.addChild(this.editor);
+    this.root.addChild(this.inputRegion);
     this.root.addChild(this.footer);
     tui.addChild(this.root);
     tui.setFocus(this.editor);
     this.editor.onSubmit = (text) => this.submit(text, "steer");
     this.removeListener = tui.addInputListener((data) => {
+      if (this.dialog) {
+        this.dialog.handleInput(data); this.refresh(); return {consume: true};
+      }
       if (matchesKey(data, "ctrl+o")) {
         this.transcript.expanded = !this.transcript.expanded;
       } else if (matchesKey(data, "escape")) {
@@ -41,6 +49,17 @@ export class TerminalView {
       return { consume: true };
     });
     this.refresh();
+  }
+  setCommands(commands: () => SelectItem[]): void {
+    this.editor.setAutocompleteProvider(new CommandCompletion(commands));
+  }
+  select(title: string, items: SelectItem[], choose: (item: SelectItem, persist: boolean) => void, allowDefault = false): void {
+    const close = () => {
+      this.dialog = undefined; this.inputRegion.children = [this.editor];
+      this.tui.setFocus(this.editor); this.refresh();
+    };
+    this.dialog = new Selector(title, items, (item, persist) => { close(); choose(item, persist); }, close, allowDefault);
+    this.inputRegion.children = [this.dialog]; this.tui.setFocus(this.dialog); this.refresh();
   }
   private submit(text: string, mode: "steer" | "followUp"): void {
     if (!text.trim()) return;
