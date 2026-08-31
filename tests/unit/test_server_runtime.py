@@ -309,6 +309,46 @@ async def test_session_controls_enforce_ownership_and_redact_previews(tmp_path: 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("delta", ["x", "🙂" * 5_000])
+async def test_history_pages_are_bounded_consistent_redacted_and_read_only(tmp_path: Path, delta: str) -> None:
+    coordinator, factory = _coordinator(tmp_path, redactor=SecretRedactor(known_secrets=("private-marker",)))
+    record, _ = coordinator.store.create_run(request_id="history", idempotency_key="history",
+        thread_id="thread", user_id="user", input="private-marker", metadata=dict(factory.run_metadata))
+    coordinator.store.append_events(record.run_id, [AgUiEvent(type=AgUiEventType.TEXT_MESSAGE_CONTENT,
+        message_id="reply", delta=delta + "private-marker") for _ in range(101)])
+    message = _session_request("events", "thread", run_id=record.run_id)
+    try:
+        first = await coordinator.session_request(message, user_id="user")
+        assert first["next_after_sequence"] is not None
+        assert first["high_water_sequence"] == 101
+        assert "private-marker" not in json.dumps(first)
+        assert len(json.dumps(first, ensure_ascii=False).encode()) < 530_000
+        coordinator.store.append_event(record.run_id, AgUiEvent(type=AgUiEventType.TEXT_MESSAGE_CONTENT,
+            message_id="reply", delta="newer-than-snapshot"))
+        assert await coordinator.session_request(message.model_copy(update={"high_water_sequence": 101}), user_id="user") == first
+        observed = [event["sequence"] for event in first["events"]]
+        page = first
+        while page["next_after_sequence"] is not None:
+            page = await coordinator.session_request(message.model_copy(update={
+                "after_sequence": page["next_after_sequence"], "high_water_sequence": first["high_water_sequence"]}), user_id="user")
+            assert len(json.dumps(page, ensure_ascii=False).encode()) < 530_000
+            observed.extend(event["sequence"] for event in page["events"])
+        assert observed == list(range(1, 102))
+        latest = await coordinator.session_request(message.model_copy(update={"after_sequence": 101}), user_id="user")
+        assert latest["events"][0]["event"]["delta"] == "newer-than-snapshot"
+        with pytest.raises(KeyError):
+            await coordinator.session_request(message, user_id="other")
+        with pytest.raises(KeyError):
+            await coordinator.session_request(message.model_copy(update={"thread_id": "other-thread"}), user_id="user")
+        with pytest.raises(ValueError, match="cursor"):
+            await coordinator.session_request(message.model_copy(update={"after_sequence": 999}), user_id="user")
+        assert coordinator.store.get_run(record.run_id).status == "queued"
+        assert factory.created == []
+    finally:
+        await coordinator.aclose()
+
+
+@pytest.mark.asyncio
 async def test_dispatch_crash_window_does_not_reinvoke_a_created_run(tmp_path: Path) -> None:
     coordinator, factory = _coordinator(tmp_path)
     first, _ = await coordinator.start(_start(), user_id="user")

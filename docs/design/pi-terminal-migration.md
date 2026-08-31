@@ -214,3 +214,14 @@ turn uses beta with prior conversation context, and a new conversation uses save
 gamma. Reconnect reconciles the conversation model without replaying selection.
 Width checks cover 20/40/80/120 columns. A rendering-only PTY also exercised `/model`,
 filtering, Ctrl+S, Escape and clean exit. No fresh live-provider quality/latency claim.
+
+## Historical transcript contract
+
+`session.request` operation `events` reads one run's public event history. A page
+returns its frozen high-water sequence and exclusive continuation cursor, at most
+100 events and 512 KB of event JSON. New live events do not extend an in-progress
+snapshot; normal attachment catches up afterward. Inputs and events are redacted,
+and both the conversation and run must match the authenticated user/workspace/
+harness. History reads neither attach nor acknowledge, dispatch queues, or invoke
+models/tools. Focused tests cover Unicode byte limits, snapshot retries and growth,
+ownership, invalid cursors and zero execution. The terminal resume UI remains next.

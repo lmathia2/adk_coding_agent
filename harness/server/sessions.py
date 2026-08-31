@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import sqlite3
 from typing import TYPE_CHECKING
 
@@ -179,11 +180,43 @@ class ConversationController:
                 "runs": [self._summary(record) for record in history], "queue": queue,
                 "next_before_run_id": history[-1].run_id if len(history) == 20 else None}
 
+    def transcript_page(self, message: SessionRequestMessage, user_id: str) -> dict[str, object]:
+        """Read a bounded durable snapshot; never attach, acknowledge or rerun work."""
+        assert message.thread_id is not None and message.run_id is not None
+        self._owned(user_id, message.thread_id)
+        record = self.coordinator.store.get_run(message.run_id)
+        if record is None or record.user_id != user_id or record.thread_id != message.thread_id:
+            raise KeyError("run not found in this conversation")
+        if not self._same_binding(record):
+            raise ValueError("run belongs to a different workspace or harness")
+        cursor = message.after_sequence or 0
+        page = self.coordinator.store.replay_page(record.run_id, after_sequence=cursor,
+            high_water_sequence=message.high_water_sequence, limit=100)
+        if cursor > page.high_water_sequence:
+            raise ValueError("event cursor exceeds available history")
+        events: list[object] = []
+        size = 0
+        for envelope in page.events:
+            public = self.coordinator.redactor.redact(envelope.model_dump(mode="json"))
+            event_size = len(json.dumps(public, ensure_ascii=False).encode("utf-8"))
+            if event_size > 512_000:
+                raise ValueError("history event exceeds the display page limit")
+            if size + event_size > 512_000:
+                break
+            events.append(public)
+            size += event_size
+            cursor = envelope.sequence
+        return {"thread_id": message.thread_id, "run": self._summary(record, full_input=True),
+                "events": events, "high_water_sequence": page.high_water_sequence,
+                "next_after_sequence": cursor if cursor < page.high_water_sequence else None}
+
     async def request(self, message: SessionRequestMessage, user_id: str) -> dict[str, object]:
         if message.operation == "list":
             records = [record for record in self.store.threads(user_id) if self._same_binding(record)]
             return {"conversations": [self._summary(record) for record in records], "limit": 100}
         assert message.thread_id is not None
+        if message.operation == "events":
+            return self.transcript_page(message, user_id)
         async with self._lock:
             parent = self._owned(user_id, message.thread_id)
             if message.operation == "follow_up":

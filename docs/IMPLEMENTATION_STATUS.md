@@ -26,6 +26,8 @@ historical feature checklist or book-rubric score.
   model (not yet the default installed client; session selector pending).
 - Server-owned durable follow-ups, bounded conversation queries, queue continuation
   and removal controls; the terminal catches up through successor runs in order.
+- Read-only public transcript pages with a stable snapshot cursor, event/byte
+  limits, redaction and ownership checks; reads never attach or execute a run.
 - Authenticated server-owned provider login/status/cancel/logout controls. OAuth
   workers never block the server event loop; credential tokens remain server-side.
 - Pi-style terminal `/login`, `/auth` and confirmed `/logout` dialogs use those

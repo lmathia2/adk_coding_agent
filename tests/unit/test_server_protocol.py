@@ -84,9 +84,17 @@ def test_session_controls_round_trip_and_validate_operation_parameters() -> None
         {"operation": "remove_follow_up", "thread_id": "thread"},
         {"operation": "state", "thread_id": "thread", "content": "unexpected"},
         {"operation": "follow_up", "thread_id": "thread", "content": "🙂" * 12_501},
+        {"operation": "events", "thread_id": "thread"},
+        {"operation": "get", "thread_id": "thread", "run_id": "run"},
+        {"operation": "events", "thread_id": "thread", "run_id": "run", "after_sequence": -1},
+        {"operation": "events", "thread_id": "thread", "run_id": "run", "after_sequence": 3, "high_water_sequence": 2},
     ]:
         with pytest.raises(ValidationError):
             parse_client_message({"type": "session.request", "request_id": "key", **invalid})
+
+    events = SessionRequestMessage(type="session.request", operation="events", request_id="history",
+        thread_id="thread", run_id="run", after_sequence=2, high_water_sequence=100)
+    assert parse_client_message(events.model_dump_json()) == events
 
 
 @pytest.mark.parametrize(

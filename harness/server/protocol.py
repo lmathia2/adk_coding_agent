@@ -110,25 +110,31 @@ class SessionRequestMessage(FrozenModel):
     type: Literal["session.request"]
     protocol_version: Literal[1] = 1
     request_id: str = Field(min_length=1, max_length=256)
-    operation: Literal["list", "get", "state", "follow_up", "remove_follow_up", "continue"]
+    operation: Literal["list", "get", "state", "events", "follow_up", "remove_follow_up", "continue"]
     thread_id: str | None = Field(default=None, min_length=1, max_length=256)
     content: str | None = Field(default=None, min_length=1, max_length=50_000)
     item_id: str | None = Field(default=None, min_length=1, max_length=256)
     before_run_id: str | None = Field(default=None, min_length=1, max_length=256)
     after_run_id: str | None = Field(default=None, min_length=1, max_length=256)
+    run_id: str | None = Field(default=None, min_length=1, max_length=256)
+    after_sequence: int | None = Field(default=None, ge=0)
+    high_water_sequence: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_operation(self) -> SessionRequestMessage:
         required = {
             "list": set(), "get": {"thread_id"}, "state": {"thread_id"}, "continue": {"thread_id"},
+            "events": {"thread_id", "run_id"},
             "follow_up": {"thread_id", "content"}, "remove_follow_up": {"thread_id", "item_id"},
         }[self.operation]
-        supplied = {key for key in ("thread_id", "content", "item_id", "before_run_id", "after_run_id") if getattr(self, key) is not None}
-        optional = {"before_run_id"} if self.operation == "get" else {"after_run_id"} if self.operation == "state" else set()
+        supplied = {key for key in ("thread_id", "content", "item_id", "before_run_id", "after_run_id", "run_id", "after_sequence", "high_water_sequence") if getattr(self, key) is not None}
+        optional = {"before_run_id"} if self.operation == "get" else {"after_run_id"} if self.operation == "state" else {"after_sequence", "high_water_sequence"} if self.operation == "events" else set()
         if not required <= supplied or supplied - required - optional:
             raise ValueError("invalid session operation parameters")
         if self.content is not None and len(self.content.encode("utf-8")) > 50_000:
             raise ValueError("follow-up exceeds 50000 UTF-8 bytes")
+        if self.high_water_sequence is not None and (self.after_sequence or 0) > self.high_water_sequence:
+            raise ValueError("event cursor exceeds snapshot boundary")
         return self
 
 

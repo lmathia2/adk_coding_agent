@@ -8,6 +8,8 @@
   - [x] Add cancellable server-owned provider authentication controls.
   - [x] Connect Pi-style login/status/logout dialogs to the authenticated server.
   - [x] Wire searchable model selection and saved defaults to actual next-turn ADK configuration.
+  - [x] Expose bounded read-only transcript pages from durable public events.
+  - [ ] Connect `/resume` and historical transcript navigation to those pages.
 - [ ] Complete Pi-style UI and migrate installation/launching.
 - [ ] Verify conversational/coding examples, replay and harness swap; remove Go TUI.
 
