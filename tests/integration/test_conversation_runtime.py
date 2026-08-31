@@ -41,11 +41,11 @@ class ScriptedModel(BaseLlm):
 class Provider:
     provider_id = "scripted"
 
-    def __init__(self, model: ScriptedModel):
+    def __init__(self, model: ScriptedModel | dict[str, ScriptedModel]):
         self.model = model
 
     def build_model(self, config, *, secrets, bindings=None):
-        return self.model
+        return self.model[config.name] if isinstance(self.model, dict) else self.model
 
 
 def reply(status: str, message: str) -> list[types.Part]:
@@ -177,7 +177,8 @@ async def test_two_turns_keep_adk_history_but_reset_task_budgets_and_skills(tmp_
 
 
 @pytest.mark.asyncio
-async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path) -> None:
+@pytest.mark.parametrize("fixture", ["adk-client", "model-client"])
+async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture: str) -> None:
     import asyncio
     import os
     import shutil
@@ -185,7 +186,9 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path) -> None:
 
     import uvicorn
 
+    from harness.ai.selection import ModelChoice, load_model_default
     from harness.persistence import build_service_bundle, settings_from_composition
+    from harness.server.models import CatalogModel
     from harness.server.registry import RunEventBroker, SqliteRunEventStore
     from harness.server.runtime import AdkRunExecutionFactory, RunCoordinator
     from harness.server.websocket import (
@@ -194,7 +197,7 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path) -> None:
         create_websocket_app,
     )
 
-    client = Path(__file__).resolve().parents[2] / "clients/terminal/dist/test/adk-client-fixture.js"
+    client = Path(__file__).resolve().parents[2] / f"clients/terminal/dist/test/{fixture}-fixture.js"
     node = shutil.which("node")
     if not node or not client.is_file():
         pytest.skip("run npm ci && npm run build in clients/terminal for the cross-language gate")
@@ -203,11 +206,18 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path) -> None:
     model._responses = [reply("answer", "First reply"), [types.Part(function_call=types.FunctionCall(
         id="read1", name="read", args={"path": "README.md"},
     ))], reply("answer", "Repository explanation"), reply("answer", "Final queued reply")]
-    registry = default_harness_registry(model_providers=ClosedAdkModelProviderRegistry((Provider(model),)))
+    models = {"alpha": model}
+    if fixture == "model-client":
+        model.model = "alpha"
+        model._responses = [reply("answer", "Alpha fixture reply")]
+        for name in ("beta", "gamma"):
+            models[name] = ScriptedModel(model=name)
+            models[name]._responses = [reply("answer", f"{name} fixture reply")]
+    registry = default_harness_registry(model_providers=ClosedAdkModelProviderRegistry((Provider(models),)))
     composition = load_harness_composition(config_models=registry.config_models())
     config = composition.harness.config
     config = config.model_copy(update={"models": {
-        name: value.model_copy(update={"provider": "scripted"}) for name, value in config.models.items()
+        name: value.model_copy(update={"provider": "scripted", "name": "alpha"}) for name, value in config.models.items()
     }})
     composition = composition.model_copy(update={"harness": composition.harness.model_copy(update={"config": config})})
     workspace = tmp_path / "workspace"
@@ -218,6 +228,8 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path) -> None:
     coordinator = RunCoordinator(store=SqliteRunEventStore(state_root / "runs.db"), broker=RunEventBroker(),
         execution_factory=AdkRunExecutionFactory(composition=composition,
             bindings=RuntimeBindings(workspace=workspace, state_root=state_root), registry=registry, services=services))
+    assert coordinator.models is not None
+    coordinator.models._catalog = lambda: tuple(CatalogModel(choice=ModelChoice(provider="scripted", name=name), display_name=name) for name in models)
     token = "synthetic-test-token-" + "x" * 32
     app = create_websocket_app(coordinator, authenticator=LocalBearerAuthenticator(token),
         settings=WebSocketServerSettings(path="/v1/agent"))
@@ -239,15 +251,21 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path) -> None:
         async with asyncio.timeout(15):
             while True:
                 threads = coordinator.conversations.store.threads("local-user")
-                if threads and len(coordinator.conversations.store.pending("local-user", threads[0].thread_id)) == 2:
+                if threads and len(coordinator.conversations.store.pending("local-user", threads[0].thread_id)) == (1 if fixture == "model-client" else 2):
                     break
                 await asyncio.sleep(0.01)
         model._gate.set()
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=40)
         assert process.returncode == 0, stderr.decode()
-        assert json.loads(stdout) == {"turns": 3, "entries": 7, "status": "answered"}
-        assert model._calls == 4
-        assert "bridge-marker-731" in model._requests[1]
+        if fixture == "model-client":
+            assert json.loads(stdout) == {"turns": 3, "active_model_preserved": True, "default": "gamma"}
+            assert [(name, model._calls) for name, model in models.items()] == [("alpha", 1), ("beta", 1), ("gamma", 1)]
+            assert load_model_default(state_root).name == "gamma"
+            assert "First fixture turn" in models["beta"]._requests[0]
+        else:
+            assert json.loads(stdout) == {"turns": 3, "entries": 7, "status": "answered"}
+            assert model._calls == 4
+            assert "bridge-marker-731" in model._requests[1]
     finally:
         if process is not None and process.returncode is None:
             process.kill()

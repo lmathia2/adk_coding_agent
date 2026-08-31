@@ -132,6 +132,26 @@ class SessionRequestMessage(FrozenModel):
         return self
 
 
+class ModelRequestMessage(FrozenModel):
+    type: Literal["model.request"]
+    protocol_version: Literal[1] = 1
+    request_id: str = Field(min_length=1, max_length=256)
+    thread_id: str = Field(min_length=1, max_length=256)
+    operation: Literal["status", "catalog", "select"]
+    provider: str | None = Field(default=None, max_length=64)
+    name: str | None = Field(default=None, max_length=128)
+    persist: bool = False
+
+    @model_validator(mode="after")
+    def validate_operation(self) -> ModelRequestMessage:
+        if self.operation == "select":
+            if not self.provider or not self.name:
+                raise ValueError("select requires provider and name")
+        elif self.provider is not None or self.name is not None or self.persist:
+            raise ValueError("model identity and persist are only valid for select")
+        return self
+
+
 class ProviderRequestMessage(ProviderControlRequest):
     type: Literal["provider.request"]
     protocol_version: Literal[1] = 1
@@ -147,7 +167,8 @@ ClientMessage = Annotated[
     | AckMessage
     | PingMessage
     | SessionRequestMessage
-    | ProviderRequestMessage,
+    | ProviderRequestMessage
+    | ModelRequestMessage,
     # Session operations extend v1 by capability; old clients never receive their replies.
     Field(discriminator="type"),
 ]
@@ -341,6 +362,14 @@ class ProviderResultMessage(FrozenModel):
     data: dict[str, object]
 
 
+class ModelResultMessage(FrozenModel):
+    type: Literal["model.result"] = "model.result"
+    protocol_version: Literal[1] = 1
+    request_id: str
+    operation: str
+    data: dict[str, object]
+
+
 ServerMessage = Annotated[
     ServerHello
     | TaskAcceptedMessage
@@ -349,7 +378,8 @@ ServerMessage = Annotated[
     | ServerErrorMessage
     | ServerEnvelope
     | SessionResultMessage
-    | ProviderResultMessage,
+    | ProviderResultMessage
+    | ModelResultMessage,
     Field(discriminator="type"),
 ]
 _SERVER_MESSAGE_ADAPTER = TypeAdapter(ServerMessage)

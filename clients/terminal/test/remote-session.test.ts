@@ -77,6 +77,37 @@ test("local token is never sent to arbitrary hosts or URL query strings", () => 
     assert.throws(() => new RemoteSession({url, token}));
 });
 
+test("model status reconciles new conversations and reconnect without replaying selection", async () => {
+  const server = new WebSocketServer({host: "127.0.0.1", port: 0});
+  await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  let connections = 0, selections = 0;
+  const choices = new Map<string, string>();
+  server.on("connection", socket => {
+    connections++;
+    socket.on("message", data => {
+      const message = JSON.parse(data.toString());
+      if (message.type === "client.hello") send(socket, {type: "server.hello", harness: {display_name: "Fixture", capabilities: ["model_selection"]}, coding_model: {provider: "fixture", name: "alpha"}});
+      if (message.type === "model.request") {
+        if (message.operation === "select") {
+          selections++; choices.set(message.thread_id, message.name); socket.terminate(); return;
+        }
+        send(socket, {type: "model.result", request_id: message.request_id, operation: message.operation,
+          data: {coding_model: {provider: "fixture", name: choices.get(message.thread_id) ?? "alpha", readiness: "configured"}}});
+      }
+    });
+  });
+  const session = new RemoteSession({url: `ws://127.0.0.1:${address.port}`, token, reconnectMs: 1});
+  try {
+    session.connect(); await until(() => session.state.view.model === "alpha [fixture]");
+    await assert.rejects(session.modelRequest("select", {provider: "fixture", name: "beta"}), /interrupted/);
+    await until(() => connections === 2 && session.state.view.model === "beta [fixture]");
+    session.newConversation(); await until(() => session.state.view.model === "alpha [fixture]");
+    assert.equal(selections, 1);
+    assert.deepEqual(session.state.view.entries, []);
+  } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
+});
+
 test("provider controls are correlated, stay out of chat, and mutations are not replayed after disconnect", async () => {
   const server = new WebSocketServer({host: "127.0.0.1", port: 0});
   await once(server, "listening");

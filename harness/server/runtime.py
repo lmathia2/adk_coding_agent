@@ -27,15 +27,18 @@ from harness.agent import (
     SteeringCommand,
 )
 from harness.ai.controls import LocalProviderControls, ProviderControlError, ProviderControlRequest
+from harness.ai.selection import ModelChoice
 from harness.config import HarnessComposition, RuntimeBindings
 from harness.persistence import AdkServiceBundle
 from harness.safety import SecretRedactor
 
 from .adk_mapper import AdkAgUiNormalizer
+from .models import MODEL_METADATA, ModelControlError, ModelControls
 from .protocol import (
     AgUiEvent,
     AgUiEventType,
     CancelTaskMessage,
+    ModelRequestMessage,
     PauseTaskMessage,
     ServerEnvelope,
     SessionRequestMessage,
@@ -341,6 +344,14 @@ class AdkRunExecutionFactory:
         }
 
     async def create(self, record: RunRecord) -> AdkRunExecution:
+        composition = self.composition
+        if MODEL_METADATA in record.metadata:
+            adapter = self.registry.model_configuration(self.descriptor.implementation)
+            if adapter is None:
+                raise ValueError("harness does not support the recorded model choice")
+            choice = ModelChoice.model_validate_json(record.metadata[MODEL_METADATA])
+            config = adapter.with_coding_model(composition.harness.config, choice.apply(adapter.coding_model(composition.harness.config)))
+            composition = composition.model_copy(update={"harness": composition.harness.model_copy(update={"config": config})})
         state_root = self.bindings.state_root.expanduser().resolve() / "runs" / record.run_id
         run_bindings = self.bindings.model_copy(
             update={
@@ -351,7 +362,7 @@ class AdkRunExecutionFactory:
         )
         assembly = await asyncio.to_thread(
             self.registry.build,
-            self.composition,
+            composition,
             run_bindings,
         )
         runner = Runner(
@@ -361,7 +372,7 @@ class AdkRunExecutionFactory:
             memory_service=self.services.memory_service,
             auto_create_session=False,
         )
-        config = self.composition.harness.config
+        config = composition.harness.config
         max_iterations = int(getattr(getattr(config, "workflow", None), "max_iterations", 40))
         coding_model_name = assembly.build_info.models.get("coding")
         coding_model_provider = assembly.build_info.model_providers.get("coding")
@@ -416,6 +427,9 @@ class RunCoordinator:
         self._lifecycle_lock = asyncio.Lock()
         self.conversations = ConversationController(self)
         self.provider_controls = provider_controls
+        self.models = (ModelControls(execution_factory, self.conversations.store)
+            if isinstance(execution_factory, AdkRunExecutionFactory) and execution_factory.registry.model_configuration(execution_factory.descriptor.implementation)
+            else None)
 
     @property
     def descriptor(self) -> HarnessDescriptor:
@@ -423,6 +437,8 @@ class RunCoordinator:
         capabilities = descriptor.capabilities | {RuntimeCapability.SESSIONS}
         if self.provider_controls is not None:
             capabilities |= {RuntimeCapability.PROVIDER_CONTROLS}
+        if self.models is not None:
+            capabilities |= {RuntimeCapability.MODEL_SELECTION}
         return descriptor.model_copy(update={"capabilities": capabilities})
 
     async def session_request(self, message: SessionRequestMessage, *, user_id: str) -> dict[str, object]:
@@ -433,9 +449,14 @@ class RunCoordinator:
             raise ProviderControlError("Provider controls are not supported")
         return await self.provider_controls.request(message, user_id=user_id)
 
+    async def model_request(self, message: ModelRequestMessage, *, user_id: str) -> dict[str, object]:
+        if self.models is None:
+            raise ModelControlError("Model selection is not supported by this harness")
+        return await self.models.request(message, user_id=user_id)
+
     @property
     def coding_model_status(self) -> PublicModelStatus | None:
-        return self.execution_factory.coding_model_status
+        return self.models.public_model(self.models.default()) if self.models is not None else self.execution_factory.coding_model_status
 
     @staticmethod
     def _default_thread_id(user_id: str, idempotency_key: str) -> str:
@@ -479,8 +500,21 @@ class RunCoordinator:
             and self.conversations.store.run_for_key(user_id, message.idempotency_key) is None
         ):
             raise ValueError("conversation has pending follow-ups; continue or remove them first")
-        metadata = dict(message.metadata)
-        metadata.update(self.execution_factory.run_metadata)
+        if any(key.startswith("coding.") for key in message.metadata):
+            raise ValueError("coding.* metadata is reserved for the server")
+        prior = self.conversations.store.run_for_key(user_id, message.idempotency_key)
+        if prior is not None:
+            if any(prior.metadata.get(key) != self.execution_factory.run_metadata.get(key)
+                   for key in ("coding.workspace_identity", "coding.harness_implementation")):
+                raise ValueError("run belongs to a different workspace or harness")
+            original_client_metadata = {key: value for key, value in prior.metadata.items() if not key.startswith("coding.")}
+            if original_client_metadata != message.metadata:
+                raise ValueError("run idempotency key was reused with different metadata")
+            metadata = dict(prior.metadata)
+        else:
+            metadata = {**message.metadata, **self.execution_factory.run_metadata}
+            if self.models is not None:
+                metadata.update(self.models.run_metadata(user_id, thread_id))
         record, created = self.store.create_run(
             request_id=message.request_id,
             idempotency_key=message.idempotency_key,
@@ -1030,6 +1064,8 @@ class RunCoordinator:
             await self._close_unstarted(run_id, item)
         if self.provider_controls is not None:
             await self.provider_controls.aclose()
+        if self.models is not None:
+            await self.models.aclose()
 
 
 __all__ = [

@@ -12,6 +12,7 @@ from .contracts import (
     AdkHarnessAssembly,
     HarnessDescriptor,
     HarnessFactory,
+    ModelConfigurableHarness,
     RuntimeCapability,
 )
 
@@ -58,6 +59,10 @@ class HarnessRegistry:
 
     def available(self) -> tuple[str, ...]:
         return tuple(sorted(self._factories))
+
+    def model_configuration(self, implementation: str) -> ModelConfigurableHarness | None:
+        factory = self._factories[implementation]
+        return factory if isinstance(factory, ModelConfigurableHarness) else None
 
     def descriptor(self, implementation: str) -> HarnessDescriptor:
         try:

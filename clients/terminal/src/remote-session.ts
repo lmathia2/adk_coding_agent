@@ -65,9 +65,9 @@ export class RemoteSession {
       this.negotiated = false;
       clearInterval(this.heartbeat); clearTimeout(this.helloTimer); clearInterval(this.sessionPoll);
       for (const [id, request] of this.requests) {
-        if (request.message.type !== "provider.request") continue;
+        if (request.message.type !== "provider.request" && request.message.type !== "model.request") continue;
         clearTimeout(request.timer); this.requests.delete(id);
-        request.reject(new Error("Provider request interrupted. Reconnect and check /auth before retrying."));
+        request.reject(new Error(`Management request interrupted. Reconnect and check ${request.message.type === "model.request" ? "/model" : "/auth"} before retrying.`));
       }
       if (code === 1008) {
         this.stopped = true;
@@ -95,7 +95,8 @@ export class RemoteSession {
         if (!this.state.active) this.state.view.status = "ready";
         const capabilities = object(message.harness).capabilities;
         this.state.capabilities = new Set(Array.isArray(capabilities) ? capabilities.filter((item): item is string => typeof item === "string") : []);
-        this.state.model(message.coding_model);
+        if (!this.state.active) this.state.model(message.coding_model);
+        this.refreshModel();
         if (this.pendingStart) this.send(this.pendingStart);
         else if (this.state.runId) this.send({type: "task.attach", run_id: this.state.runId, after_sequence: this.state.cursor});
         for (const control of this.controls.values()) this.send(control);
@@ -146,7 +147,8 @@ export class RemoteSession {
         }
         break;
       case "session.result":
-      case "provider.result": {
+      case "provider.result":
+      case "model.result": {
         const id = string(message.request_id), request = this.requests.get(id);
         if (!request) break;
         if (message.type !== String(request.message.type).replace(".request", ".result") || message.operation !== request.message.operation) throw new Error("Mismatched response");
@@ -194,12 +196,25 @@ export class RemoteSession {
   providerRequest(operation: "status" | "login" | "cancel_login" | "logout", parameters: WireObject = {}): Promise<WireObject> {
     return this.managementRequest("provider", "provider_controls", operation, parameters);
   }
+  async modelRequest(operation: "status" | "catalog" | "select", parameters: WireObject = {}): Promise<WireObject> {
+    const thread = this.state.threadId;
+    const data = await this.managementRequest("model", "model_selection", operation, {...parameters, thread_id: thread});
+    if (thread === this.state.threadId && !this.state.active && !this.stopped) {
+      this.state.model(data.coding_model); this.changed();
+    }
+    return data;
+  }
+  private refreshModel(): void {
+    if (this.negotiated && !this.state.active && this.state.capabilities.has("model_selection")) {
+      void this.modelRequest("status").catch(error => this.notice(error.message));
+    }
+  }
   private managementRequest(domain: string, capability: string, operation: string, parameters: WireObject): Promise<WireObject> {
     if (!this.negotiated || !this.state.capabilities.has(capability)) return Promise.reject(new Error(`${domain} controls are not available`));
     if (this.requests.size >= 32) return Promise.reject(new Error("Waiting for outstanding requests"));
     const id = randomUUID(), message = {...parameters, type: `${domain}.request`, request_id: id, operation};
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.requests.delete(id); reject(new Error(`${domain} request timed out; check ${domain === "provider" ? "/auth" : "/queue"} before retrying`)); }, 15_000);
+      const timer = setTimeout(() => { this.requests.delete(id); reject(new Error(`${domain} request timed out; check ${domain === "provider" ? "/auth" : domain === "model" ? "/model" : "/queue"} before retrying`)); }, 15_000);
       this.requests.set(id, {message, resolve, reject, timer}); this.send(message);
     });
   }
@@ -245,7 +260,10 @@ export class RemoteSession {
     this.acceptSnapshot(await this.request("state", {thread_id: this.state.threadId}));
     this.notice("Alt+Enter queues · /queue continue resumes · /queue clear removes pending follow-ups");
   }
-  newConversation(): void { this.state.newConversation(); this.latestSnapshot = undefined; this.changed(); }
+  newConversation(): void {
+    this.state.newConversation(); this.latestSnapshot = undefined;
+    this.refreshModel(); this.changed();
+  }
   close(): void {
     this.stopped = true; this.negotiated = false;
     clearTimeout(this.timer); clearInterval(this.heartbeat); clearTimeout(this.helloTimer); clearInterval(this.sessionPoll);

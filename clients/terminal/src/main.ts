@@ -6,6 +6,7 @@ import { ProcessTerminal, TuiMainScreen, type SelectItem } from "@earendil-works
 import { RemoteSession } from "./remote-session.js";
 import { TerminalView } from "./view.js";
 import { providerCommand } from "./provider-ui.js";
+import { ModelPicker } from "./model-picker.js";
 
 const {values} = parseArgs({options: {
   server: {type: "string", default: "ws://127.0.0.1:8765/v1/agent"},
@@ -25,6 +26,7 @@ try {
     {value: "/new", label: "/new", description: "Start a new conversation"},
     ...(session.state.capabilities.has("cancel") ? [{value: "/cancel", label: "/cancel", description: "Interrupt the active run"}] : []),
     ...(session.state.capabilities.has("sessions") ? [{value: "/queue", label: "/queue", description: "Manage durable follow-ups"}] : []),
+    ...(session.state.capabilities.has("model_selection") ? [{value: "/model", label: "/model", description: "Select the next turn's model; Ctrl+S saves a default"}] : []),
     ...(session.state.capabilities.has("provider_controls") ? [
       {value: "/login", label: "/login", description: "Sign in to a provider on the server"},
       {value: "/auth", label: "/auth", description: "Inspect server authentication and credential paths"},
@@ -59,6 +61,11 @@ try {
         if (command === "/quit") return quit();
         if (command === "/new") return session.newConversation();
         if (command === "/cancel") return session.cancel();
+        if (command === "/model") {
+          view.showDialog(close => new ModelPicker(session, () => view.refresh(), close, text => {
+            if (!stopped) { session.state.view.notice = text; view.refresh(); }
+          })); return;
+        }
         if (command === "/login" || command === "/auth" || command === "/logout") {
           background(providerCommand(command, session, view, text => {
             if (!stopped) { session.state.view.notice = text; view.refresh(); }

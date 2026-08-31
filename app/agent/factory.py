@@ -26,6 +26,7 @@ from harness.ai import AdkModelProviderRegistry, default_adk_model_provider_regi
 from harness.config import (
     FOUR_CODING_TOOLS,
     HarnessComposition,
+    ModelConfig,
     PiCodingConfig,
     RuntimeBindings,
 )
@@ -148,6 +149,20 @@ class PiCodingHarnessFactory:
     @property
     def config_model(self) -> type[BaseModel]:
         return PiCodingConfig
+
+    def coding_model(self, config: BaseModel) -> ModelConfig:
+        if not isinstance(config, PiCodingConfig):
+            raise TypeError("pi_coding_v1 requires PiCodingConfig")
+        return config.models[config.agents["coding_worker"].model]
+
+    def with_coding_model(self, config: BaseModel, model: ModelConfig) -> BaseModel:
+        if not isinstance(config, PiCodingConfig):
+            raise TypeError("pi_coding_v1 requires PiCodingConfig")
+        payload = config.model_dump()
+        payload["models"][config.agents["coding_worker"].model] = model.model_dump()
+        configured = PiCodingConfig.model_validate(payload)
+        self._validate_supported_shape(configured)
+        return configured
 
     def _validate_supported_shape(self, config: PiCodingConfig) -> None:
         PiCodingConfig.model_validate(config.model_dump())

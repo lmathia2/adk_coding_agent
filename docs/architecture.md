@@ -26,6 +26,10 @@ ledger / verify / checkpoint     read · bash · edit · write
   The server and Agents CLI application entrypoint use this same factory.
 - `harness/ai` builds ADK models. Built-ins are native ADK/Gemini and the Codex
   subscription adapter; there is no second agent runtime or LiteLLM route.
+- Factories can opt into `ModelConfigurableHarness` to expose their coding model
+  and validate a replacement configuration. The server owns catalog/preferences
+  and freezes model identity and behavior hashes when admitting each run. The
+  terminal only sends control requests; it does not rewrite YAML or build models.
 - `harness/server` owns authenticated local transport, run ownership, replay,
   cancellation, deadlines, and ADK event translation. The TUI imports none of the
   Python harness implementation.

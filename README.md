@@ -135,7 +135,7 @@ tokens. Defaults:
 | --- | --- |
 | State root | `~/.local/state/adk-coding-agent` |
 | Codex credentials | `STATE_ROOT/auth/openai-codex.json` |
-| Saved model selection | `STATE_ROOT/auth/openai-codex-selection.json` |
+| Saved model selection | `STATE_ROOT/auth/model-selection.json` (older `openai-codex-selection.json` is read for migration) |
 | Generated Codex configuration | `STATE_ROOT/server/openai-codex.yaml` |
 | WebSocket bearer token | `STATE_ROOT/server/auth-token` |
 | Combined-launch server log | `STATE_ROOT/server/foreground.log` |

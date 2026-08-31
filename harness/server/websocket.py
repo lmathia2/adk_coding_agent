@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from harness.agent import ControlReceipt, HarnessDescriptor, PublicModelStatus
 from harness.ai.controls import ProviderControlError, ProviderControlRequest
 
+from .models import ModelControlError
 from .protocol import (
     PROTOCOL_VERSION,
     AckMessage,
@@ -25,6 +26,8 @@ from .protocol import (
     CancelTaskMessage,
     ControlResultMessage,
     HelloMessage,
+    ModelRequestMessage,
+    ModelResultMessage,
     PauseTaskMessage,
     PingMessage,
     PongMessage,
@@ -315,6 +318,22 @@ class _AgentWebSocketConnection:
             await self._session_request(message)
         elif isinstance(message, ProviderRequestMessage):
             await self._provider_request(message)
+        elif isinstance(message, ModelRequestMessage):
+            await self._model_request(message)
+
+    async def _model_request(self, message: ModelRequestMessage) -> None:
+        handler = getattr(self.coordinator, "model_request", None)
+        if handler is None:
+            await self._enqueue(ServerErrorMessage(code="unsupported_control", message="Model controls are not supported", request_id=message.request_id))
+            return
+        try:
+            result = await handler(message, user_id=self.user_id)
+        except ModelControlError as error:
+            await self._enqueue(ServerErrorMessage(code="model_request_failed", message=str(error), request_id=message.request_id))
+        except Exception:
+            await self._enqueue(ServerErrorMessage(code="model_request_failed", message="Model request not confirmed. Reopen /model to check current and saved settings before retrying.", request_id=message.request_id))
+        else:
+            await self._enqueue(ModelResultMessage(request_id=message.request_id, operation=message.operation, data=result))
 
     async def _provider_request(self, message: ProviderRequestMessage) -> None:
         handler = getattr(self.coordinator, "provider_request", None)

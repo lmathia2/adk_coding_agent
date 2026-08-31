@@ -18,6 +18,14 @@ export class Selector implements Component, Focusable {
   private filteredList(): SelectList {
     return new SelectList(fuzzyFilter(this.items, this.input.getValue(), item => `${item.label} ${item.description ?? ""}`), 8, editorTheme.selectList);
   }
+  updateItems(items: SelectItem[]): void {
+    const selected = this.list.getSelectedItem()?.value;
+    this.items = items.map(item => ({...item, label: safeText(item.label), description: safeText(item.description ?? "")}));
+    this.list = this.filteredList();
+    const filtered = fuzzyFilter(this.items, this.input.getValue(), item => `${item.label} ${item.description ?? ""}`);
+    const index = filtered.findIndex(item => item.value === selected);
+    if (index >= 0) this.list.setSelectedIndex(index);
+  }
   handleInput(data: string): void {
     if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) return this.cancel();
     if (matchesKey(data, "enter") || (this.allowDefault && matchesKey(data, "ctrl+s"))) {
@@ -34,7 +42,7 @@ export class Selector implements Component, Focusable {
     const border = theme.border("─".repeat(Math.max(0, width)));
     const hint = this.allowDefault ? "Enter select · Ctrl+S default · Esc cancel" : "Enter select · Esc cancel";
     return [border, ...new Text(theme.accent(safeText(this.title)), 1, 1).render(width),
-      ...this.input.render(width), "", ...this.list.render(width), "",
+      ...this.input.render(width), "", ...(this.list.getSelectedItem() ? this.list.render(width) : new Text(theme.dim("No matches"), 1, 0).render(width)), "",
       ...new Text(theme.dim(hint), 1, 0).render(width), border]
       .map(line => truncateToWidth(line, width));
   }

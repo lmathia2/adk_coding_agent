@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import statistics
 import tempfile
@@ -21,6 +20,12 @@ from google.genai import types
 
 from harness.ai.codex_auth import CodexCredential, CodexCredentialManager, CodexCredentialStore
 from harness.ai.codex_responses import CodexResponsesLlm
+from harness.ai.selection import (
+    ModelChoice,
+    load_model_default,
+    model_default_path,
+    save_model_default,
+)
 from harness.config import DEFAULT_COMPOSITION_PATH, parse_harness_composition
 
 CODEX_BASE_URL = "https://chatgpt.com/backend-api"
@@ -80,7 +85,11 @@ def discover_codex_models(
 
     credential = manager.resolve()
     active_client = client or httpx.Client(timeout=30)
-    response = active_client.get(CODEX_MODELS_URL, headers=_headers(credential))
+    try:
+        response = active_client.get(CODEX_MODELS_URL, headers=_headers(credential))
+    finally:
+        if client is None:
+            active_client.close()
     if not response.is_success:
         detail = " ".join(response.text.split())[:500]
         raise CodexModelError(
@@ -231,50 +240,17 @@ def benchmark_codex_models(
 
 
 def selection_path(state_root: Path) -> Path:
-    return state_root.expanduser().resolve() / "auth" / "openai-codex-selection.json"
+    return model_default_path(state_root)
 
 
 def save_codex_selection(state_root: Path, selection: CodexSelection) -> Path:
-    destination = selection_path(state_root)
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    payload = json.dumps(
-        {
-            "client_version": selection.client_version,
-            "model": selection.model,
-            "reasoning": selection.reasoning,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    descriptor, temporary = tempfile.mkstemp(
-        prefix=f".{destination.name}.",
-        dir=destination.parent,
-        text=True,
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            stream.write(payload + "\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, destination)
-    except BaseException:
-        with suppress(FileNotFoundError):
-            os.unlink(temporary)
-        raise
-    return destination
+    return save_model_default(state_root, ModelChoice(provider="openai_codex", name=selection.model,
+        reasoning=selection.reasoning, client_version=selection.client_version))
 
 
 def load_codex_selection(state_root: Path) -> CodexSelection | None:
-    try:
-        payload = json.loads(selection_path(state_root).read_text(encoding="utf-8"))
-        return CodexSelection(
-            model=str(payload["model"]),
-            reasoning=str(payload["reasoning"]),
-            client_version=(str(payload["client_version"]) if payload.get("client_version") else None),
-        )
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
+    choice = load_model_default(state_root)
+    return CodexSelection(choice.name, choice.reasoning or "low", choice.client_version) if choice and choice.provider == "openai_codex" else None
 
 
 def write_codex_config(
@@ -282,8 +258,10 @@ def write_codex_config(
     *,
     selection: CodexSelection,
     template_path: Path = DEFAULT_COMPOSITION_PATH,
+    use_saved_model_default: bool = True,
 ) -> Path:
     payload = yaml.safe_load(template_path.read_text(encoding="utf-8"))
+    payload.setdefault("server", {})["use_saved_model_default"] = use_saved_model_default
     coding = payload["harness"]["config"]["models"]["coding"]
     coding.clear()
     coding.update(
@@ -336,7 +314,8 @@ def prepare_codex_config(
         client_version=(client_version if client_version is not None else saved.client_version if saved else None),
     )
     return (
-        write_codex_config(state_root / "server" / "openai-codex.yaml", selection=selection),
+        write_codex_config(state_root / "server" / "openai-codex.yaml", selection=selection,
+                           use_saved_model_default=not any((model, reasoning, client_version))),
         selection,
     )
 

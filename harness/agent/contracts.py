@@ -11,7 +11,7 @@ from google.adk.agents import BaseAgent
 from google.adk.apps import App
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from harness.config import HarnessComposition, RuntimeBindings
+from harness.config import HarnessComposition, ModelConfig, RuntimeBindings
 
 
 class FrozenModel(BaseModel):
@@ -30,6 +30,7 @@ class RuntimeCapability(StrEnum):
     ARTIFACTS = "artifacts"
     SESSIONS = "sessions"
     PROVIDER_CONTROLS = "provider_controls"
+    MODEL_SELECTION = "model_selection"
 
 
 class HarnessDescriptor(FrozenModel):
@@ -41,6 +42,7 @@ class HarnessDescriptor(FrozenModel):
 
 
 class ModelReadiness(StrEnum):
+    CONFIGURED = "configured"
     AUTHENTICATION_REQUIRED = "authentication_required"
     ADAPTER_INITIALIZED = "adapter_initialized"
     RESPONDING = "responding"
@@ -167,6 +169,15 @@ class AgentRuntime(Protocol):
 
 
 @runtime_checkable
+class ModelConfigurableHarness(Protocol):
+    """Optional configuration seam; no model invocation or UI dependency."""
+
+    def coding_model(self, config: BaseModel) -> ModelConfig: ...
+
+    def with_coding_model(self, config: BaseModel, model: ModelConfig) -> BaseModel: ...
+
+
+@runtime_checkable
 class HarnessFactory(Protocol):
     """Build an ADK App assembly registered under a safe YAML key."""
 
@@ -196,6 +207,7 @@ __all__ = [
     "HarnessControlHooks",
     "HarnessDescriptor",
     "HarnessFactory",
+    "ModelConfigurableHarness",
     "ModelReadiness",
     "PublicModelStatus",
     "RuntimeCapability",

@@ -177,3 +177,40 @@ drafts, width bounds and zero auth messages in the conversation transcript. The
 rendering-only demo's `/login` was exercised in a real PTY through selector, code
 display, Escape and clean exit. Model/session selectors and installation migration
 remain outstanding; these tests are not a live-account sign-in or full-parity claim.
+
+## Model selection
+
+The optional `model_selection` capability exposes `model.request` status/catalog/
+select controls. The searchable Pi picker refreshes the catalog without blocking
+typing or the server receive loop. Enter selects for the current conversation's
+next turn; Ctrl+S additionally saves the local server owner's default. Active turns
+retain their original model. Selection receipts persist alongside the run registry,
+and retrying a prior selection cannot revert a newer acknowledged choice.
+
+The server records model identity and effective behavior hashes at run admission,
+then applies that immutable configuration through an optional harness-factory seam.
+Configured models remain selectable when catalog discovery is unavailable. Discovery
+currently uses the existing Codex adapter; other providers retain configured choices.
+Listing/configuring a model is not evidence that it has loaded or responded.
+
+Conversation preferences are scoped to user, workspace and harness. Shared defaults
+live at `STATE_ROOT/auth/model-selection.json`, atomically replaced with mode 0600;
+the CLI reads legacy `openai-codex-selection.json` only if the new file is absent.
+Explicit YAML/launch model choices win unless `server.use_saved_model_default` is
+enabled; an ordinary generated Codex launch enables it. Ctrl+S enables the saved
+default for new conversations in the current process. Existing conversations retain
+their model. No client-side provider credentials or YAML mutation is introduced.
+
+The default file and conversation database are individually atomic, not a distributed
+transaction. A process/disk failure between them can leave only the default saved.
+Unconfirmed selections are never automatically replayed; reopen `/model` to reconcile
+the current and saved choices. Escape during an in-flight save discloses the same
+uncertainty instead of claiming that a server mutation was cancelled.
+
+Verification: 468 Python unit/integration tests and 24 terminal tests, plus Ruff,
+Pyright, compilation and diff checks. The cross-language fixture drives the actual
+Pi picker → authenticated WebSocket → real ADK Runner: alpha stays active, a queued
+turn uses beta with prior conversation context, and a new conversation uses saved
+gamma. Reconnect reconciles the conversation model without replaying selection.
+Width checks cover 20/40/80/120 columns. A rendering-only PTY also exercised `/model`,
+filtering, Ctrl+S, Escape and clean exit. No fresh live-provider quality/latency claim.

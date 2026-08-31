@@ -345,6 +345,7 @@ class PersistenceConfig(FrozenModel):
 
 
 class ServerConfig(FrozenModel):
+    use_saved_model_default: bool = False
     host: str = "127.0.0.1"
     port: int = Field(default=8_765, ge=1, le=65_535)
     websocket_path: str = Field(default="/v1/agent", pattern=r"^/")

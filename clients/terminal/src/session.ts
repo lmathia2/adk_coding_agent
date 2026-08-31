@@ -32,6 +32,7 @@ export class SessionState {
     if (typeof model.provider === "string" && typeof model.name === "string") {
       this.view.model = `${model.name} [${model.provider}]`;
       if (model.readiness === "authentication_required") this.view.notice = "Authentication required — use /login";
+      else if (this.view.notice === "Authentication required — use /login") this.view.notice = "";
     }
   }
   private tool(id: string): ToolEntry {

@@ -23,13 +23,16 @@ historical feature checklist or book-rubric score.
   ordinary text streaming by default.
 - Standalone Pi terminal toolkit client with authenticated transport, multi-turn
   conversations and replay, tested against the real server/ADK stack with a scripted
-  model (not yet the default installed client; model/session selectors pending).
+  model (not yet the default installed client; session selector pending).
 - Server-owned durable follow-ups, bounded conversation queries, queue continuation
   and removal controls; the terminal catches up through successor runs in order.
 - Authenticated server-owned provider login/status/cancel/logout controls. OAuth
   workers never block the server event loop; credential tokens remain server-side.
 - Pi-style terminal `/login`, `/auth` and confirmed `/logout` dialogs use those
   controls, preserve editor drafts and disclose server credential storage paths.
+- Searchable `/model` with background catalog refresh, per-conversation selection
+  and explicit saved defaults. The server freezes each run's choice; selection
+  changes the next ADK turn without altering active work or replaying mutations.
 - Plain-language turns support a distinct `answered` outcome without inventing a
   coding task. Direct answers permit no managed shell/write/edit action and no
   explicit verification obligation; coding results still route through verification.
