@@ -4,10 +4,16 @@
 
 - [x] Remove Magnitude, LiteLLM integration, and installer/launcher branches; retain Codex and native ADK provider seams.
 - [x] Replace shadowed legacy tools with the tested atomic file primitives and remove unwired adapters.
-- [ ] Reduce fixed-graph configuration and optional orchestration layers without weakening verification or approvals.
-- [ ] Verify retained paths and report source-line and McCabe-complexity changes.
+- [x] Reduce fixed-graph configuration and optional orchestration layers without weakening verification or approvals.
+- [x] Verify retained paths and report source-line and McCabe-complexity changes.
 
 Each checked item is committed independently.
+
+## Historical delivery record
+
+The entries below describe earlier deliveries, not the supported feature inventory.
+See `IMPLEMENTATION_STATUS.md` and `simplification.md` for current capabilities and
+intentional removals.
 
 - [x] Commit the Pi-inspired ADK coding-harness design brief.
 - [x] Add an Agents CLI-compatible prototype scaffold and pin upstream Google skills.

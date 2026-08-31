@@ -1,8 +1,45 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
+
+
+@pytest.mark.parametrize("protected", ["venv-symlink", "command-file"])
+def test_install_refuses_to_overwrite_unowned_paths(tmp_path: Path, protected: str) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    script = checkout / "install.sh"
+    shutil.copy2(Path(__file__).resolve().parents[2] / "install.sh", script)
+    commands = tmp_path / "commands"
+    commands.mkdir()
+    prerequisites = tmp_path / "prerequisites"
+    prerequisites.mkdir()
+    for name in ("uv", "git"):
+        command = prerequisites / name
+        command.write_text("#!/bin/sh\nexit 99\n")
+        command.chmod(0o755)
+    untouched = tmp_path / "unowned"
+    untouched.mkdir()
+    sentinel = untouched / "keep"
+    sentinel.write_text("preserve me")
+    if protected == "venv-symlink":
+        (checkout / ".venv").symlink_to(untouched, target_is_directory=True)
+    else:
+        (commands / "adk-coding-agent").write_text("user-owned command")
+    result = subprocess.run(
+        [str(script), "--minimal", "--bin-dir", str(commands)],
+        env={**os.environ, "PATH": str(prerequisites) + os.pathsep + os.environ["PATH"]},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "refusing" in result.stderr
+    assert sentinel.read_text() == "preserve me"
+    if protected == "command-file":
+        assert (commands / "adk-coding-agent").read_text() == "user-owned command"
 
 
 def test_install_script_is_executable_and_has_valid_help() -> None:

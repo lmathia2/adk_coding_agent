@@ -102,8 +102,8 @@ Built-in providers are native ADK/Gemini (`google_adk`) and Codex subscription
 The closed `HarnessFactory` and model-provider registries permit explicit
 Python extensions without changing the server protocol or TUI.
 
-YAML exposes executable settings, not a pretend graph editor. The loop topology
-belongs to the harness implementation. Unknown/removed options fail validation.
+YAML configures executable settings; loop topology belongs to the harness
+implementation. Unknown/removed options fail validation.
 File prompts are relative to the configuration directory and cannot escape it.
 Volatile state stays out of the stable instruction prefix.
 
@@ -152,6 +152,11 @@ adapters with disconnected file workspaces, the unwired semantic/LSP/Moderne bri
 automatic skill synthesis/promotion/trials, automatic project memory, advisory
 reviewer agents, and experiment-only comparison CLIs. Directory skills, traces,
 verification, core evaluation graders, and the server/TUI remain.
+
+Persistence is local-only (JSONL/SQLite/files or in-memory ADK services). PostgreSQL,
+Vertex/GCS services and multi-worker control leases are removed. Run one server
+process per state directory. The server and optional Agents CLI entrypoint now use
+the same YAML factory; behavior environment overrides must be migrated to YAML.
 
 Existing global Magnitude binaries/models and runtime credentials are untouched.
 Old YAML must drop `learning`, `reviewer`, the reviewer model/agent, and

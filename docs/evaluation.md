@@ -1,181 +1,30 @@
-# Evaluation Guide
+# Evaluation
 
-## North-star metric
+The primary outcome is cost and latency per deterministically passed task.
+Smaller prompts and fewer source lines are useful engineering measurements, not
+evidence of coding quality.
 
-The primary metric is:
-
-```text
-cost per passed task
-```
-
-This prevents token savings from being reported as progress when completion quality falls. A task passes only through deterministic verification; an LLM judge may provide supplemental analysis but is not the source of truth.
-
-## Case construction
-
-Prefer tasks derived from recent human pull requests:
-
-1. select a base revision before the human change;
-2. preserve the original issue or request as the task;
-3. hide the solution diff from the agent;
-4. add fail-to-pass tests that fail at the base revision and pass after the intended change;
-5. add regression and scope checks;
-6. record task metadata without exposing the answer.
-
-The starter suite in `tests/eval/suites/core.json` demonstrates the schema with a localized Python bug. It is a smoke case, not a representative benchmark.
-
-`tests/eval/suites/real_repositories.json` contains the source-backed large-repository
-suite. Its cases are derived from merged human pull requests in Django and Ruff. Each
-case records the upstream task URL, immutable base/solution/merge revisions, repository
-size at observation time, expected scope, forbidden held-out paths, exact held-out blob
-hashes, and validation commands. `load_real_repository_suite()` rejects provenance,
-revision, path, or case-alignment drift before a runner fetches a repository.
-
-## Portable case schema
-
-Each `EvaluationCase` contains:
-
-- task ID and description
-- repository fixture
-- typed `TaskRequest`
-- expected and forbidden changed-file globs
-- required validation-command fragments
-- cost, context, iteration, and latency budgets
-- tags for slicing results
-
-The grader combines the case with:
-
-- final task status
-- changed paths
-- `VerificationReport`
-- telemetry summary
-
-A case fails when any required check fails.
-
-## Required metrics
-
-### Quality
-
-```text
-pass rate
-acceptance-criterion satisfaction
-regression count
-scope violations
-held-out test modifications
-human review severity
-```
-
-### Context economy
-
-```text
-input tokens
-output tokens
-reasoning tokens
-cache-read tokens
-cache-write tokens
-uncached input tokens
-cache-read ratio
-static prefix versions
-static prefix tokens
-dynamic suffix tokens
-compactions
-```
-
-### Agent behavior
-
-```text
-tool calls
-duplicate/replayed calls
-model-visible tool bytes
-omitted tool bytes
-files read before first correct edit
-failed edits
-no-progress cycles
-replans
-user interventions
-```
-
-### Reliability
-
-```text
-resume success
-workspace/checkpoint mismatch
-duplicate side effects after resume
-post-compaction goal consistency
-branch reconstruction success
-```
-
-### Latency and cost
-
-```text
-time to first useful edit
-model latency
-tool latency
-verification latency
-wall time
-cost per task
-cost per passed task
-```
-
-`MetricsStore` persists these values in provider-neutral tables and computes cached versus uncached input explicitly.
-
-## Mandatory ablations
-
-Use the same model, reasoning settings, task set, and concurrency for each variant:
-
-| Variant | Capability added |
-|---|---|
-| A | Stock ADK coding loop |
-| B | Stable prompt and four tools |
-| C | Bounded outputs and artifacts |
-| D | Task Ledger and deterministic routing |
-| E | Evidence-based verification |
-| F | Stable-prefix cache discipline |
-| G | Coding-aware compaction |
-| H | Structural repository map |
-| I | Optional semantic retrieval |
-| J | Optional final-diff reviewer |
-| K | Verified skill catalog and enabled skill selection |
-| L | K plus trace-learned candidate trials |
-
-Do not compare a prompt change bundled with a model change. Do not compare a tool change bundled with a new test-selection policy.
-
-For K/L, report paired baseline and candidate results per skill revision. Promotion
-requires minimum support in both arms, no pass-rate regression, and configured bounds
-for cost per passed task, uncached input, cache ratio, tool calls, and wall time.
-Disabled or rolled-back revisions remain in the audit history and must not be counted
-as active treatment.
-
-### Indexed-search micro-ablation
-
-`tests/eval/ablations/fff_search.json` defines a deterministic, no-credential comparison
-between raw `rg --json` output and FFF's harness-owned pages over the same 33-match
-fanout fixture. It pins the fixture tree, FFF dependency, search execution surface,
-query, page size, relevance judgments, and four-tool interface. The report records the
-observed ripgrep version rather than requiring one machine-specific release.
-
-Report exact and duplicate/missing match identities, unsafe paths, incompleteness,
-first-window relevant-path recall, noise ratio, reciprocal rank, nDCG@20, first/all-page
-visible bytes, visible bytes per relevant path, page count, deterministic ordered-match
-hashes, and backend duration. Duration is observational only: deterministic CI must
-not assert that one native/process implementation is faster on every machine. The
-fixture includes ignored/internal, binary, and external-symlink decoys.
-
-## Run deterministic tests
+## Current deterministic checks
 
 ```bash
-uv run pytest -q tests/unit
-uv run pytest -q tests/integration
+.venv/bin/pytest tests/unit tests/integration
+(cd clients/tui && go test -race ./...)
 ```
 
-The interruption scenario proves that:
+These cover file confinement/atomicity, failed-operation receipts, repository
+search, context bounds, skill selection, verification strength, replay, steering,
+protocol mapping, and factory swapping without live credentials.
 
-- the event stream replays;
-- the same worktree is reattached;
-- the checkpoint matches;
-- an exact mutation is not repeated;
-- deterministic verification passes after resume.
+The integration replay case reconstructs the worktree, event stream, checkpoint,
+and tools after interruption, repeats an exact mutation without duplicating it,
+and verifies the resulting code through the managed execution boundary.
 
-## Validate an evaluation suite
+## Model evaluations
+
+The case schema and deterministic grader remain in `harness/evals`.
+`tests/eval/suites/core.json` is a smoke case, not a representative benchmark.
+Source-backed cases in `real_repositories.json` include provenance and held-out
+checks. Inspect and authorize external downloads and provider usage separately.
 
 ```python
 from pathlib import Path
@@ -185,75 +34,23 @@ suite = load_evaluation_suite(Path("tests/eval/suites/core.json"))
 print([case.case_id for case in suite.cases])
 ```
 
-Grade a completed run:
+For each real task record the harness revision, model/reasoning configuration,
+task source and base revision, verification commands, allowed scope, provider and
+network policy, token/cache accounting, tool calls, latency, and failure traces.
+Never grade success from a model's natural-language completion claim.
 
-```python
-from harness.evals import grade_case
+Compare one change at a time on the same tasks and model: context caps, search,
+directory skills, or compaction. Include failures and repeated runs. Measure
+behavioral correctness before claiming speed or token-efficiency improvements.
 
-result = grade_case(
-    case,
-    status="complete",
-    changed_paths=changed_paths,
-    verification=verification_report,
-    metric_summary=metrics_store.task_summary(case.case_id),
-)
-assert result.passed, result.model_dump_json(indent=2)
-```
+## Historical material
 
-## Long-horizon stress suite
+Reports under `docs/audits` and `tests/eval/results`, and old ablation specifications,
+describe earlier implementations. Their automatic-learning, semantic-retrieval,
+reviewer, or Magnitude results do not validate this simplified runtime. Removed
+comparison CLIs and learning-promotion code are recoverable from Git, not supported
+execution paths.
 
-A release candidate should include tasks with:
-
-- at least 50 tool calls;
-- two or more compactions;
-- multiple test-repair loops;
-- process termination before and after mutation;
-- process termination during verification;
-- user steering after partial implementation;
-- two alternative branches;
-- model switch at a checkpoint;
-- external workspace modification.
-
-## Cache acceptance criteria
-
-Treat these as starting engineering targets, not guaranteed benchmark outcomes:
-
-```text
-stable prefix unchanged on >95% of non-boundary calls
-context per work batch at least 2× lower than stock baseline
-no statistically meaningful pass-rate regression
-prefix mutations have an explicit recorded reason
-full tool logs absent from normal model context
-```
-
-Report confidence intervals over tasks and repeated runs. Cost and latency distributions are usually skewed, so include median, p90, and p95 rather than averages alone.
-
-## Large-repository evaluation
-
-The structural map should remain disabled for small repositories and evaluated separately on larger codebases. Compare:
-
-```text
-shell search only
-FFF indexed lexical discovery
-shell + static map
-shell + task-ranked structural map
-structural map + semantic fallback
-```
-
-Retain an indexing layer only when it improves pass rate, cost per passed task, files read, or turns to completion. Index size and retrieval sophistication are not success metrics.
-
-## Result publication
-
-Every published result should include:
-
-- exact repository revisions and task construction method;
-- harness commit;
-- model and reasoning configuration;
-- provider caching configuration;
-- concurrency and timeout settings;
-- tool and network policy;
-- pass/fail evidence;
-- token and cost accounting method;
-- failed-task traces or categorized failure reasons.
-
-Without those details, a harness comparison is not reproducible.
+The simplification report records source/complexity reductions and deterministic
+verification only. A new live multi-task run is still required before publishing
+a new model-quality or latency claim.

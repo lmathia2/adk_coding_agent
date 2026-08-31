@@ -29,7 +29,7 @@ Repository files can contain prompt injection. They are treated as data unless t
 
 ## Filesystem isolation
 
-The four tools resolve paths against the task worktree. Absolute paths and traversal outside that root are rejected. Mutations use temporary files and atomic replacement. Expected hashes provide optimistic concurrency when the agent edits a file it previously read.
+The file tools resolve paths against the configured workspace. Paths that resolve outside that root are rejected. Mutations use temporary files and atomic replacement. Expected hashes provide optimistic concurrency when the agent edits a file it previously read.
 Rejected model tool inputs return bounded structured errors so the model can recover;
 they do not weaken confinement and do not escape as fatal ADK workflow exceptions.
 Read-only shell classification is intentionally conservative for host-root traversal:
@@ -37,13 +37,11 @@ commands such as `find /` require approval even in the local adapter. Model tool
 runs outside the async server loop so a bounded command cannot prevent cancellation,
 steering, or WebSocket keepalives while it executes.
 
-Every managed task should run in a container or remote sandbox in addition to the Git worktree. The worktree prevents task-to-task code interference; the sandbox must enforce operating-system, process, network, and secret boundaries.
-
-The production adapters fail closed: Kubernetes requires a pre-provisioned pod and an
-explicit assertion that a deny-by-default NetworkPolicy is enforced, while the remote
-adapter accepts only HTTPS or an injected enterprise transport. Neither backend falls
-back to local execution after a configuration or transport failure. Output is redacted
-before it is bounded or persisted as an artifact.
+The host-local command adapter is not an OS security boundary. Docker command
+execution mounts the same workspace used by file tools, with network disabled by
+default. File and native-search code still execute in the harness process; Docker
+alone does not isolate that process. Remote and Kubernetes adapters were removed
+because their command filesystem was not the file tools' authoritative workspace.
 
 The server's `--production` gate rejects the host-local adapter before it creates
 state or opens a listener. Configuration inspection reports the effective sandbox,
@@ -95,8 +93,8 @@ the same retention and access controls as other tool artifacts.
 
 The native FFF library runs in the trusted host control plane for local and Docker
 bind-mounted workspaces. Its compromise blast radius is consequently larger than a
-sandboxed `rg` subprocess. Kubernetes and remote command backends do not enable
-host-side FFF because their host tree is not authoritative.
+sandboxed `rg` subprocess. Both supported command backends use the authoritative
+host workspace.
 
 The following should never be implemented as prompt-only rules:
 
@@ -157,7 +155,11 @@ The model cannot authorize its own completion. The verifier independently checks
 - at least one successful behavioral verifier for executable-code changes unless the
   caller explicitly requested a syntax-only or static-only contract
 
-A final reviewer model, when enabled, is advisory unless its findings are translated into deterministic checks or an explicit human decision.
+Verification uses the tools' configured sandbox, YAML policy, redactor inputs, and
+state root. Approval requests are keyed by the actual task ID, and mutable approved
+fingerprint sets are not shared between verification tasks. uv verification commands
+run offline and without implicit dependency synchronization. There is no unmanaged
+shell verifier fallback or reviewer model.
 
 ## Project-local extensions and skills
 
@@ -174,7 +176,7 @@ and project-local skills are omitted unless that launch supplies `--trust-projec
 The choice is a volatile runtime binding rather than portable YAML, so cloning or
 reusing a composition cannot silently trust a different workspace. The server and
 launcher announce the effective choice. Explicit external roots remain operator
-configuration and learned roots remain governed by their promotion lifecycle.
+configuration. There is no automatic skill-learning or promotion lifecycle.
 
 ## Logging and privacy
 
@@ -182,10 +184,9 @@ Audit logs should contain operation hashes, classifications, approval decisions,
 
 The local trace store has only `metadata` and `redacted` content modes (plus `off`).
 There is no raw mode. Redaction precedes byte bounding and persistence, exports read
-the already-sanitized records, and learned skills retain normalized action labels and
-trace provenance rather than prompt, response, tool-argument, tool-result, or source
-bodies. Operators must still apply retention, access-control, and backup policy to the
-state directory.
+the already-sanitized records. Operators must still apply retention, access-control,
+and backup policy to the state directory. State is local and single-process; no
+distributed ownership/lease backend is provided.
 
 ## Required adversarial tests
 
