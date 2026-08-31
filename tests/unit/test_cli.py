@@ -119,6 +119,60 @@ def test_codex_login_cancellation_is_clean(tmp_path: Path, capsys, monkeypatch) 
     assert captured.err == "Codex operation cancelled.\n"
 
 
+def test_codex_login_jsonl_streams_only_public_device_events(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    from harness.ai.codex_auth import (
+        CodexCredential,
+        CodexDeviceAuthorization,
+        CodexOAuthClient,
+    )
+
+    monkeypatch.setattr(
+        CodexOAuthClient,
+        "start_device_authorization",
+        lambda self: CodexDeviceAuthorization(
+            device_auth_id="private-device-id",
+            user_code="ABCD-EFGH",
+            interval_seconds=1,
+        ),
+    )
+    monkeypatch.setattr(
+        CodexOAuthClient,
+        "complete_device_authorization",
+        lambda self, authorization: CodexCredential(
+            access_token="private-access-token",
+            refresh_token="private-refresh-token",
+            expires_at_ms=4_000_000,
+            account_id="account-123456",
+        ),
+    )
+
+    exit_code = main(
+        [
+            "codex",
+            "--state-root",
+            str(tmp_path / "state"),
+            "login",
+            "--no-browser",
+            "--jsonl",
+        ]
+    )
+
+    assert exit_code == 0
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert events[0] == {
+        "type": "device_code",
+        "user_code": "ABCD-EFGH",
+        "verification_url": "https://auth.openai.com/codex/device",
+    }
+    assert events[1]["type"] == "authenticated"
+    serialized = json.dumps(events)
+    assert "private-device-id" not in serialized
+    assert "private-access-token" not in serialized
+    assert "private-refresh-token" not in serialized
+
+
 def test_serve_codex_prints_selected_model_without_requiring_login(tmp_path: Path, capsys) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

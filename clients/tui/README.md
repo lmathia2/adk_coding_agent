@@ -31,15 +31,23 @@ Start immediately with a prompt or attach to a durable run cursor:
 
 While a run is active, ordinary input is sent as steering at the next safe point.
 Commands are `/start PROMPT`, `/attach RUN [CURSOR]`, `/pause`, `/cancel`,
-`/reconnect`, `/help`, and `/quit`. When the server uses `openai_codex`, Pi-style
+`/reconnect`, `/clear`, `/help`, and `/quit`. When the server uses `openai_codex`, Pi-style
 provider commands are also available: `/login`, `/logout`, `/auth`, `/models`,
-`/model MODEL_ID`, and `/benchmark [OPTIONS]`. Login and benchmarking suspend the
-alternate screen while their interactive process runs, then restore the TUI. Model
-selection and benchmark winners apply after restarting the server. `Ctrl-C` requests
-cancellation for a running task; `Ctrl-D` exits the client.
+`/model [MODEL_ID]`, and `/benchmark [OPTIONS]`. `/login` is a cancellable inline
+device-flow panel; `/model` without an ID is an inline fuzzy-search picker with
+current/default badges. Benchmarking still suspends the alternate screen while its
+interactive process runs, then restores the TUI. Model selection and benchmark
+winners apply after restarting the server.
+
+Typing `/` opens the command palette; arrow keys choose and Tab completes. The
+composer supports cursor-aware insertion, `Ctrl-J` newlines, `Ctrl-W` word deletion,
+`Ctrl-U`/`Ctrl-K` line-side deletion, Home/End, and `Ctrl-A`/`Ctrl-E`. `Ctrl-C` first
+clears a draft, then requests cancellation for a running task or exits when idle.
+Escape closes inline dialogs or interrupts an active run, and `Ctrl-D` exits.
 
 The TUI receives an allowlisted provider, model name, and readiness value in the
-server hello, so the coding-model line is useful before a task is submitted. An
+server hello, so both the coding-model line and persistent status footer are useful
+before a task is submitted. An
 `authentication_required` state includes an explicit `/login` prompt. Tokens,
 endpoints, and provider response payloads are not part of this public projection.
 

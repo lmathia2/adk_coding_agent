@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 )
 
 type Config struct {
+	Context          context.Context
 	AppVersion       string
 	InitialInput     string
 	InitialRunID     string
@@ -52,7 +54,10 @@ type Model struct {
 	pingCount       uint64
 	outstandingPing string
 	modelPicker     *modelPicker
+	loginDialog     *loginDialog
 	expandedHelp    bool
+	commandIndex    int
+	spinnerFrame    int
 }
 
 type pendingControl struct {
@@ -64,6 +69,7 @@ type transportMsg ws.Event
 type transportClosedMsg struct{}
 type heartbeatMsg time.Time
 type heartbeatTimeoutMsg string
+type spinnerTickMsg time.Time
 type sendResultMsg struct{ err error }
 type localCommandMsg struct {
 	name   string
@@ -106,7 +112,11 @@ func New(transport *ws.Client, config Config) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(waitTransport(m.transport.Events()), heartbeat(m.config.Heartbeat))
+	return tea.Batch(
+		waitTransport(m.transport.Events()),
+		heartbeat(m.config.Heartbeat),
+		spinnerTick(),
+	)
 }
 
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -140,6 +150,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.transport.Reconnect()
 		}
 		return m, nil
+	case spinnerTickMsg:
+		m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+		return m, spinnerTick()
 	case sendResultMsg:
 		if message.err != nil {
 			m.warning = message.err.Error()
@@ -152,6 +165,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.warning = ""
 		m.session.Notice(message.name, strings.TrimSpace(message.output))
+		if message.name == "logout" && m.session.CodingModel != nil {
+			m.session.CodingModel.Readiness = protocol.ModelAuthenticationRequired
+		}
 		return m, nil
 	case localProcessFinishedMsg:
 		if message.err != nil {
@@ -200,27 +216,159 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.modelPicker = nil
 		m.warning = "model " + message.model + " saved; restart the server to apply it"
 		return m, nil
+	case loginProcessStartedMsg:
+		if m.loginDialog == nil || m.loginDialog.id != message.id {
+			if message.cancel != nil {
+				message.cancel()
+			}
+			return m, nil
+		}
+		if message.err != nil {
+			m.loginDialog.err = message.err.Error()
+			m.loginDialog.status = ""
+			return m, nil
+		}
+		m.loginDialog.events = message.events
+		m.loginDialog.cancel = message.cancel
+		return m, waitLoginEvent(message.id, message.events)
+	case loginProcessEventMsg:
+		if m.loginDialog == nil || m.loginDialog.id != message.id {
+			return m, nil
+		}
+		dialog := m.loginDialog
+		switch message.event.kind {
+		case "device_code":
+			if !safeLoginURL(message.event.verificationURL) || !safeUserCode(message.event.userCode) {
+				dialog.status = ""
+				dialog.err = "login process returned an invalid device authorization"
+				if dialog.cancel != nil {
+					dialog.cancel()
+					dialog.cancel = nil
+				}
+				return m, nil
+			}
+			dialog.verificationURL = message.event.verificationURL
+			dialog.userCode = message.event.userCode
+			dialog.status = "Waiting for authorization…"
+			return m, tea.Batch(
+				waitLoginEvent(message.id, dialog.events),
+				openLoginURL(dialog.verificationURL),
+			)
+		case "authenticated":
+			if dialog.cancel != nil {
+				dialog.cancel()
+			}
+			m.loginDialog = nil
+			m.warning = "ChatGPT subscription authenticated; the next request will verify model access"
+			if m.session.CodingModel != nil {
+				m.session.CodingModel.Readiness = protocol.ModelAdapterInitialized
+			}
+			return m, nil
+		case "error":
+			dialog.status = ""
+			dialog.err = message.event.err.Error()
+			dialog.cancel = nil
+			dialog.events = nil
+			return m, nil
+		case "closed":
+			if dialog.err == "" {
+				dialog.err = "login process ended before authentication completed"
+			}
+			dialog.cancel = nil
+			dialog.events = nil
+			return m, nil
+		default:
+			return m, waitLoginEvent(message.id, dialog.events)
+		}
 	case tea.KeyMsg:
+		if m.loginDialog != nil {
+			if message.Type == tea.KeyEsc || message.Type == tea.KeyCtrlC || message.Type == tea.KeyCtrlD {
+				if m.loginDialog.cancel != nil {
+					m.loginDialog.cancel()
+				}
+				m.loginDialog = nil
+				m.warning = "login cancelled"
+			}
+			if message.Type == tea.KeyCtrlD {
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		if m.modelPicker != nil {
 			return m.updateModelPicker(message)
 		}
+		suggestions := commandSuggestions(m.input)
 		switch message.Type {
 		case tea.KeyCtrlD:
 			return m, tea.Quit
 		case tea.KeyCtrlC:
+			if len(m.input) > 0 {
+				m.input = nil
+				m.inputCursor = 0
+				m.commandIndex = 0
+				return m, nil
+			}
 			if m.session.RunID != "" && !terminalStatus(m.session.Status) {
 				return m.cancel()
 			}
 			return m, tea.Quit
+		case tea.KeyEsc:
+			if len(m.input) > 0 {
+				m.input = nil
+				m.inputCursor = 0
+				m.commandIndex = 0
+				return m, nil
+			}
+			if m.session.RunID != "" && !terminalStatus(m.session.Status) {
+				return m.cancel()
+			}
 		case tea.KeyEnter:
 			return m.submit()
+		case tea.KeyCtrlJ:
+			m.input = insertRunes(m.input, m.inputCursor, []rune{'\n'})
+			m.inputCursor++
+			m.commandIndex = 0
+		case tea.KeyTab:
+			if len(suggestions) > 0 {
+				selected := suggestions[min(m.commandIndex, len(suggestions)-1)]
+				m.input = []rune(selected.name)
+				if selected.takesInput {
+					m.input = append(m.input, ' ')
+				}
+				m.inputCursor = len(m.input)
+				m.commandIndex = 0
+			}
+		case tea.KeyUp:
+			if len(suggestions) > 0 {
+				m.commandIndex = (m.commandIndex - 1 + len(suggestions)) % len(suggestions)
+			}
+		case tea.KeyDown:
+			if len(suggestions) > 0 {
+				m.commandIndex = (m.commandIndex + 1) % len(suggestions)
+			}
 		case tea.KeyCtrlO:
 			m.expandedHelp = !m.expandedHelp
-		case tea.KeyBackspace, tea.KeyDelete:
+		case tea.KeyBackspace:
 			if m.inputCursor > 0 {
 				m.input = append(m.input[:m.inputCursor-1], m.input[m.inputCursor:]...)
 				m.inputCursor--
 			}
+			m.commandIndex = 0
+		case tea.KeyDelete:
+			if m.inputCursor < len(m.input) {
+				m.input = append(m.input[:m.inputCursor], m.input[m.inputCursor+1:]...)
+			}
+			m.commandIndex = 0
+		case tea.KeyCtrlU:
+			m.input = append([]rune(nil), m.input[m.inputCursor:]...)
+			m.inputCursor = 0
+			m.commandIndex = 0
+		case tea.KeyCtrlK:
+			m.input = append([]rune(nil), m.input[:m.inputCursor]...)
+			m.commandIndex = 0
+		case tea.KeyCtrlW:
+			m.input, m.inputCursor = deletePreviousWord(m.input, m.inputCursor)
+			m.commandIndex = 0
 		case tea.KeyLeft:
 			if m.inputCursor > 0 {
 				m.inputCursor--
@@ -236,9 +384,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyRunes:
 			m.input = insertRunes(m.input, m.inputCursor, message.Runes)
 			m.inputCursor += len(message.Runes)
+			m.commandIndex = 0
 		case tea.KeySpace:
 			m.input = insertRunes(m.input, m.inputCursor, []rune{' '})
 			m.inputCursor++
+			m.commandIndex = 0
 		}
 	}
 	return m, nil
@@ -391,10 +541,14 @@ func (m Model) View() string {
 		output = append(output, warningStyle.Render(clip("! "+m.warning, width)))
 	}
 
-	footerLines := 4
-	if m.modelPicker != nil {
-		footerLines = len(m.renderModelPicker(width))
+	footer := m.renderComposer(width)
+	if m.loginDialog != nil {
+		footer = m.renderLoginDialog(width)
 	}
+	if m.modelPicker != nil {
+		footer = m.renderModelPicker(width)
+	}
+	footerLines := len(footer)
 	available := height - footerLines
 	const fixedHeaderLines = 9
 	if available < fixedHeaderLines {
@@ -403,18 +557,11 @@ func (m Model) View() string {
 	if len(output) > available {
 		output = append(output[:fixedHeaderLines], output[len(output)-(available-fixedHeaderLines):]...)
 	}
-	if m.modelPicker != nil {
-		output = append(output, m.renderModelPicker(width)...)
+	if m.modelPicker != nil || m.loginDialog != nil {
+		output = append(output, footer...)
 		return strings.Join(output, "\n")
 	}
-	prompt := "› "
-	input := renderCursor(m.input, m.inputCursor)
-	output = append(output,
-		horizontalBorder(width),
-		clip(prompt+input, width),
-		dimStyle.Render(clip("enter send · ctrl+j newline · / commands · ctrl+d quit", width)),
-		horizontalBorder(width),
-	)
+	output = append(output, footer...)
 	return strings.Join(output, "\n")
 }
 
@@ -471,12 +618,23 @@ func (m Model) command(input string) (tea.Model, tea.Cmd) {
 	case "/quit", "/q":
 		return m, tea.Quit
 	case "/help":
-		m.session.Notice("commands", "/login · /logout · /auth · /models · /model · /benchmark [OPTIONS] · /start PROMPT · /attach RUN [CURSOR] · /pause · /cancel · /reconnect · /quit")
+		m.session.Notice("commands", "/login · /logout · /auth · /models · /model · /benchmark [OPTIONS] · /start PROMPT · /attach RUN [CURSOR] · /pause · /cancel · /reconnect · /clear · /quit")
+		return m, nil
+	case "/clear":
+		m.session.ClearEntries()
+		m.warning = ""
 		return m, nil
 	case "/login":
-		return m.runInteractiveCodexCommand("login", "login")
+		if _, err := m.codexArguments("login"); err != nil {
+			m.warning = err.Error()
+			return m, nil
+		}
+		id := m.config.ID()
+		m.loginDialog = &loginDialog{id: id, status: "Starting device authorization…"}
+		m.warning = ""
+		return m, m.startCodexLogin(id)
 	case "/logout":
-		return m.runInteractiveCodexCommand("logout", "logout")
+		return m.runCapturedCodexCommand("logout", "logout")
 	case "/auth":
 		return m.runCapturedCodexCommand("authentication", "status")
 	case "/models":
@@ -668,6 +826,12 @@ func heartbeatTimeout(timeout time.Duration, nonce string) tea.Cmd {
 	return tea.Tick(timeout, func(time.Time) tea.Msg { return heartbeatTimeoutMsg(nonce) })
 }
 
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+func spinnerTick() tea.Cmd {
+	return tea.Tick(120*time.Millisecond, func(now time.Time) tea.Msg { return spinnerTickMsg(now) })
+}
+
 func randomID() string {
 	var value [12]byte
 	if _, err := rand.Read(value[:]); err != nil {
@@ -771,6 +935,68 @@ func renderCursor(values []rune, position int) string {
 		position = len(values)
 	}
 	return string(values[:position]) + "█" + string(values[position:])
+}
+
+func deletePreviousWord(values []rune, position int) ([]rune, int) {
+	if position <= 0 {
+		return values, max(0, position)
+	}
+	start := position
+	for start > 0 && (values[start-1] == ' ' || values[start-1] == '\n' || values[start-1] == '\t') {
+		start--
+	}
+	for start > 0 && values[start-1] != ' ' && values[start-1] != '\n' && values[start-1] != '\t' {
+		start--
+	}
+	return append(values[:start], values[position:]...), start
+}
+
+func (m Model) renderComposer(width int) []string {
+	lines := []string{horizontalBorder(width)}
+	suggestions := commandSuggestions(m.input)
+	if len(suggestions) > 0 {
+		const maximum = 8
+		start := 0
+		if m.commandIndex >= maximum {
+			start = m.commandIndex - maximum + 1
+		}
+		end := min(len(suggestions), start+maximum)
+		for index := start; index < end; index++ {
+			command := suggestions[index]
+			prefix := "  "
+			if index == m.commandIndex {
+				prefix = accentStyle.Render("› ")
+			}
+			lines = append(lines, clip(prefix+command.name+"  "+dimStyle.Render(command.description), width))
+		}
+		lines = append(lines, "")
+	}
+	composer := wrap("› "+renderCursor(m.input, m.inputCursor), width)
+	lines = append(lines, composer...)
+	lines = append(lines,
+		dimStyle.Render(clip("enter send · ctrl+j newline · tab complete · / commands · ctrl+d quit", width)),
+		horizontalBorder(width),
+		dimStyle.Render(m.statusLine(width)),
+	)
+	return lines
+}
+
+func (m Model) statusLine(width int) string {
+	status := string(m.session.Status)
+	if m.session.RunID != "" && !terminalStatus(m.session.Status) {
+		status = spinnerFrames[m.spinnerFrame] + " " + status
+	}
+	left := fmt.Sprintf("run=%s · %s · seq=%d", valueOr(m.session.RunID, "-"), status, m.session.Cursor)
+	right := "model waiting"
+	if m.session.CodingModel != nil {
+		right = fmt.Sprintf("%s/%s · %s",
+			m.session.CodingModel.Provider, m.session.CodingModel.Name, m.session.CodingModel.Readiness)
+	}
+	available := width - len([]rune(left)) - len([]rune(right))
+	if available < 1 {
+		return clip(left+" · "+right, width)
+	}
+	return left + strings.Repeat(" ", available) + right
 }
 
 func min(left, right int) int {

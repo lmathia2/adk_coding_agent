@@ -225,6 +225,7 @@ func (m Model) renderModelPicker(width int) []string {
 		"",
 		dimStyle.Render("Enter select for next server · Ctrl+S set as default · Esc cancel"),
 		horizontalBorder(width),
+		dimStyle.Render(m.statusLine(width)),
 	)
 	return lines
 }

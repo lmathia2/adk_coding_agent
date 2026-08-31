@@ -283,6 +283,11 @@ def _parser() -> argparse.ArgumentParser:
     codex_commands = codex.add_subparsers(dest="codex_command", required=True)
     login = codex_commands.add_parser("login", help="Login with a ChatGPT subscription")
     login.add_argument("--no-browser", action="store_true")
+    login.add_argument(
+        "--jsonl",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     codex_commands.add_parser("status", help="Show redacted subscription status")
     codex_commands.add_parser("logout", help="Remove the stored subscription credential")
     codex_commands.add_parser("models", help="List models enabled for this account")
@@ -503,13 +508,26 @@ def _codex_command(args: argparse.Namespace) -> int:
         if args.codex_command == "login":
             oauth = CodexOAuthClient()
             authorization = oauth.start_device_authorization()
-            print(
-                "Open this URL and enter the code:\n"
-                f"  {authorization.verification_url}\n"
-                f"  Code: {authorization.user_code}\n\n"
-                "Waiting for authorization (Ctrl+C to cancel)...",
-                flush=True,
-            )
+            if args.jsonl:
+                print(
+                    json.dumps(
+                        {
+                            "type": "device_code",
+                            "user_code": authorization.user_code,
+                            "verification_url": authorization.verification_url,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+            else:
+                print(
+                    "Open this URL and enter the code:\n"
+                    f"  {authorization.verification_url}\n"
+                    f"  Code: {authorization.user_code}\n\n"
+                    "Waiting for authorization (Ctrl+C to cancel)...",
+                    flush=True,
+                )
             if not args.no_browser:
                 import webbrowser
 
@@ -517,17 +535,24 @@ def _codex_command(args: argparse.Namespace) -> int:
             credential = oauth.complete_device_authorization(authorization)
             with store.locked():
                 store.save(credential)
-            print(
-                json.dumps(
-                    {
-                        "credential_path": store.path.as_posix(),
-                        "provider": "openai_codex",
-                        "status": "authenticated",
-                    },
-                    sort_keys=True,
-                    indent=2,
+            payload = {
+                "credential_path": store.path.as_posix(),
+                "provider": "openai_codex",
+                "status": "authenticated",
+            }
+            if args.jsonl:
+                print(
+                    json.dumps(
+                        {
+                            "provider": "openai_codex",
+                            "status": "authenticated",
+                            "type": "authenticated",
+                        },
+                        sort_keys=True,
+                    )
                 )
-            )
+            else:
+                print(json.dumps(payload, sort_keys=True, indent=2))
             return 0
         if args.codex_command == "status":
             credential = store.load()

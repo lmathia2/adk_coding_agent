@@ -119,6 +119,7 @@ func run() error {
 	go transport.Run(ctx)
 
 	model := ui.New(transport, ui.Config{
+		Context:          ctx,
 		AppVersion:       version,
 		InitialInput:     prompt,
 		InitialRunID:     *initialRun,

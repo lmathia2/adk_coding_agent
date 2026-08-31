@@ -110,6 +110,11 @@ func (s *State) User(content string) {
 	s.appendEntry(Entry{Kind: EntryUser, Title: "user", Content: content, Done: true})
 }
 
+func (s *State) ClearEntries() {
+	s.Entries = nil
+	s.LastError = ""
+}
+
 func (s *State) Fail(message string) {
 	s.LastError = message
 	s.appendEntry(Entry{Kind: EntryError, Title: "client", Content: message, Done: true})

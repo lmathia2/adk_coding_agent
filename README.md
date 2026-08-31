@@ -95,10 +95,17 @@ renderer exclusively owned by the TUI.
 Type a request in the TUI and press Enter. You can send additional guidance while
 the agent is running; the server delivers it at the next safe steering point.
 With the Codex provider, the model line appears before the first task. If it reports
-`authentication_required`, enter `/login`; the TUI temporarily yields to the browser
-device-login flow and returns after the credential has been saved privately. Use
-`/models`, `/model MODEL_ID`, `/benchmark`, `/auth`, and `/logout` to manage the
-subscription. A saved model or benchmark winner applies on the next server start.
+`authentication_required`, enter `/login`; an inline device-login panel opens the
+browser, displays the short-lived code, remains cancellable with Escape, and never
+renders the stored credential. Enter `/model` for the inline searchable model picker,
+or use `/models`, `/model MODEL_ID`, `/benchmark`, `/auth`, and `/logout` directly.
+A saved model or benchmark winner applies on the next server start.
+
+The composer supports cursor editing, `Ctrl-J` for a newline, `Ctrl-W` to delete the
+previous word, and an inline command palette after `/`; use the arrow keys and Tab to
+complete a command. `Ctrl-C` clears a draft before it interrupts a run or exits. User
+prompts, tool activity, errors, and model/run readiness have distinct visual states,
+and the bottom status line remains visible while dialogs replace the composer.
 
 Both commands announce the resolved configuration before starting. By default the
 shared state is saved under `~/.local/state/adk-coding-agent`; the server writes the

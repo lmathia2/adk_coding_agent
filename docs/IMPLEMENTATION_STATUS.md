@@ -100,8 +100,9 @@ complete.
   reconnect-after-backpressure semantics.
 - [x] Protocol-only Bubble Tea TUI with cursor resume, replay deduplication, bounded
   buffers/history, streaming tool/text rendering, and mid-run steering.
-- [x] Pi-style TUI provider controls for login, logout, redacted auth status, catalog
-  listing, saved model selection, and latency benchmarking over one shared state root.
+- [x] Pi-style TUI visual shell, multiline composer, command palette, inline device
+  login, fuzzy model picker with current/default state, redacted auth controls, and
+  latency benchmarking over one shared state root.
 - [x] Public, replayable coding-model identity and honest adapter/responding status
   without exposing endpoints, credential references, or provider secrets.
 - [x] Explicit Magnitude reasoning-effort override in the CLI and generated,
