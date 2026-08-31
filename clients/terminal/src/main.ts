@@ -8,6 +8,7 @@ import { TerminalView } from "./view.js";
 import { providerCommand } from "./provider-ui.js";
 import { ModelPicker } from "./model-picker.js";
 import { HistoryDialog, SessionInfo, SessionPicker } from "./session-ui.js";
+import { ResourceDialog, skillPrompt } from "./resources.js";
 
 const {values} = parseArgs({options: {
   server: {type: "string", default: "ws://127.0.0.1:8765/v1/agent"},
@@ -35,6 +36,12 @@ try {
       {value: "/history", label: "/history", description: "Browse read-only transcript pages"},
     ] : []),
     ...(session.state.capabilities.has("model_selection") ? [{value: "/model", label: "/model", description: "Select the next turn's model; Ctrl+S saves a default"}] : []),
+    ...(session.state.capabilities.has("resources") ? [
+      {value: "/resources", label: "/resources", description: "Inspect server resources, trust and state paths"},
+      {value: "/skills", label: "/skills", description: "Select an available directory skill"},
+      ...(session.state.view.resources?.items ?? []).filter(item => item.kind === "skill" && item.status === "available")
+        .map(item => ({value: `/skill:${item.name}`, label: `/skill:${item.name}`, description: item.description})),
+    ] : []),
     ...(session.state.capabilities.has("provider_controls") ? [
       {value: "/login", label: "/login", description: "Sign in to a provider on the server"},
       {value: "/auth", label: "/auth", description: "Inspect server authentication and credential paths"},
@@ -69,6 +76,13 @@ try {
         if (command === "/quit") return quit();
         if (command === "/new") return session.newConversation();
         if (command === "/cancel") return session.cancel();
+        if (command === "/resources" || command === "/skills") {
+          view.showDialog(close => new ResourceDialog(session, session.state.view, command === "/skills",
+            () => view.refresh(), close, name => view.editor.setText(`$${name} `))); return;
+        }
+        if (command.startsWith("/skill:")) {
+          session.submit(skillPrompt(command, session.state.view), mode); return;
+        }
         if (command === "/resume") {
           if (!session.state.capabilities.has("session_history")) throw new Error("Server does not support transcript history");
           if (session.state.active) throw new Error("Finish or cancel active work before switching conversations");

@@ -7,6 +7,16 @@ from harness.server import AgUiEventType
 from harness.server.adk_mapper import AdkAgUiNormalizer, map_adk_event
 
 
+def test_selected_skill_names_are_public_but_skill_bodies_remain_private() -> None:
+    event = Event(author="workflow", actions=EventActions(state_delta={
+        "selected_skill_names": ["python-checks"], "skill_context_text": "PRIVATE_BODY",
+        "selected_skill_hashes": ["private-internal-hash"],
+    }))
+    mapped = map_adk_event(event, run_id="run", thread_id="thread")
+    assert mapped[0].delta == [{"op": "add", "path": "/selected_skill_names", "value": ["python-checks"]}]
+    assert "PRIVATE_BODY" not in mapped[0].model_dump_json()
+
+
 def test_adk_text_event_maps_to_correlated_ag_ui_message_triplet() -> None:
     event = Event(
         id="event-text-1",

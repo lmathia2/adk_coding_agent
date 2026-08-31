@@ -30,6 +30,10 @@ ledger / verify / checkpoint     read · bash · edit · write
   and validate a replacement configuration. The server owns catalog/preferences
   and freezes model identity and behavior hashes when admitting each run. The
   terminal only sends control requests; it does not rewrite YAML or build models.
+- An optional resource-discovery hook uses the same trusted loaders as execution.
+  Server metadata includes paths, availability and trust, never instruction/skill
+  bodies. Selected skill names are flushed through ADK state before the worker
+  starts; the terminal cannot decide project trust or scan server directories.
 - `harness/server` owns authenticated local transport, run ownership, replay,
   cancellation, deadlines, and ADK event translation. The TUI imports none of the
   Python harness implementation.

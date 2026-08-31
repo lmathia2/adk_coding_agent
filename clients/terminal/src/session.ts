@@ -19,7 +19,7 @@ export class SessionState {
   }
   user(id: string, text: string): void { this.append({kind: "user", id, text: bounded(text)}); }
   error(text: string): void { this.append({kind: "error", id: randomUUID(), text: bounded(text)}); }
-  begin(): void { this.runId = ""; this.cursor = 0; this.view.status = "starting"; this.view.notice = ""; }
+  begin(): void { this.runId = ""; this.cursor = 0; this.view.status = "starting"; this.view.notice = ""; this.view.selectedSkills = []; }
   restore(history: SessionState): void {
     this.threadId = history.threadId; this.runId = history.runId; this.cursor = history.cursor;
     Object.assign(this.view, history.view, {workspace: this.view.workspace});
@@ -29,6 +29,18 @@ export class SessionState {
     this.threadId = randomUUID(); this.runId = ""; this.cursor = 0;
     this.view.entries = []; this.view.status = "ready"; this.view.notice = "";
     this.view.pending = [];
+    this.view.selectedSkills = [];
+  }
+  resources(data: WireObject): void {
+    const workspace = string(data.workspace);
+    if (!Array.isArray(data.items) || !Array.isArray(data.warnings)) throw new Error("Invalid resource inventory");
+    const resources = {stateRoot: string(data.state_root), configurationRoot: string(data.configuration_root),
+      runDatabase: string(data.run_database), projectTrusted: data.project_trusted === true,
+      warnings: data.warnings.map(string), truncated: data.truncated === true,
+      items: data.items.map(value => { const item = object(value); return {kind: string(item.kind), name: string(item.name),
+        path: typeof item.path === "string" ? item.path : undefined, description: string(item.description), status: string(item.status)}; })};
+    this.view.workspace = workspace;
+    this.view.resources = resources;
   }
   model(value: unknown): void {
     if (!value || typeof value !== "object") return;
@@ -91,6 +103,11 @@ export class SessionState {
       }
       case "CUSTOM":
         if (event.name === "coding.model.status") this.model(event.value);
+        break;
+      case "STATE_DELTA":
+        if (Array.isArray(event.delta)) for (const change of event.delta.map(object)) {
+          if (change.path === "/selected_skill_names" && Array.isArray(change.value)) this.view.selectedSkills = change.value.map(string).slice(0, 32);
+        }
         break;
       // End-of-arguments is not end-of-execution. Other lifecycle/state/custom
       // events remain in server replay storage, not the conversational transcript.

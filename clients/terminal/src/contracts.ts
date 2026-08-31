@@ -13,12 +13,23 @@ export interface TextEntry {
   text: string;
 }
 export type TranscriptEntry = ToolEntry | TextEntry;
+export interface ResourceView {
+  stateRoot: string;
+  configurationRoot: string;
+  runDatabase: string;
+  projectTrusted: boolean;
+  items: {kind: string; name: string; path?: string; description: string; status: string}[];
+  warnings: string[];
+  truncated: boolean;
+}
 export interface SessionView {
   entries: TranscriptEntry[];
   status: string;
   workspace: string;
   model: string;
   notice: string;
+  resources?: ResourceView;
+  selectedSkills?: string[];
   pending?: {item_id: string; preview: string}[];
 }
 export interface SessionActions {

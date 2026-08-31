@@ -15,6 +15,7 @@ from .contracts import (
     ModelConfigurableHarness,
     RuntimeCapability,
 )
+from .resources import HarnessResources, ResourceConfigurableHarness
 
 
 class HarnessRegistry:
@@ -63,6 +64,10 @@ class HarnessRegistry:
     def model_configuration(self, implementation: str) -> ModelConfigurableHarness | None:
         factory = self._factories[implementation]
         return factory if isinstance(factory, ModelConfigurableHarness) else None
+
+    def resources(self, composition: HarnessComposition, bindings: RuntimeBindings) -> HarnessResources | None:
+        factory = self._factories[composition.harness.implementation]
+        return factory.resources(composition, bindings) if isinstance(factory, ResourceConfigurableHarness) else None
 
     def descriptor(self, implementation: str) -> HarnessDescriptor:
         try:

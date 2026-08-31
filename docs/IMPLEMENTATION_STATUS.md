@@ -23,7 +23,7 @@ historical feature checklist or book-rubric score.
   ordinary text streaming by default.
 - Standalone Pi terminal toolkit client with authenticated transport, multi-turn
   conversations and replay, tested against the real server/ADK stack with a scripted
-  model (not yet the default installed client; resource discovery still pending).
+  model (not yet the default installed client).
 - Server-owned durable follow-ups, bounded conversation queries, queue continuation
   and removal controls; the terminal catches up through successor runs in order.
 - Read-only public transcript pages with a stable snapshot cursor, event/byte
@@ -38,6 +38,10 @@ historical feature checklist or book-rubric score.
 - Searchable `/model` with background catalog refresh, per-conversation selection
   and explicit saved defaults. The server freezes each run's choice; selection
   changes the next ADK turn without altering active work or replaying mutations.
+- Server-owned, bounded resource metadata: `/resources` discloses workspace/state/
+  configuration paths and trust; `/skills` and `/skill:NAME` use the runtime's trusted
+  directory loader. Ctrl+O shows metadata, not file bodies. Actual selected skill
+  names arrive before model execution and are distinct from available resources.
 - Plain-language turns support a distinct `answered` outcome without inventing a
   coding task. Direct answers permit no managed shell/write/edit action and no
   explicit verification obligation; coding results still route through verification.

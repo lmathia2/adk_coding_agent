@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import aclosing, suppress
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from google.adk import Runner
 from google.adk.agents._streaming_mode import StreamingMode
@@ -439,6 +440,8 @@ class RunCoordinator:
             capabilities |= {RuntimeCapability.PROVIDER_CONTROLS}
         if self.models is not None:
             capabilities |= {RuntimeCapability.MODEL_SELECTION}
+        if isinstance(self.execution_factory, AdkRunExecutionFactory):
+            capabilities |= {RuntimeCapability.RESOURCES}
         return descriptor.model_copy(update={"capabilities": capabilities})
 
     async def session_request(self, message: SessionRequestMessage, *, user_id: str) -> dict[str, object]:
@@ -453,6 +456,26 @@ class RunCoordinator:
         if self.models is None:
             raise ModelControlError("Model selection is not supported by this harness")
         return await self.models.request(message, user_id=user_id)
+
+    async def resource_request(self) -> dict[str, object]:
+        factory = self.execution_factory
+        if not isinstance(factory, AdkRunExecutionFactory):
+            raise ValueError("resource inventory is not supported")
+        inventory = await asyncio.to_thread(factory.registry.resources, factory.composition, factory.bindings)
+        bindings = factory.bindings
+        data = {"workspace": str(bindings.workspace.expanduser().resolve()),
+                "state_root": str(bindings.state_root.expanduser().resolve()),
+                "configuration_root": str((bindings.configuration_root or bindings.workspace).expanduser().resolve()),
+                "run_database": str(self.store.database.resolve()), "project_trusted": bindings.project_trusted,
+                "scope": "available_for_next_turn", "items": [], "warnings": []}
+        if inventory is not None:
+            data.update(inventory.model_dump(mode="json"))
+        else:
+            data["warnings"] = ["This harness does not expose resource details."]
+        public = self.redactor.redact(data)
+        if len(json.dumps(public, ensure_ascii=False).encode()) > 512_000:
+            raise ValueError("resource inventory exceeds the public response limit")
+        return cast(dict[str, object], public)
 
     @property
     def coding_model_status(self) -> PublicModelStatus | None:

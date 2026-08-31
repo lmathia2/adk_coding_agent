@@ -119,6 +119,7 @@ def test_registered_harness_owns_strict_config_and_swaps_behind_same_protocol(
     )
 
     assert isinstance(factory, HarnessFactory)
+    assert registry.resources(composition, RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state")) is None
     assert isinstance(composition.harness.config, _FakeHarnessConfig)
     assert assembly.descriptor.implementation == "fake_adk_v1"
     assert assembly.app.name == "swappable_harness"

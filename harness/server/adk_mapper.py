@@ -22,6 +22,7 @@ _DEFAULT_PUBLIC_STATE_KEYS = frozenset(
         "static_prefix_tokens_estimate",
         "task_route",
         "workspace_fingerprint",
+        "selected_skill_names",
     }
 )
 

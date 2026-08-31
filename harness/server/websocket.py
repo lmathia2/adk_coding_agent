@@ -33,6 +33,8 @@ from .protocol import (
     PongMessage,
     ProviderRequestMessage,
     ProviderResultMessage,
+    ResourceRequestMessage,
+    ResourceResultMessage,
     ServerEnvelope,
     ServerErrorMessage,
     ServerHello,
@@ -191,6 +193,7 @@ class _AgentWebSocketConnection:
         self._send_lock = asyncio.Lock()
         self._writer: asyncio.Task[None] | None = None
         self._attachment: asyncio.Task[None] | None = None
+        self._resource_task: asyncio.Task[None] | None = None
         self._closing = False
 
     async def run(self) -> None:
@@ -320,6 +323,22 @@ class _AgentWebSocketConnection:
             await self._provider_request(message)
         elif isinstance(message, ModelRequestMessage):
             await self._model_request(message)
+        elif isinstance(message, ResourceRequestMessage):
+            if self._resource_task is not None and not self._resource_task.done():
+                await self._enqueue(ServerErrorMessage(code="resource_request_busy", message="Resource discovery is still running; try again shortly.", request_id=message.request_id))
+            else:
+                self._resource_task = asyncio.create_task(self._resource_request(message), name="resource-discovery")
+
+    async def _resource_request(self, message: ResourceRequestMessage) -> None:
+        handler = getattr(self.coordinator, "resource_request", None)
+        try:
+            if handler is None:
+                raise ValueError("unsupported")
+            result = await handler()
+        except Exception:
+            await self._enqueue_or_close(ServerErrorMessage(code="resource_request_failed", message="Resource discovery failed. Check the server configuration and trusted resource files.", request_id=message.request_id))
+        else:
+            await self._enqueue_or_close(ResourceResultMessage(request_id=message.request_id, data=result))
 
     async def _model_request(self, message: ModelRequestMessage) -> None:
         handler = getattr(self.coordinator, "model_request", None)
@@ -630,7 +649,7 @@ class _AgentWebSocketConnection:
     async def _stop_connection_tasks(self) -> None:
         tasks = tuple(
             task
-            for task in (self._attachment, self._writer)
+            for task in (self._attachment, self._writer, self._resource_task)
             if task is not None and task is not asyncio.current_task()
         )
         for task in tasks:

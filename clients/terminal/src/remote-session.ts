@@ -24,6 +24,7 @@ export class RemoteSession {
   private historyLoad?: AbortSignal;
   private get loadingHistory(): boolean { return this.historyLoad !== undefined && !this.historyLoad.aborted; }
   private refreshAgain = false;
+  private resourcesRequest?: Promise<void>;
   private latestSnapshot?: WireObject;
   private lastPong = 0;
   private attempts = 0;
@@ -100,6 +101,7 @@ export class RemoteSession {
         this.state.capabilities = new Set(Array.isArray(capabilities) ? capabilities.filter((item): item is string => typeof item === "string") : []);
         if (!this.state.active) this.state.model(message.coding_model);
         this.refreshModel();
+        if (this.state.capabilities.has("resources")) void this.refreshResources().catch(error => this.notice(error.message));
         if (this.pendingStart) this.send(this.pendingStart);
         else if (this.state.runId) this.send({type: "task.attach", run_id: this.state.runId, after_sequence: this.state.cursor});
         for (const control of this.controls.values()) this.send(control);
@@ -151,7 +153,8 @@ export class RemoteSession {
         break;
       case "session.result":
       case "provider.result":
-      case "model.result": {
+      case "model.result":
+      case "resource.result": {
         const id = string(message.request_id), request = this.requests.get(id);
         if (!request) break;
         if (message.type !== String(request.message.type).replace(".request", ".result") || message.operation !== request.message.operation) throw new Error("Mismatched response");
@@ -196,6 +199,12 @@ export class RemoteSession {
   cancel(): void { if (this.state.active && this.state.runId) this.control("cancel"); }
   request(operation: string, parameters: WireObject = {}): Promise<WireObject> {
     return this.managementRequest("session", "sessions", operation, parameters);
+  }
+  refreshResources(): Promise<void> {
+    this.resourcesRequest ??= this.managementRequest("resource", "resources", "list", {}).then(data => {
+      if (!this.stopped) { this.state.resources(data); this.changed(); }
+    }).finally(() => { this.resourcesRequest = undefined; });
+    return this.resourcesRequest;
   }
   providerRequest(operation: "status" | "login" | "cancel_login" | "logout", parameters: WireObject = {}): Promise<WireObject> {
     return this.managementRequest("provider", "provider_controls", operation, parameters);

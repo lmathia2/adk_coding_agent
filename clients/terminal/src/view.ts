@@ -4,6 +4,7 @@ import { Transcript, safeText } from "./transcript.js";
 import { editorTheme, theme } from "./theme.js";
 import { CommandCompletion } from "./commands.js";
 import { Selector } from "./selector.js";
+import { resourceText } from "./resources.js";
 
 export interface Dialog extends Component, Focusable { handleInput(data: string): void; dispose?(): void; }
 
@@ -15,6 +16,7 @@ export class TerminalView {
   private readonly status = new Text("", 1, 0);
   private readonly queue = new Text("", 1, 0);
   private readonly footer = new Text("", 1, 0);
+  private readonly resources = new Text("", 1, 0);
   private readonly inputRegion = new Container();
   private dialog?: Dialog;
   private disposed = false;
@@ -23,7 +25,8 @@ export class TerminalView {
     this.editor = new Editor(tui, editorTheme, { paddingX: 1 });
     this.transcript = new Transcript(state);
     this.root.addChild(new Text(theme.accent("adk-agent") + theme.dim(" · Pi terminal / ADK harness"), 1, 0));
-    this.root.addChild(new Text(theme.dim("esc interrupt · ctrl+c clear · ctrl+d exit · / commands · ctrl+o tools"), 1, 1));
+    this.root.addChild(new Text(theme.dim("esc interrupt · ctrl+c clear · ctrl+d exit · / commands · ctrl+o more"), 1, 1));
+    this.root.addChild(this.resources);
     this.root.addChild(this.transcript);
     this.root.addChild(this.queue);
     this.root.addChild(this.status);
@@ -83,6 +86,7 @@ export class TerminalView {
   refresh(): void {
     if (this.disposed) return;
     const pending = this.state.pending ?? [];
+    this.resources.setText(this.transcript.expanded ? theme.dim(safeText(resourceText(this.state))) : "");
     const lines = pending.slice(0, 3).map(item => `↳ queued: ${safeText(item.preview).split("\n")[0].slice(0, 120)}`);
     if (pending.length > 3) lines.push(`… ${pending.length - 3} more queued follow-ups`);
     this.queue.setText(theme.dim(lines.join("\n")));

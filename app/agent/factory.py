@@ -22,6 +22,7 @@ from harness.agent import (
     RuntimeCapability,
     SteeringCommand,
 )
+from harness.agent.resources import HarnessResources, ResourceItem
 from harness.ai import AdkModelProviderRegistry, default_adk_model_provider_registry
 from harness.config import (
     FOUR_CODING_TOOLS,
@@ -31,7 +32,7 @@ from harness.config import (
     RuntimeBindings,
 )
 from harness.context import prefix_hash
-from harness.repo import StructuralIndex
+from harness.repo import StructuralIndex, discover_instruction_files
 from harness.safety import ApprovalPolicy
 from harness.sandbox import create_configured_command_sandbox
 from harness.state import CheckpointStore, JsonlEventStore, SteeringQueue, rebuild_ledger
@@ -43,6 +44,7 @@ from harness.workspace import GitWorktreeManager
 
 from .builders import build_coding_worker
 from .config import settings_from_composition
+from .skills import build_skill_registry
 from .workflow import PiWorkflowDependencies, build_root_agent
 
 LOGGER = logging.getLogger(__name__)
@@ -175,6 +177,37 @@ class PiCodingHarnessFactory:
         )
         if unknown_providers:
             raise ValueError(f"unregistered model providers: {unknown_providers}")
+
+    def resources(self, composition: HarnessComposition, bindings: RuntimeBindings) -> HarnessResources:
+        """Use the execution loaders, without building a model, tools or state stores."""
+        config = composition.harness.config
+        if not isinstance(config, PiCodingConfig):
+            raise TypeError("pi_coding_v1 requires PiCodingConfig")
+        settings = settings_from_composition(composition, bindings)
+        items = [ResourceItem(kind="tool", name=name) for name in FOUR_CODING_TOOLS]
+        prompt = config.agents["coding_worker"].prompt
+        path = (bindings.configuration_root or settings.workspace) / prompt.path if prompt.path else None
+        items.append(ResourceItem(kind="prompt", name=prompt.name or "coding_worker", path=str(path.resolve()) if path else None))
+        warnings = []
+        if settings.project_trusted:
+            items.extend(ResourceItem(kind="instruction", name=path.name, path=str(path))
+                         for path in discover_instruction_files(settings.workspace))
+        else:
+            warnings.append("Project instructions and project skills are disabled until the server is launched with --trust-project.")
+        enabled = settings.skill_context_bytes > 0
+        for root in settings.skill_roots:
+            items.append(ResourceItem(kind="skill_root", name=root.name, path=str(root),
+                status="missing" if not root.exists() else "available" if enabled else "disabled"))
+        if enabled:
+            try:
+                registry = build_skill_registry(settings)
+                items.extend(ResourceItem(kind="skill", name=skill.name, path=str(skill.manifest_path),
+                    description=skill.description[:256], status="available" if settings.skill_max_selected > 0 else "disabled") for skill in registry.skills)
+            except Exception:
+                warnings.append("Skill validation failed; the runtime will omit skill context. Check the configured SKILL.md files and roots.")
+        else:
+            warnings.append("Skill context is disabled by the configured byte budget.")
+        return HarnessResources(items=tuple(items[:128]), warnings=tuple(warnings), truncated=len(items) > 128)
 
     @staticmethod
     def _known_secrets(config: PiCodingConfig) -> list[str]:

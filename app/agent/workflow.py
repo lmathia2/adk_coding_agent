@@ -620,6 +620,9 @@ async def _orchestrate_owned(
                 idempotency_key=f"skill-loading-failed:{type(error).__name__}",
             )
         _set_skill_state(ctx, skill_runtime)
+        # Publish selected names before waiting for the worker. The public mapper
+        # excludes bodies and hashes; discovery alone is not evidence of selection.
+        yield Event()
     skill_event = {
         "kind": "skills_selected",
         "names": list(skill_runtime.selected_names),

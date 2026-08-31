@@ -6,6 +6,7 @@ import { RemoteSession } from "../src/remote-session.js";
 import { ModelPicker } from "../src/model-picker.js";
 import { TerminalView } from "../src/view.js";
 import { SessionPicker, HistoryDialog } from "../src/session-ui.js";
+import { ResourceDialog, skillPrompt } from "../src/resources.js";
 
 const session = new RemoteSession({url: process.env.ADK_TEST_URL!, token: process.env.ADK_TEST_TOKEN!});
 let input!: (data: string) => unknown;
@@ -25,8 +26,15 @@ function openPicker(): void {
 try {
   session.connect(); await until(() => session.state.view.status === "ready");
   const original = session.state.threadId;
-  session.submit("First fixture turn");
+  await session.refreshResources();
+  assert.ok(session.state.view.workspace.endsWith("/workspace"));
+  view.showDialog(close => new ResourceDialog(session, session.state.view, false, () => view.refresh(), close, () => {}));
+  await until(() => screen().includes("Available for the next turn"));
+  assert.match(screen(), /AGENTS.md/); assert.doesNotMatch(screen(), /PRIVATE_SKILL_BODY|PRIVATE_PROJECT_INSTRUCTION/);
+  input("\x1b");
+  session.submit(skillPrompt("/skill:python-checks First fixture turn", session.state.view));
   await until(() => session.state.view.status === "running");
+  await until(() => session.state.view.selectedSkills?.includes("python-checks") === true);
   view.editor.setText("preserved draft");
   openPicker();
   await until(() => screen().includes("beta [scripted]"));

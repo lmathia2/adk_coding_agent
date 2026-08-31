@@ -4,13 +4,17 @@
 
 - [x] Prove standalone Pi toolkit reuse with deterministic rendering fixtures.
 - [x] Separate public replies from workflow control and support non-coding turns.
-- [ ] Preserve conversations and wire queues, model/auth controls and resources.
+- [x] Preserve conversations and wire queues, model/auth controls and resources.
   - [x] Add cancellable server-owned provider authentication controls.
   - [x] Connect Pi-style login/status/logout dialogs to the authenticated server.
   - [x] Wire searchable model selection and saved defaults to actual next-turn ADK configuration.
   - [x] Expose bounded read-only transcript pages from durable public events.
   - [x] Connect `/resume` and historical transcript navigation to those pages.
+  - [x] Expose trusted resource metadata and actual skill selection through the server.
 - [ ] Complete Pi-style UI and migrate installation/launching.
+  - [ ] Wire command approval decisions to paused tool execution and terminal controls.
+  - [ ] Complete public-response streaming and quiet activity presentation.
+  - [ ] Migrate installation/launching after the new client passes the delivery gates.
 - [ ] Verify conversational/coding examples, replay and harness swap; remove Go TUI.
 
 See `docs/design/pi-terminal-migration.md` for delivery gates.

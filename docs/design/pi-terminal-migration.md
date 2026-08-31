@@ -248,3 +248,27 @@ unchanged. Deterministic terminal tests additionally cover active-run catch-up,
 cancelled delayed loads, chronological replay, malformed cursors, earlier-page
 navigation and widths of 20/40/80/120 columns. Installation migration and fresh
 live-provider visual/quality comparisons remain outstanding.
+
+## Resource discovery and selection
+
+The `resources` capability exposes read-only `resource.request` / `resource.result`
+metadata. Discovery runs off the WebSocket receive loop, so slow filesystem reads
+do not block ping or cancellation. Each connection permits one discovery at a time;
+the terminal coalesces concurrent refreshes and ignores dismissed dialog callbacks.
+Inventory is redacted, limited to 128 entries and a 512-KB response, and explicitly
+reports truncation. Alternate factories may omit the resource hook without breaking
+the protocol; their workspace/state metadata remains available with a warning.
+
+`/resources` shows server workspace, state, configuration and history locations,
+project trust, prompts, tools and skill roots. `/skills` is a searchable selector;
+`/skill:NAME` expands to the existing explicit skill request without another model
+tool. Ctrl+O reveals compact resource metadata. Available resources are not labelled
+loaded: actual selected skill names are emitted before the model call, separately
+from the directory inventory. Instruction bodies and skill hashes remain private.
+
+The production WebSocket/ADK fixture checks resource paths, sends a skill request,
+observes selection while the model is gated, and verifies the body reached the
+worker but not the terminal. Tests also cover trust, configured roots, disabled
+budgets, invalid manifests, bounded discovery, responsive ping, safe errors,
+dialog dismissal and terminal widths. Live-model/visual comparisons and installation
+migration still remain; this is not a claim of full Pi parity.

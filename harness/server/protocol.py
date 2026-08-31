@@ -163,6 +163,13 @@ class ProviderRequestMessage(ProviderControlRequest):
     protocol_version: Literal[1] = 1
 
 
+class ResourceRequestMessage(FrozenModel):
+    type: Literal["resource.request"]
+    protocol_version: Literal[1] = 1
+    request_id: str = Field(min_length=1, max_length=256)
+    operation: Literal["list"] = "list"
+
+
 ClientMessage = Annotated[
     HelloMessage
     | StartTaskMessage
@@ -174,7 +181,8 @@ ClientMessage = Annotated[
     | PingMessage
     | SessionRequestMessage
     | ProviderRequestMessage
-    | ModelRequestMessage,
+    | ModelRequestMessage
+    | ResourceRequestMessage,
     # Session operations extend v1 by capability; old clients never receive their replies.
     Field(discriminator="type"),
 ]
@@ -376,6 +384,14 @@ class ModelResultMessage(FrozenModel):
     data: dict[str, object]
 
 
+class ResourceResultMessage(FrozenModel):
+    type: Literal["resource.result"] = "resource.result"
+    protocol_version: Literal[1] = 1
+    request_id: str
+    operation: Literal["list"] = "list"
+    data: dict[str, object]
+
+
 ServerMessage = Annotated[
     ServerHello
     | TaskAcceptedMessage
@@ -385,7 +401,8 @@ ServerMessage = Annotated[
     | ServerEnvelope
     | SessionResultMessage
     | ProviderResultMessage
-    | ModelResultMessage,
+    | ModelResultMessage
+    | ResourceResultMessage,
     Field(discriminator="type"),
 ]
 _SERVER_MESSAGE_ADAPTER = TypeAdapter(ServerMessage)

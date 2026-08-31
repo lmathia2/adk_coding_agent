@@ -30,6 +30,7 @@ class RuntimeCapability(StrEnum):
     ARTIFACTS = "artifacts"
     SESSIONS = "sessions"
     SESSION_HISTORY = "session_history"
+    RESOURCES = "resources"
     PROVIDER_CONTROLS = "provider_controls"
     MODEL_SELECTION = "model_selection"
 

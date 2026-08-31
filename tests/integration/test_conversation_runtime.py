@@ -223,11 +223,16 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "README.md").write_text("Bridge fixture.\n")
+    if fixture == "model-client":
+        skill = workspace / ".agents/skills/python-checks"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("---\nname: python-checks\ndescription: Check Python fixture requests\n---\nPRIVATE_SKILL_BODY\n")
+        (workspace / "AGENTS.md").write_text("PRIVATE_PROJECT_INSTRUCTION\n")
     state_root = tmp_path / "state"
     services = build_service_bundle(settings_from_composition(composition.persistence, state_root=state_root))
     coordinator = RunCoordinator(store=SqliteRunEventStore(state_root / "runs.db"), broker=RunEventBroker(),
         execution_factory=AdkRunExecutionFactory(composition=composition,
-            bindings=RuntimeBindings(workspace=workspace, state_root=state_root), registry=registry, services=services))
+            bindings=RuntimeBindings(workspace=workspace, state_root=state_root, project_trusted=fixture == "model-client"), registry=registry, services=services))
     assert coordinator.models is not None
     coordinator.models._catalog = lambda: tuple(CatalogModel(choice=ModelChoice(provider="scripted", name=name), display_name=name) for name in models)
     token = "synthetic-test-token-" + "x" * 32
@@ -250,6 +255,9 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         async with asyncio.timeout(15):
             while True:
+                if process.returncode is not None:
+                    stdout, stderr = await process.communicate()
+                    pytest.fail(f"Terminal exited before queuing follow-ups: {stderr.decode()}")
                 threads = coordinator.conversations.store.threads("local-user")
                 if threads and len(coordinator.conversations.store.pending("local-user", threads[0].thread_id)) == (1 if fixture == "model-client" else 2):
                     break
@@ -262,6 +270,7 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
             assert [(name, model._calls) for name, model in models.items()] == [("alpha", 1), ("beta", 1), ("gamma", 1)]
             assert load_model_default(state_root).name == "gamma"
             assert "First fixture turn" in models["beta"]._requests[0]
+            assert "PRIVATE_SKILL_BODY" in models["alpha"]._requests[0]
         else:
             assert json.loads(stdout) == {"turns": 3, "entries": 7, "status": "answered"}
             assert model._calls == 4
