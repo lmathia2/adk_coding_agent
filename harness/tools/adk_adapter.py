@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -536,20 +536,22 @@ class _ManagedTools:
         fingerprint = _canonical_hash("bash", {"command": command})
         active_scope = task_scope or self.task_scope
         persisted = self.approvals.for_fingerprint(active_scope, fingerprint)
+        policy = self.policy
         if persisted and persisted.status == "approved":
-            self.policy.approved_fingerprints.add(fingerprint)
-        elif persisted and persisted.status == "denied":
+            # Never cache task-scoped or expiring decisions in the shared policy.
+            policy = replace(policy, approved_fingerprints=policy.approved_fingerprints | {fingerprint})
+        elif persisted and persisted.status in {"denied", "expired"}:
             return {
                 "status": "blocked",
                 "model_text": self.redactor.redact_text(
-                    "Command not executed: approval denied by "
+                    f"Command not executed: approval {persisted.status} by "
                     f"{persisted.decided_by or 'reviewer'}."
                 ),
                 "approval_required": False,
                 "approval_request_id": persisted.request_id,
                 "risk": persisted.risk,
             }
-        decision = self.policy.decide(command, fingerprint=fingerprint)
+        decision = policy.decide(command, fingerprint=fingerprint)
         if decision.action != ApprovalAction.ALLOW:
             request_id: str | None = None
             if decision.action == ApprovalAction.REQUIRE_APPROVAL:

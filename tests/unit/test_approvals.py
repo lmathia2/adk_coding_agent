@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from harness.approvals import ApprovalStore
 from harness.approvals.__main__ import main
-from harness.tools.adk_adapter import create_adk_tools
+from harness.safety import ApprovalPolicy
+from harness.tools.adk_adapter import _canonical_hash, create_adk_tools
 
 
 def test_approval_store_is_idempotent_and_decisions_are_final(tmp_path: Path) -> None:
@@ -96,6 +98,34 @@ def test_managed_command_honors_denied_approval(tmp_path: Path, monkeypatch) -> 
     assert denied["approval_required"] is False
     assert denied["approval_request_id"] == request_id
     assert "denied by reviewer" in denied["model_text"]
+
+
+def test_approved_command_does_not_leak_to_another_task_or_shared_policy(tmp_path: Path) -> None:
+    policy = ApprovalPolicy()
+    tools = create_adk_tools(tmp_path, state_root=tmp_path / "state", policy=policy, search_mode="disabled")
+    blocked = tools.bash("printf approved", task_scope="first")
+    store = ApprovalStore(tmp_path / "state/approvals.db")
+    store.decide(blocked["approval_request_id"], decision="approved", actor="reviewer")
+    assert tools.bash("printf approved", task_scope="first")["status"] == "ok"
+    other = tools.bash("printf approved", task_scope="second")
+    assert other["status"] == "blocked" and other["approval_required"]
+    assert other["approval_request_id"] != blocked["approval_request_id"]
+    assert policy.approved_fingerprints == set()
+
+
+def test_previously_used_approval_stops_authorizing_after_expiry(tmp_path: Path, monkeypatch) -> None:
+    now = datetime.now(UTC)
+    store = ApprovalStore(tmp_path / "state/approvals.db")
+    command = "printf approved"
+    request = store.request(task_id="task", fingerprint=_canonical_hash("bash", {"command": command}),
+        operation=command, risk="unknown", reason="review", expires_at=(now + timedelta(seconds=60)).isoformat())
+    store.decide(request.request_id, decision="approved", actor="reviewer")
+    tools = create_adk_tools(tmp_path, state_root=tmp_path / "state", search_mode="disabled")
+    assert tools.bash(command, task_scope="task")["status"] == "ok"
+    monkeypatch.setattr(ApprovalStore, "_now", lambda self: now + timedelta(seconds=120))
+    expired = tools.bash(command, task_scope="task")
+    assert expired["status"] == "blocked" and not expired["approval_required"]
+    assert "expired" in expired["model_text"]
 
 
 def test_approval_cli_lists_and_decides_requests(

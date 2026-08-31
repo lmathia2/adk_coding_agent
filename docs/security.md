@@ -76,6 +76,11 @@ Commands are split at shell control operators and pipelines. The highest-risk se
 
 Approval is represented by a fingerprint over the normalized operation. This allows the control plane to approve one exact command rather than enabling a broad category for the process.
 
+Persisted approvals are checked for the current task on every command attempt.
+An approved fingerprint is never copied into the shared policy: switching tasks
+requires a separate approval, and an expired approval stops authorizing execution
+even if the same adapter used it successfully earlier.
+
 ### Indexed-search branch
 
 Commands whose first token is the reserved word `search` are parsed before shell
