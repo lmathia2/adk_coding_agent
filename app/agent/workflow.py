@@ -54,6 +54,7 @@ from harness.verification import (
 from harness.workspace import GitWorktreeManager
 
 from .config import HarnessSettings
+from .presentation import message_event, result_events
 from .skills import SkillRuntimeContext, build_skill_context
 
 
@@ -765,6 +766,8 @@ async def _orchestrate_owned(
             should_compact=should_compact,
             pending_steering=pending_steering,
         )
+        if step.message and route in {HarnessRoute.CONTINUE, HarnessRoute.COMPACT}:
+            yield message_event(step.message)
         checkpoint = _save_checkpoint(
             deps,
             task_id=task_id,
@@ -938,6 +941,7 @@ async def _orchestrate_owned(
                 yield json.dumps(
                     {
                         "status": "complete",
+                        "message": step.message,
                         "task_id": task_id,
                         "changed_paths": verification["changed_paths"],
                         "verification": report,
@@ -1011,7 +1015,11 @@ def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
         async for event in _orchestrate_owned(
             deps, ctx, node_input, verify_node=verify_task,
         ):
-            yield event
+            if isinstance(event, str):
+                for public_event in result_events(json.loads(event)):
+                    yield public_event
+            else:
+                yield event
 
     return Workflow(
         name="coding_harness",

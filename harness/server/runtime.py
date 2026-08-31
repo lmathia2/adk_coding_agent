@@ -135,6 +135,7 @@ class AdkRunExecution:
         controls: HarnessControlHooks | None,
         max_llm_calls: int,
         coding_model_status: PublicModelStatus | None = None,
+        explicit_public_messages: bool = False,
     ) -> None:
         self.record = record
         self.runner = runner
@@ -143,6 +144,7 @@ class AdkRunExecution:
         self.controls = controls
         self.max_llm_calls = max_llm_calls
         self._coding_model_status = coding_model_status
+        self._explicit_public_messages = explicit_public_messages
         self._closed = False
 
     @property
@@ -173,6 +175,7 @@ class AdkRunExecution:
         normalizer = AdkAgUiNormalizer(
             run_id=self.record.run_id,
             thread_id=self.record.thread_id,
+            explicit_public_messages=self._explicit_public_messages,
         )
         message = types.Content(
             role="user",
@@ -375,6 +378,7 @@ class AdkRunExecutionFactory:
             controls=assembly.controls,
             max_llm_calls=max(1, min(5_000, max_iterations * 4)),
             coding_model_status=coding_model_status,
+            explicit_public_messages=assembly.explicit_public_messages,
         )
 
 

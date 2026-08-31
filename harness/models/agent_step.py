@@ -27,6 +27,7 @@ class AgentStep(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["continue", "verify", "blocked", "done"]
+    message: str = Field(default="", max_length=16_000)
     progress: list[str] = Field(default_factory=list)
     next_action: str | None = None
     decisions: list[str] = Field(default_factory=list)

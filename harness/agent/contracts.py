@@ -141,6 +141,9 @@ class AdkHarnessAssembly:
     build_info: HarnessBuildInfo
     agents: Mapping[str, BaseAgent] = field(default_factory=dict)
     controls: HarnessControlHooks | None = None
+    # Structured workers opt in: only explicitly tagged prose/results cross the
+    # public boundary. Other registered ADK harnesses retain normal text streaming.
+    explicit_public_messages: bool = False
 
 
 @runtime_checkable

@@ -33,6 +33,7 @@ You may use tools for as many turns as needed inside this bounded work batch. Wh
 stop using tools, your final response MUST be exactly one JSON object with this shape:
 {
   "status": "continue" | "verify" | "blocked" | "done",
+  "message": "concise human-facing reply in Markdown; no workflow JSON",
   "progress": ["concise completed or discovered item"],
   "next_action": "one concrete next action or null",
   "decisions": ["decision and rationale"],
@@ -51,6 +52,9 @@ Use status "verify" or "done" once the implementation is ready for the outer
 workflow's deterministic checks. Completion claims help diagnosis but never decide
 success; the outer workflow—not this response—decides whether the task is complete.
 Do not wrap the JSON in Markdown or add explanatory prose before or after it.
+The message field is for the user. Other fields are internal control data. For
+verify/done, the workflow withholds your reply until verification passes. For
+blocked, ask a specific actionable question. Avoid narrating internal state.
 """.strip()
 
 

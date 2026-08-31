@@ -32,3 +32,12 @@ terminal-cell width checks at 20/40/80/120 columns, input history and bracketed 
 The rendering-only demo was also run in a real PTY: `/tools` showed a one-line read,
 Ctrl+O exposed its 30 lines, and Ctrl+D restored the terminal and exited successfully.
 This passes the toolkit-reuse gate, not the server integration or full UX gates.
+
+## Output boundary
+
+The assembly opts into explicit public messages. The generic ADK mapper still
+streams tools and errors, but accepts prose/results only from events tagged by
+the workflow. The worker's optional `message` field is published only after its
+typed result is reduced; completion replies wait for passing verification.
+Private partial/final JSON and child-node outputs remain in ADK history, not the
+public transcript. A live ADK Runner with a scripted model verifies this contract.

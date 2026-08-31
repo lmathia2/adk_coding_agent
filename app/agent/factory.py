@@ -358,6 +358,7 @@ class PiCodingHarnessFactory:
                 compact_at_tokens=config.context.compact_at_tokens,
             ),
             agents=agents,
+            explicit_public_messages=True,
             controls=_PiControlHooks(
                 steering=steering,
                 deps=deps,

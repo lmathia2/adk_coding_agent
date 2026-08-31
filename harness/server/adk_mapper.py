@@ -68,11 +68,13 @@ class AdkAgUiNormalizer:
         thread_id: str,
         public_state_keys: Iterable[str] = _DEFAULT_PUBLIC_STATE_KEYS,
         redactor: SecretRedactor | None = None,
+        explicit_public_messages: bool = False,
     ) -> None:
         self.run_id = run_id
         self.thread_id = thread_id
         self.public_state_keys = frozenset(public_state_keys)
         self.redactor = redactor or SecretRedactor()
+        self.explicit_public_messages = explicit_public_messages
         self._active_message_id: str | None = None
         self._active_author: str | None = None
         self._active_text = ""
@@ -326,12 +328,17 @@ class AdkAgUiNormalizer:
             )
 
         content = event.content
+        metadata = event.custom_metadata or {}
+        public_text = (
+            not self.explicit_public_messages
+            or metadata.get("coding.public_message") is True
+        )
         if content is not None:
             for index, part in enumerate(content.parts or ()):  # type: ignore[union-attr]
                 if getattr(part, "thought", False):
                     continue
                 text = getattr(part, "text", None)
-                if text:
+                if text and public_text:
                     public.extend(
                         self._push_text(
                             event=event,
@@ -378,7 +385,10 @@ class AdkAgUiNormalizer:
                 ]
                 public.append(self._event(AgUiEventType.STATE_DELTA, delta=delta))
 
-        if event.output is not None:
+        if event.output is not None and (
+            not self.explicit_public_messages
+            or metadata.get("coding.public_result") is True
+        ):
             output = self._public_value(event.output)
             value = output if isinstance(output, dict) else {"output": output}
             public.append(

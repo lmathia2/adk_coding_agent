@@ -1093,6 +1093,7 @@ async def test_real_adk_runner_unwraps_content_for_pi_workflow_root(
         session_service=service,
         controls=assembly.controls,
         max_llm_calls=4,
+        explicit_public_messages=assembly.explicit_public_messages,
     )
 
     try:
@@ -1107,6 +1108,7 @@ async def test_real_adk_runner_unwraps_content_for_pi_workflow_root(
         if event.type == AgUiEventType.CUSTOM and event.name == "coding.workflow.output"
     ]
     assert outputs
-    workflow_output = json.loads(cast(str, outputs[-1]["output"]))
-    assert workflow_output["status"] == "blocked"
-    assert workflow_output["task_id"] == "task-adk-workflow-input"
+    assert outputs == [{"status": "blocked", "verified": False, "changed_paths": []}]
+    replies = [event.delta for event in public_events
+               if event.type == AgUiEventType.TEXT_MESSAGE_CONTENT]
+    assert replies == ["credential-free test stop"]

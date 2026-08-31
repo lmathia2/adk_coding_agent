@@ -17,6 +17,11 @@ historical feature checklist or book-rubric score.
 - Local task events, SQLite checkpoints/steering/metrics/run registry,
   SQLite or in-memory ADK sessions, and local or in-memory artifacts.
 - WebSocket/AG-UI transport, replay, steering, cancellation, and Bubble Tea TUI.
+- Pi harness public-output opt-in: structured worker text stays internal; the workflow
+  publishes prose and a compact outcome explicitly. Coding completion replies are
+  withheld until deterministic verification passes. Other ADK factories keep their
+  ordinary text streaming by default.
+- Standalone Pi terminal toolkit prototype (not yet the default installed client).
 - Gemini and Codex subscription adapters.
 - Fresh uv checkout installation and default TUI build; no Magnitude requirement.
 
