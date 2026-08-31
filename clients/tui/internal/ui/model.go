@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,6 +30,8 @@ type Config struct {
 	ContentBytes     int
 	AckEvery         int64
 	ID               func() string
+	StateRoot        string
+	AgentCLI         string
 }
 
 type Model struct {
@@ -59,6 +62,15 @@ type transportClosedMsg struct{}
 type heartbeatMsg time.Time
 type heartbeatTimeoutMsg string
 type sendResultMsg struct{ err error }
+type localCommandMsg struct {
+	name   string
+	output string
+	err    error
+}
+type localProcessFinishedMsg struct {
+	name string
+	err  error
+}
 
 func New(transport *ws.Client, config Config) Model {
 	if config.Heartbeat <= 0 {
@@ -69,6 +81,9 @@ func New(transport *ws.Client, config Config) Model {
 	}
 	if config.ID == nil {
 		config.ID = randomID
+	}
+	if config.AgentCLI == "" {
+		config.AgentCLI = "adk-coding-agent"
 	}
 	state := session.New(config.History, config.ContentBytes, config.AckEvery)
 	if config.InitialRunID != "" {
@@ -121,6 +136,27 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case sendResultMsg:
 		if message.err != nil {
 			m.warning = message.err.Error()
+		}
+		return m, nil
+	case localCommandMsg:
+		if message.err != nil {
+			m.warning = message.name + " failed: " + message.err.Error()
+			return m, nil
+		}
+		m.warning = ""
+		m.session.Notice(message.name, strings.TrimSpace(message.output))
+		return m, nil
+	case localProcessFinishedMsg:
+		if message.err != nil {
+			m.warning = message.name + " failed: " + message.err.Error()
+		} else {
+			m.warning = message.name + " complete"
+			if message.name == "login" && m.session.CodingModel != nil {
+				m.session.CodingModel.Readiness = protocol.ModelAdapterInitialized
+			}
+			if message.name == "logout" && m.session.CodingModel != nil {
+				m.session.CodingModel.Readiness = protocol.ModelAuthenticationRequired
+			}
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -176,6 +212,10 @@ func (m *Model) handleProtocol(message protocol.ServerMessage) tea.Cmd {
 		m.negotiated = true
 		m.harness = message.Hello.Harness
 		m.warning = ""
+		m.session.CodingModel = message.Hello.CodingModel
+		if message.Hello.CodingModel != nil && message.Hello.CodingModel.Readiness == protocol.ModelAuthenticationRequired {
+			m.warning = "ChatGPT login required; run /login"
+		}
 		var messages []protocol.ClientMessage
 		if m.pending != nil {
 			messages = append(messages, *m.pending)
@@ -278,14 +318,18 @@ func (m Model) View() string {
 	output = append(output,
 		strings.Repeat("─", width),
 		clip(prompt+string(m.input)+"█", width),
-		clip("enter send · /start /attach /pause /cancel /reconnect /help · ctrl+d quit", width),
+		clip("enter send · /login /model /benchmark /start /pause /cancel /help · ctrl+d quit", width),
 	)
 	return strings.Join(output, "\n")
 }
 
 func codingModelLine(state session.State) string {
 	if state.RunID == "" {
-		return "coding-model  waiting for task"
+		if state.CodingModel == nil {
+			return "coding-model  waiting for server"
+		}
+		return fmt.Sprintf("coding-model  %s/%s  readiness=%s",
+			state.CodingModel.Provider, state.CodingModel.Name, state.CodingModel.Readiness)
 	}
 	if state.Status == session.StatusStarting {
 		return "coding-model  initializing"
@@ -330,8 +374,27 @@ func (m Model) command(input string) (tea.Model, tea.Cmd) {
 	case "/quit", "/q":
 		return m, tea.Quit
 	case "/help":
-		m.session.Notice("commands", "/start PROMPT · /attach RUN [CURSOR] · /pause · /cancel · /reconnect · /quit")
+		m.session.Notice("commands", "/login · /logout · /auth · /models · /model · /benchmark [OPTIONS] · /start PROMPT · /attach RUN [CURSOR] · /pause · /cancel · /reconnect · /quit")
 		return m, nil
+	case "/login":
+		return m.runInteractiveCodexCommand("login", "login")
+	case "/logout":
+		return m.runInteractiveCodexCommand("logout", "logout")
+	case "/auth":
+		return m.runCapturedCodexCommand("authentication", "status")
+	case "/models":
+		return m.runCapturedCodexCommand("available models", "models")
+	case "/model":
+		if argument == "" {
+			return m.runCapturedCodexCommand("available models", "models")
+		}
+		return m.runCapturedCodexCommand("model selection (restart server to apply)", "select", argument)
+	case "/benchmark":
+		arguments := []string{"benchmark"}
+		if argument != "" {
+			arguments = append(arguments, strings.Fields(argument)...)
+		}
+		return m.runInteractiveCodexCommand("model benchmark", arguments...)
 	case "/reconnect":
 		m.connected, m.negotiated = false, false
 		m.outstandingPing = ""
@@ -387,6 +450,38 @@ func (m Model) command(input string) (tea.Model, tea.Cmd) {
 	default:
 		m.warning = "unknown command " + name
 		return m, nil
+	}
+}
+
+func (m Model) codexArguments(arguments ...string) ([]string, error) {
+	if strings.TrimSpace(m.config.StateRoot) == "" {
+		return nil, fmt.Errorf("TUI state root is not configured")
+	}
+	values := []string{"codex", "--state-root", m.config.StateRoot}
+	return append(values, arguments...), nil
+}
+
+func (m Model) runInteractiveCodexCommand(name string, arguments ...string) (tea.Model, tea.Cmd) {
+	values, err := m.codexArguments(arguments...)
+	if err != nil {
+		m.warning = err.Error()
+		return m, nil
+	}
+	command := exec.Command(m.config.AgentCLI, values...)
+	return m, tea.ExecProcess(command, func(err error) tea.Msg {
+		return localProcessFinishedMsg{name: name, err: err}
+	})
+}
+
+func (m Model) runCapturedCodexCommand(name string, arguments ...string) (tea.Model, tea.Cmd) {
+	values, err := m.codexArguments(arguments...)
+	if err != nil {
+		m.warning = err.Error()
+		return m, nil
+	}
+	return m, func() tea.Msg {
+		output, commandErr := exec.Command(m.config.AgentCLI, values...).CombinedOutput()
+		return localCommandMsg{name: name, output: string(output), err: commandErr}
 	}
 }
 

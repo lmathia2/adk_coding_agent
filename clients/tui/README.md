@@ -31,8 +31,17 @@ Start immediately with a prompt or attach to a durable run cursor:
 
 While a run is active, ordinary input is sent as steering at the next safe point.
 Commands are `/start PROMPT`, `/attach RUN [CURSOR]`, `/pause`, `/cancel`,
-`/reconnect`, `/help`, and `/quit`. `Ctrl-C` requests cancellation for a running
-task; `Ctrl-D` exits the client.
+`/reconnect`, `/help`, and `/quit`. When the server uses `openai_codex`, Pi-style
+provider commands are also available: `/login`, `/logout`, `/auth`, `/models`,
+`/model MODEL_ID`, and `/benchmark [OPTIONS]`. Login and benchmarking suspend the
+alternate screen while their interactive process runs, then restore the TUI. Model
+selection and benchmark winners apply after restarting the server. `Ctrl-C` requests
+cancellation for a running task; `Ctrl-D` exits the client.
+
+The TUI receives an allowlisted provider, model name, and readiness value in the
+server hello, so the coding-model line is useful before a task is submitted. An
+`authentication_required` state includes an explicit `/login` prompt. Tokens,
+endpoints, and provider response payloads are not part of this public projection.
 
 The client reconnects with exponential backoff, negotiates protocol version 1 on
 each connection, and attaches with the highest event sequence it has applied.

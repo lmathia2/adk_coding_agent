@@ -359,17 +359,25 @@ esac
 if [ "$include_magnitude" -eq 1 ] && [ "$include_tui" -eq 1 ]; then
   printf '%s\n' \
     '' \
-    'Installation is complete. If Magnitude has not selected and installed a model yet, run:' \
+    'Installation is complete. Choose one model provider:' \
+    '' \
+    'Local model — if Magnitude has not selected and installed one yet, run:' \
     '  magnitude setup' \
     'A completed setup can be checked with: magnitude models list' \
     '' \
-    'After Magnitude setup, run the coding agent in two terminals:' \
+    'ChatGPT subscription — no setup command or API key is required before launch;' \
+    'the TUI will prompt for /login when authentication is missing.' \
     '' \
-    'Terminal 1 — start the server for the repository the agent should edit:' \
+    'Run the coding agent in two terminals:' \
+    '' \
+    'Terminal 1 — local Magnitude model:' \
     '  adk-agent-start server --workspace /absolute/path/to/repository' \
+    'Terminal 1 — or ChatGPT subscription:' \
+    '  adk-agent-start server --provider codex --workspace /absolute/path/to/repository' \
     '' \
     'Terminal 2 — connect the Bubble Tea TUI:' \
     '  adk-agent-start tui' \
+    '  Enter /login if the Codex model line reports authentication_required.' \
     '' \
     'The launcher announces the resolved workspace, state root, token file, URL,' \
     'and environment handoff without printing the secret token.' \

@@ -17,6 +17,9 @@ complete.
 - [x] ADK `BaseLlm` provider-adapter and `App` assembly interfaces without a second model runtime.
 - [x] Closed native-Gemini and OpenAI-compatible ADK model adapters, including a
   credential-free tested Magnitude configuration example with environment-only secrets.
+- [x] ChatGPT-subscription Codex adapter with browser/device OAuth, private atomic
+  refresh-token state, account-scoped catalog discovery, deterministic configuration,
+  and an account-specific time-to-first-token benchmark; API-key fallback is rejected.
 - [x] Provider-scoped, deterministic tool-call ID normalization for OpenAI-compatible
   models that reuse call IDs across turns, including repair of outbound ADK history.
 - [x] Repeatable lockfile-based checkout installer with full macOS prerequisite
@@ -97,6 +100,8 @@ complete.
   reconnect-after-backpressure semantics.
 - [x] Protocol-only Bubble Tea TUI with cursor resume, replay deduplication, bounded
   buffers/history, streaming tool/text rendering, and mid-run steering.
+- [x] Pi-style TUI provider controls for login, logout, redacted auth status, catalog
+  listing, saved model selection, and latency benchmarking over one shared state root.
 - [x] Public, replayable coding-model identity and honest adapter/responding status
   without exposing endpoints, credential references, or provider secrets.
 - [x] Explicit Magnitude reasoning-effort override in the CLI and generated,

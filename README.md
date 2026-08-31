@@ -64,6 +64,14 @@ Leave Terminal 1 running. The server listens locally and exposes the agent at
 `ws://127.0.0.1:8765/v1/agent`; opening `http://127.0.0.1:8765/` in a browser is not
 the TUI and may return `404 Not Found`.
 
+The default provider is Magnitude. To use your ChatGPT subscription instead, start
+the same harness with the Codex provider; no OpenAI API key is read or accepted:
+
+```bash
+adk-agent-start server --provider codex \
+  --workspace "$HOME/src/coding_tools" --trust-project
+```
+
 ### 3. Start the TUI in Terminal 2
 
 ```bash
@@ -86,6 +94,11 @@ renderer exclusively owned by the TUI.
 
 Type a request in the TUI and press Enter. You can send additional guidance while
 the agent is running; the server delivers it at the next safe steering point.
+With the Codex provider, the model line appears before the first task. If it reports
+`authentication_required`, enter `/login`; the TUI temporarily yields to the browser
+device-login flow and returns after the credential has been saved privately. Use
+`/models`, `/model MODEL_ID`, `/benchmark`, `/auth`, and `/logout` to manage the
+subscription. A saved model or benchmark winner applies on the next server start.
 
 Both commands announce the resolved configuration before starting. By default the
 shared state is saved under `~/.local/state/adk-coding-agent`; the server writes the
@@ -108,6 +121,18 @@ adk-agent-start tui
 
 Use `--` to forward additional arguments to the underlying command, for example
 `adk-agent-start tui -- --input "Inspect this repository and run its tests"`.
+
+For the smallest ChatGPT-subscription workflow, run both processes together:
+
+```bash
+adk-agent-start run --provider codex \
+  --workspace "$HOME/src/coding_tools" --trust-project
+```
+
+Then enter `/login` in the TUI if prompted. The OAuth credential and selected model
+are stored under `~/.local/state/adk-coding-agent/auth/`; generated provider YAML,
+server state, and logs remain under sibling directories in the same state root.
+Neither the browser token nor the WebSocket bearer token is printed.
 
 ### Installation behavior and options
 
@@ -256,6 +281,31 @@ The checked-in [`examples/magnitude.yaml`](examples/magnitude.yaml) remains avai
 for manual or non-default endpoint configuration. This repository intentionally
 reuses Magnitude's machine scan, model ranking, download, and inference lifecycle
 rather than duplicating them.
+
+### ChatGPT subscription through Codex OAuth
+
+The `openai_codex` adapter follows Pi's provider pattern while keeping Google ADK as
+the agent runtime. The harness performs browser/device OAuth, refreshes and stores the
+credential with owner-only permissions, maps ADK requests and tools to streaming Codex
+Responses calls, and maps the stream back into ADK `LlmResponse` events. It deliberately
+rejects API-key configuration so subscription and metered API routes cannot be mixed.
+
+The model catalog is discovered from the authenticated account rather than hard-coded.
+To select for latency, run identical short coding probes and save the lowest median
+time-to-first-token result:
+
+```bash
+adk-coding-agent codex login
+adk-coding-agent codex models
+adk-coding-agent codex benchmark --runs 3
+adk-agent-start run --provider codex --workspace /absolute/path/to/repository
+```
+
+The benchmark result is machine/account/network specific. Its saved winner and client
+version are written to `auth/openai-codex-selection.json`; `serve-codex` renders a
+validated private composition at `server/openai-codex.yaml`. The first authenticated
+task remains the definitive end-to-end compatibility check because the subscription
+transport is provider-controlled and may evolve independently of the public ADK API.
 
 ### Other OpenAI-compatible endpoints
 

@@ -91,6 +91,23 @@ func TestDecodeCanonicalAGUIEnvelope(t *testing.T) {
 	}
 }
 
+func TestDecodeServerHelloIncludesAllowlistedStartupModel(t *testing.T) {
+	t.Parallel()
+	payload := []byte(`{
+		"type":"server.hello","protocol_version":1,
+		"harness":{"implementation":"pi_coding_v1","api_version":1,"display_name":"Pi coding harness","capabilities":[],"protocol_versions":[1]},
+		"coding_model":{"role":"coding","provider":"openai_codex","name":"gpt-5.3-codex-spark","readiness":"authentication_required"}
+	}`)
+	message, err := DecodeServer(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Hello == nil || message.Hello.CodingModel == nil ||
+		message.Hello.CodingModel.Readiness != ModelAuthenticationRequired {
+		t.Fatalf("startup model = %#v", message.Hello)
+	}
+}
+
 func TestDecodeRejectsUnknownTypeVersionAndFields(t *testing.T) {
 	t.Parallel()
 	for _, payload := range []string{
@@ -101,6 +118,8 @@ func TestDecodeRejectsUnknownTypeVersionAndFields(t *testing.T) {
 		`{"type":"pong","protocol_version":1,"nonce":"n"}{}`,
 		`{"type":"event","protocol_version":1,"sequence":3,"run_id":"run-1","durable":true,"event":{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":[]}}`,
 		`{"type":"event","protocol_version":1,"sequence":3,"run_id":"run-1","durable":true,"event":{"type":"CUSTOM","name":"foreign.event","value":{}}}`,
+		`{"type":"server.hello","protocol_version":1,"harness":{"implementation":"pi_coding_v1","api_version":1,"display_name":"Pi","capabilities":[],"protocol_versions":[1]},"coding_model":{"role":"coding","provider":"openai_codex","name":"coder","readiness":"loaded"}}`,
+		`{"type":"server.hello","protocol_version":1,"harness":{"implementation":"pi_coding_v1","api_version":1,"display_name":"Pi","capabilities":[],"protocol_versions":[1]},"coding_model":{"role":"coding","provider":"openai_codex","name":"coder","readiness":"responding","api_key":"secret"}}`,
 	} {
 		if _, err := DecodeServer([]byte(payload)); err == nil {
 			t.Fatalf("expected failure for %s", payload)

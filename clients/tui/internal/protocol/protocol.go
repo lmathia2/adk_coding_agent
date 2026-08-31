@@ -45,8 +45,9 @@ const CodingModelStatusEventName = "coding.model.status"
 type ModelReadiness string
 
 const (
-	ModelAdapterInitialized ModelReadiness = "adapter_initialized"
-	ModelResponding         ModelReadiness = "responding"
+	ModelAuthenticationRequired ModelReadiness = "authentication_required"
+	ModelAdapterInitialized     ModelReadiness = "adapter_initialized"
+	ModelResponding             ModelReadiness = "responding"
 )
 
 // CodingModelStatus is the small, allowlisted public projection of the model
@@ -202,9 +203,10 @@ type HarnessDescriptor struct {
 }
 
 type ServerHello struct {
-	Type            string            `json:"type"`
-	ProtocolVersion int               `json:"protocol_version"`
-	Harness         HarnessDescriptor `json:"harness"`
+	Type            string             `json:"type"`
+	ProtocolVersion int                `json:"protocol_version"`
+	Harness         HarnessDescriptor  `json:"harness"`
+	CodingModel     *CodingModelStatus `json:"coding_model,omitempty"`
 }
 
 type TaskAccepted struct {
@@ -308,9 +310,7 @@ func (e AGUIEvent) CodingModelStatus() (CodingModelStatus, bool) {
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return CodingModelStatus{}, false
 	}
-	if status.Role != "coding" || !validModelStatusField(status.Provider, 64) ||
-		!validModelStatusField(status.Name, 128) ||
-		(status.Readiness != ModelAdapterInitialized && status.Readiness != ModelResponding) {
+	if !validCodingModelStatus(status) {
 		return CodingModelStatus{}, false
 	}
 	return status, true
@@ -408,6 +408,9 @@ func validateServer(message ServerMessage) error {
 		}
 		if !foundVersion {
 			return errors.New("protocol: harness does not advertise negotiated version")
+		}
+		if message.Hello.CodingModel != nil && !validCodingModelStatus(*message.Hello.CodingModel) {
+			return errors.New("protocol: invalid coding model status")
 		}
 	case message.TaskAccepted != nil:
 		value := message.TaskAccepted
@@ -553,6 +556,15 @@ func validModelStatusField(value string, max int) bool {
 		}
 	}
 	return true
+}
+
+func validCodingModelStatus(status CodingModelStatus) bool {
+	return status.Role == "coding" &&
+		validModelStatusField(status.Provider, 64) &&
+		validModelStatusField(status.Name, 128) &&
+		(status.Readiness == ModelAuthenticationRequired ||
+			status.Readiness == ModelAdapterInitialized ||
+			status.Readiness == ModelResponding)
 }
 
 func validImplementation(value string) bool {

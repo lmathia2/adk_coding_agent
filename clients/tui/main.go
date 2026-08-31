@@ -55,6 +55,8 @@ func run() error {
 	initialCursor := flag.Int64("after", 0, "last applied durable sequence when attaching")
 	initialInput := flag.String("input", "", "task prompt to start after negotiation")
 	threadID := flag.String("thread", "", "optional thread ID for a new task")
+	stateRoot := flag.String("state-root", defaultStateRoot(), "shared harness state root")
+	agentCLI := flag.String("agent-cli", "adk-coding-agent", "coding-agent management CLI")
 	heartbeat := flag.Duration("heartbeat", 20*time.Second, "application heartbeat interval")
 	heartbeatTimeout := flag.Duration("heartbeat-timeout", 45*time.Second, "maximum wait for a heartbeat response")
 	token := flag.String("token", os.Getenv("ADK_CODING_AGENT_TOKEN"), "server bearer token (or ADK_CODING_AGENT_TOKEN)")
@@ -127,6 +129,8 @@ func run() error {
 		History:          *history,
 		ContentBytes:     *contentBytes,
 		AckEvery:         *ackEvery,
+		StateRoot:        *stateRoot,
+		AgentCLI:         *agentCLI,
 	})
 	options := []tea.ProgramOption{tea.WithContext(ctx)}
 	if !*noAltScreen {
@@ -135,6 +139,17 @@ func run() error {
 	_, err = tea.NewProgram(model, options...).Run()
 	cancel()
 	return err
+}
+
+func defaultStateRoot() string {
+	if configured := strings.TrimSpace(os.Getenv("ADK_CODING_AGENT_STATE_ROOT")); configured != "" {
+		return configured
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home + "/.local/state/adk-coding-agent"
 }
 
 func bearerHeaders(token string) (http.Header, error) {
