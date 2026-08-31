@@ -24,6 +24,33 @@ The initial reference is local Pi 0.84.4 (commit 853a80d26). Runtime reuse is th
 the MIT-licensed `@earendil-works/pi-tui` package pinned in the client lockfile, not
 copied Pi AgentSession or InteractiveMode implementation.
 
+## Current live comparison findings (2026-08-31)
+
+Both the stock Pi CLI and the remote ADK terminal ran with `gpt-5.6-luna`, low
+reasoning, in separate empty temporary Git workspaces. Pi extensions, skills and
+prompt templates were disabled for this baseline. Existing credentials were read
+server-side; isolated run state did not replace the user's running server.
+
+- Greeting and a list-versus-tuple explanation completed in both terminals with
+  short prose and no tools. ADK streamed public prose without control JSON or
+  server warnings.
+- Creating `hello.py` and five unittest cases exposed a real ADK verifier gap:
+  the worker's tests passed, but independent discovery selected only syntax/diff
+  checks in the metadata-free workspace. Verification rejected completion and the
+  model repeated work. The run was explicitly cancelled with Escape. This is a
+  failed coding-parity case, not a passing task; Pi finished its five tests.
+- Presentation now reuses Pi's actual animated `Loader`. It adds no transcript
+  entries, keeps informational notices separate, and stops on approval waits,
+  disconnect, pause, completion and disposal. The footer has two width-bounded
+  rows for workspace and model/status, rather than wrapping their concatenation.
+  Empty notices/queues no longer reserve blank rows. Forty-two terminal tests pass,
+  including animation lifecycle and Unicode/narrow-width checks. The rebuilt
+  client was inspected in a real PTY at 80 columns.
+
+Remaining live comparisons, verification refinement, measured latency, alternate
+harness delivery and installer migration are still required; this is not a full
+parity or performance claim.
+
 ## Prototype evidence
 
 `npm test --prefix clients/terminal` passes four focused tests using the actual Pi

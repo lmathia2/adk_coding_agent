@@ -75,6 +75,7 @@ test("disconnect reattaches from the contiguous cursor and does not repeat a rep
   await once(server, "listening");
   const address = server.address(); assert.ok(address && typeof address === "object");
   let attachCursor = -1;
+  const connections: boolean[] = [];
   server.on("connection", (socket) => socket.on("message", (data) => {
     const message = JSON.parse(data.toString());
     if (message.type === "client.hello") send(socket, {type: "server.hello", harness: {display_name: "Fixture", capabilities: ["streaming"]}});
@@ -89,10 +90,12 @@ test("disconnect reattaches from the contiguous cursor and does not repeat a rep
     }
   }));
   const session = new RemoteSession({url: `ws://127.0.0.1:${address.port}`, token, reconnectMs: 1});
+  session.subscribe(() => connections.push(session.state.view.connected === true));
   try {
     session.connect(); await until(() => session.state.view.status === "ready");
     session.submit("hello"); await until(() => session.state.view.status === "completed");
     assert.equal(attachCursor, 1); assert.equal(session.state.view.entries.length, 2);
+    assert.ok(connections.includes(false)); assert.equal(session.state.view.connected, true);
   } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
 });
 test("local token is never sent to arbitrary hosts or URL query strings", () => {

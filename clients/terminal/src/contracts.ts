@@ -28,6 +28,7 @@ export interface SessionView {
   workspace: string;
   model: string;
   notice: string;
+  connected?: boolean;
   resources?: ResourceView;
   selectedSkills?: string[];
   approvals?: ApprovalView[];

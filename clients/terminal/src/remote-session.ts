@@ -51,6 +51,7 @@ export class RemoteSession {
     });
     this.socket = socket;
     this.negotiated = false;
+    this.state.view.connected = false;
     socket.on("open", () => {
       if (this.stopped || this.socket !== socket) return;
       this.send({type: "client.hello", protocol_versions: [1], client_name: "pi-adk-terminal"});
@@ -69,6 +70,7 @@ export class RemoteSession {
     socket.on("close", (code) => {
       if (this.stopped || this.socket !== socket) return;
       this.negotiated = false;
+      this.state.view.connected = false;
       clearInterval(this.heartbeat); clearTimeout(this.helloTimer); clearInterval(this.sessionPoll);
       for (const [id, request] of this.requests) {
         if (request.message.type !== "provider.request" && request.message.type !== "model.request" && request.message.type !== "approval.request") continue;
@@ -98,6 +100,7 @@ export class RemoteSession {
         const retryRequests = [...this.requests.values()];
         clearTimeout(this.helloTimer);
         this.negotiated = true; this.attempts = 0;
+        this.state.view.connected = true;
         this.state.view.notice = "";
         if (!this.state.active) this.state.view.status = "ready";
         const capabilities = object(message.harness).capabilities;
@@ -322,6 +325,7 @@ export class RemoteSession {
   }
   close(): void {
     this.stopped = true; this.negotiated = false;
+    this.state.view.connected = false;
     clearTimeout(this.timer); clearInterval(this.heartbeat); clearTimeout(this.helloTimer); clearInterval(this.sessionPoll);
     for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(new Error("Terminal disconnected")); }
     this.requests.clear();

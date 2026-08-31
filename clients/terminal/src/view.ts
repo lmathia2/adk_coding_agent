@@ -1,4 +1,4 @@
-import { Container, Editor, Text, matchesKey, type TUI, type SelectItem, type Component, type Focusable } from "@earendil-works/pi-tui";
+import { Container, Editor, Loader, Text, matchesKey, truncateToWidth, visibleWidth, type TUI, type SelectItem, type Component, type Focusable } from "@earendil-works/pi-tui";
 import type { SessionActions, SessionView } from "./contracts.js";
 import { Transcript, safeText } from "./transcript.js";
 import { editorTheme, theme } from "./theme.js";
@@ -8,6 +8,20 @@ import { resourceText } from "./resources.js";
 
 export interface Dialog extends Component, Focusable { handleInput(data: string): void; dispose?(): void; }
 
+/** Keep identity visible without wrapping paths and model names into the editor. */
+export class SessionFooter implements Component {
+  constructor(private readonly state: SessionView) {}
+  invalidate(): void {}
+  render(width: number): string[] {
+    const line = (text: string) => safeText(text).replace(/[\n\t]/g, " ");
+    const status = truncateToWidth(line(this.state.status), width, "…");
+    const available = Math.max(0, width - visibleWidth(status) - 2);
+    const model = truncateToWidth(line(this.state.model), available, "…");
+    return [truncateToWidth(line(this.state.workspace), width, "…"),
+      model + " ".repeat(Math.max(0, width - visibleWidth(model) - visibleWidth(status))) + status].map(theme.dim);
+  }
+}
+
 /** Presentation depends on a tiny session port, not Pi's AgentSession or ADK. */
 export class TerminalView {
   readonly editor: Editor;
@@ -15,7 +29,8 @@ export class TerminalView {
   readonly root = new Container();
   private readonly status = new Text("", 1, 0);
   private readonly queue = new Text("", 1, 0);
-  private readonly footer = new Text("", 1, 0);
+  private readonly activity = new Container();
+  private loader?: Loader;
   private readonly resources = new Text("", 1, 0);
   private readonly inputRegion = new Container();
   private dialog?: Dialog;
@@ -31,9 +46,10 @@ export class TerminalView {
     this.root.addChild(this.transcript);
     this.root.addChild(this.queue);
     this.root.addChild(this.status);
+    this.root.addChild(this.activity);
     this.inputRegion.addChild(this.editor);
     this.root.addChild(this.inputRegion);
-    this.root.addChild(this.footer);
+    this.root.addChild(new SessionFooter(state));
     tui.addChild(this.root);
     tui.setFocus(this.editor);
     this.editor.onSubmit = (text) => this.submit(text, "steer");
@@ -90,11 +106,18 @@ export class TerminalView {
     this.resources.setText(this.transcript.expanded ? theme.dim(safeText(resourceText(this.state))) : "");
     const lines = pending.slice(0, 3).map(item => `↳ queued: ${safeText(item.preview).split("\n")[0].slice(0, 120)}`);
     if (pending.length > 3) lines.push(`… ${pending.length - 3} more queued follow-ups`);
-    this.queue.setText(theme.dim(lines.join("\n")));
+    this.queue.setText(lines.length ? theme.dim(lines.join("\n")) : "");
     const approval = this.state.approvals?.length ? `Approval required (${this.state.approvals.length}) · /approvals · Esc interrupts\n` : "";
-    this.status.setText(theme.dim(safeText(approval + (this.state.notice || (this.state.status === "running" ? "Working…" : "")))));
-    this.footer.setText(theme.dim(safeText(`${this.state.workspace}  ·  ${this.state.model}  ·  ${this.state.status}`)));
+    const notice = safeText(approval + this.state.notice);
+    this.status.setText(notice ? theme.dim(notice) : "");
+    const working = ["starting", "running"].includes(this.state.status) && this.state.connected !== false && !approval;
+    if (working && !this.loader) {
+      this.loader = new Loader(this.tui, theme.accent, theme.dim, "Working...");
+      this.activity.addChild(this.loader);
+    } else if (!working && this.loader) {
+      this.loader.stop(); this.loader = undefined; this.activity.clear();
+    }
     this.tui.requestRender();
   }
-  dispose(): void { this.disposed = true; this.dialog?.dispose?.(); this.removeListener(); }
+  dispose(): void { this.disposed = true; this.loader?.stop(); this.dialog?.dispose?.(); this.removeListener(); }
 }
