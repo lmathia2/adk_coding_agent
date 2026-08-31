@@ -70,6 +70,25 @@ def test_codex_status_is_redacted_and_does_not_require_network(tmp_path: Path, c
     }
 
 
+def test_codex_login_cancellation_is_clean(tmp_path: Path, capsys, monkeypatch) -> None:
+    from harness.ai.codex_auth import CodexOAuthClient
+
+    monkeypatch.setattr(
+        CodexOAuthClient,
+        "start_device_authorization",
+        lambda self: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    exit_code = main(
+        ["codex", "--state-root", str(tmp_path / "state"), "login", "--no-browser"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 130
+    assert captured.out == ""
+    assert captured.err == "Codex operation cancelled.\n"
+
+
 def test_serve_codex_prints_selected_model_without_requiring_login(tmp_path: Path, capsys) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

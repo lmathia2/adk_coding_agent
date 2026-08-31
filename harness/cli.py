@@ -635,6 +635,9 @@ def _codex_command(args: argparse.Namespace) -> int:
     except (CodexAuthenticationError, CodexModelError, httpx.HTTPError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("Codex operation cancelled.", file=sys.stderr)
+        return 130
 
 
 def main(argv: Sequence[str] | None = None) -> int:
