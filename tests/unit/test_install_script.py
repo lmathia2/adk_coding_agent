@@ -18,8 +18,7 @@ def test_install_script_is_executable_and_has_valid_help() -> None:
         text=True,
     )
 
-    assert "--no-local-models" in completed.stdout
-    assert "--magnitude" in completed.stdout
+    assert "--magnitude" not in completed.stdout
     assert "--minimal" in completed.stdout
     assert "--plan" in completed.stdout
     assert "--tui" in completed.stdout
@@ -61,11 +60,11 @@ def test_install_script_macos_plan_includes_full_local_tui_stack(tmp_path: Path)
     )
 
     assert "Detected platform: macOS" in completed.stdout
-    assert "Magnitude: 1" in completed.stdout
+    assert "Magnitude:" not in completed.stdout
     assert "Bubble Tea TUI: 1" in completed.stdout
 
 
-def test_install_script_rejects_magnitude_without_local_model_dependencies() -> None:
+def test_install_script_rejects_removed_options() -> None:
     root = Path(__file__).resolve().parents[2]
     completed = subprocess.run(
         (str(root / "install.sh"), "--magnitude", "--no-local-models"),
@@ -75,4 +74,4 @@ def test_install_script_rejects_magnitude_without_local_model_dependencies() -> 
     )
 
     assert completed.returncode == 2
-    assert "cannot be combined" in completed.stderr
+    assert "unknown option" in completed.stderr

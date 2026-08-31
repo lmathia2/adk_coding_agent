@@ -96,7 +96,7 @@ def test_server_uses_current_directory_and_shared_default_state(tmp_path: Path) 
     assert f"Auth token file: {state_root}/server/auth-token" in completed.stdout
     assert f"Workspace: {workspace}" in completed.stdout
     assert "Environment set: none" in completed.stdout
-    assert "arg=serve-magnitude" in completed.stdout
+    assert "arg=serve-codex" in completed.stdout
     assert f"arg={workspace}" in completed.stdout
     assert f"arg={state_root}" in completed.stdout
 
@@ -207,7 +207,7 @@ def test_tui_explains_missing_token(tmp_path: Path) -> None:
     assert "start the server first" in completed.stderr
 
 
-def test_run_owns_server_and_forwards_exact_magnitude_model(tmp_path: Path) -> None:
+def test_run_owns_server_and_forwards_exact_codex_model(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -218,7 +218,7 @@ def test_run_owns_server_and_forwards_exact_magnitude_model(tmp_path: Path) -> N
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     state_root = tmp_path / "managed-state"
-    model = "qwen/local-coder:q8"
+    model = "gpt-test"
 
     completed = subprocess.run(
         (
@@ -242,7 +242,7 @@ def test_run_owns_server_and_forwards_exact_magnitude_model(tmp_path: Path) -> N
     )
 
     assert f"Workspace: {workspace}" in completed.stdout
-    assert "Model provider: magnitude" in completed.stdout
+    assert "Model provider: codex" in completed.stdout
     assert f"Model: {model}" in completed.stdout
     assert f"Server log: {state_root}/server/foreground.log" in completed.stdout
     assert "Lifecycle: this command owns and stops its harness server child" in completed.stdout

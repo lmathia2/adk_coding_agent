@@ -214,50 +214,6 @@ def _parser() -> argparse.ArgumentParser:
         help="Resolve and print server settings without starting the network listener",
     )
 
-    magnitude = subparsers.add_parser(
-        "serve-magnitude",
-        help="Discover Magnitude's selected local model and serve the harness",
-    )
-    magnitude.add_argument("--workspace", type=Path, default=Path.cwd())
-    magnitude.add_argument("--state-root", type=Path)
-    magnitude.add_argument("--model", help="Use this installed Magnitude model id")
-    magnitude.add_argument(
-        "--reasoning",
-        choices=("none", "low", "medium", "high", "xhigh"),
-        help="Override local-model reasoning effort when the selected model supports it",
-    )
-    magnitude.add_argument(
-        "--endpoint",
-        default="http://127.0.0.1:10100/inference/v1",
-        help="Magnitude's OpenAI-compatible base URL",
-    )
-    magnitude.add_argument("--magnitude-state", type=Path)
-    magnitude.add_argument(
-        "--production",
-        action="store_true",
-        help="Refuse the host-local sandbox and require an enforceable adapter",
-    )
-    magnitude.add_argument(
-        "--trust-project",
-        action="store_true",
-        help="Load workspace AGENTS.md files and project-local skills as instructions",
-    )
-    magnitude.add_argument(
-        "--no-start-magnitude",
-        action="store_true",
-        help="Fail instead of running `magnitude server start` when unavailable",
-    )
-    magnitude.add_argument(
-        "--no-model-probe",
-        action="store_true",
-        help="Skip the real completion probe and announce discovery-only readiness",
-    )
-    magnitude.add_argument(
-        "--print-config",
-        action="store_true",
-        help="Resolve and print server settings without starting the harness listener",
-    )
-
     codex_serve = subparsers.add_parser(
         "serve-codex",
         help="Serve the harness with a ChatGPT subscription Codex model",
@@ -386,69 +342,6 @@ def _serve(args: argparse.Namespace) -> int:
         ws_max_size=64 * 1024,
     )
     return 0
-
-
-def _serve_magnitude(args: argparse.Namespace) -> int:
-    from harness.magnitude import (
-        MAGNITUDE_API_KEY,
-        MagnitudeConnectionError,
-        prepare_magnitude_connection,
-        probe_magnitude_model,
-    )
-
-    workspace = args.workspace.expanduser().resolve()
-    state_root = (
-        args.state_root.expanduser().resolve()
-        if args.state_root is not None
-        else _default_state_root(workspace)
-    )
-    try:
-        connection = prepare_magnitude_connection(
-            state_root=state_root,
-            endpoint=args.endpoint,
-            requested_model=args.model,
-            reasoning=args.reasoning,
-            magnitude_state_path=args.magnitude_state,
-            start_service=not args.no_start_magnitude,
-        )
-    except MagnitudeConnectionError as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 1
-
-    probed = not args.no_model_probe
-    if probed:
-        try:
-            probe_magnitude_model(
-                endpoint=connection.endpoint,
-                model_id=connection.model_id,
-                reasoning=args.reasoning,
-            )
-        except MagnitudeConnectionError as error:
-            print(f"error: {error}", file=sys.stderr)
-            return 1
-
-    print(
-        "Magnitude coding model:\n"
-        f"  Model: {connection.model_id}\n"
-        f"  Reasoning: {args.reasoning or 'model default'}\n"
-        f"  Status: {'completion probe passed' if probed else 'discovery only (probe skipped)'}\n"
-        f"  Endpoint: {connection.endpoint}",
-        file=sys.stderr,
-        flush=True,
-    )
-
-    previous_token = os.environ.get("MAGNITUDE_API_KEY")
-    os.environ["MAGNITUDE_API_KEY"] = MAGNITUDE_API_KEY
-    try:
-        args.config = connection.config_path
-        args.workspace = workspace
-        args.state_root = state_root
-        return _serve(args)
-    finally:
-        if previous_token is None:
-            os.environ.pop("MAGNITUDE_API_KEY", None)
-        else:
-            os.environ["MAGNITUDE_API_KEY"] = previous_token
 
 
 def _serve_codex(args: argparse.Namespace) -> int:
@@ -672,8 +565,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "serve":
         return _serve(args)
-    if args.command == "serve-magnitude":
-        return _serve_magnitude(args)
     if args.command == "serve-codex":
         return _serve_codex(args)
     if args.command == "codex":

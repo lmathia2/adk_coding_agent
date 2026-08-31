@@ -85,12 +85,7 @@ class ModelConfig(FrozenModel):
 
     @model_validator(mode="after")
     def validate_provider_options(self) -> ModelConfig:
-        if self.provider == "openai_compatible":
-            if self.base_url is None:
-                raise ValueError("openai_compatible models require base_url")
-            if self.api_key is None:
-                raise ValueError("openai_compatible models require an api_key env reference")
-        elif self.provider == "google_adk" and (
+        if self.provider == "google_adk" and (
             self.base_url is not None
             or self.api_key is not None
             or self.client_version is not None

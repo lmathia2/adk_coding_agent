@@ -24,73 +24,40 @@ The model-facing surface is intentionally small: a stable instruction prefix and
 
 ### 1. Install on macOS
 
-On macOS, install [Homebrew](https://brew.sh) once. The installer detects macOS and,
-in one run, installs any missing uv, Git, Node.js/npm, and Go prerequisites through
-Homebrew; installs the compatible Magnitude CLI; creates the locked Python environment;
-builds the Bubble Tea TUI; and exposes the CLI, TUI, and launcher on your user PATH:
+On macOS, install [Homebrew](https://brew.sh) once. The installer installs missing
+uv, Git, and Go prerequisites; recreates this checkout's locked Python environment;
+and builds the Bubble Tea TUI. No Node/npm or local-model service is needed.
 
 ```bash
 ./install.sh
 ```
 
-If this is the first Magnitude installation, select and install a local model once:
+### 2. Run the coding agent
+
+Start the server and TUI together:
 
 ```bash
-magnitude setup
+adk-agent-start run --workspace /absolute/path/to/repository
 ```
 
-At Magnitude's **Select harness** step, choose **Magnitude** to complete setup. The
-model selection is stored in Magnitude's shared state and this coding harness discovers
-it from there. Magnitude 0.0.8 exposes a closed list of built-in harness connectors, so
-`ADK Coding Agent` does not yet appear as its own row; that requires an upstream
-Magnitude connector and does not affect local-model compatibility here.
-
-If setup prints an error, check whether it completed before rerunning it:
+Or use two terminals:
 
 ```bash
-magnitude models list
-```
+# Terminal 1
+adk-agent-start server --workspace /absolute/path/to/repository
 
-A selected primary model means the setup state was saved. An empty result means setup
-did not finish; rerun `magnitude setup` in an interactive terminal.
-
-### 2. Start the coding-agent server in Terminal 1
-
-```bash
-adk-agent-start server --workspace "$HOME/src/coding_tools" --trust-project
-```
-
-Leave Terminal 1 running. The server listens locally and exposes the agent at
-`ws://127.0.0.1:8765/v1/agent`; opening `http://127.0.0.1:8765/` in a browser is not
-the TUI and may return `404 Not Found`.
-
-The default provider is Magnitude. To use your ChatGPT subscription instead, start
-the same harness with the Codex provider; no OpenAI API key is read or accepted:
-
-```bash
-adk-agent-start server --provider codex \
-  --workspace "$HOME/src/coding_tools" --trust-project
-```
-
-### 3. Start the TUI in Terminal 2
-
-```bash
+# Terminal 2
 adk-agent-start tui
 ```
 
-For a single foreground lifecycle—used by Magnitude harness handoff—start the
-server and TUI together. The command passes an exact optional Magnitude model to
-the server and stops its managed server child when the TUI exits:
+Codex subscription is the launcher default. Enter `/login` if prompted and
+`/model` to choose a model. Add `--trust-project` only after reviewing the
+workspace's instructions and skills. Gemini remains available through
+`adk-coding-agent serve --config FILE`.
 
-```bash
-adk-agent-start run --workspace "$HOME/src/coding_tools" \
-  --trust-project \
-  --model 'qwen3.8-27b:gguf:q8'
-```
-
-Server output for this mode is appended to
-`~/.local/state/adk-coding-agent/server/foreground.log`, leaving the terminal
-renderer exclusively owned by the TUI.
+The server listens at `ws://127.0.0.1:8765/v1/agent`. In two-terminal mode,
+keep Terminal 1 running. In combined mode, exiting the TUI stops its server child;
+server output goes to `~/.local/state/adk-coding-agent/server/foreground.log`.
 
 Type a request in the TUI and press Enter. You can send additional guidance while
 the agent is running; the server delivers it at the next safe steering point.
@@ -147,16 +114,13 @@ The installer is safe to rerun. It removes only this checkout's `.venv`, recreat
 with uv, syncs every selected Python dependency from `uv.lock`, verifies
 the required imports and commands, and links the CLI and launcher into `~/.local/bin`
 (or `UV_TOOL_BIN_DIR`). It never replaces an existing non-symlink. On other operating
-systems, install Python 3.11+, uv, Git, npm, and Go 1.24+ before requesting their
-corresponding features. Options:
+systems, install uv, Git, and Go 1.24+ first. Options:
 
 ```bash
 ./install.sh --plan                   # show the detected platform and planned work
 ./install.sh --dev                    # include test, lint, and type-check dependencies
-./install.sh --minimal                # Python CLI only; skip local models and TUI
-./install.sh --tui                    # request the Bubble Tea client outside macOS
-./install.sh --magnitude              # request Magnitude outside macOS
-./install.sh --no-local-models        # smaller Gemini-only environment
+./install.sh --minimal                # Python CLI only; skip TUI
+./install.sh --tui                    # Bubble Tea client (already the default)
 ./install.sh --bin-dir /custom/bin
 ```
 
@@ -233,61 +197,18 @@ harness implementation changes.
 
 Repository `AGENTS.md` files and `.agents/skills` are untrusted data by default.
 Pass `--trust-project` to `adk-agent-start server`, `adk-agent-start run`,
-`adk-coding-agent serve`, or `serve-magnitude` only after reviewing that workspace.
+`adk-coding-agent serve`, or `serve-codex` only after reviewing that workspace.
 The server's `--print-config` output announces the effective decision. Legacy
 Agents CLI startup uses the equivalent `ADK_CODING_TRUST_PROJECT=1` opt-in. External
 skill roots explicitly configured by the harness and guarded learned-skill roots do
 not inherit project trust.
 
-### Magnitude on macOS
+### Removed local-model integration
 
-The harness can use a model selected and served by
-[Magnitude](https://github.com/magnitudedev/magnitude), or another
-OpenAI-compatible service, without adding a second model runtime. The provider
-adapter builds ADK's `LiteLlm`; requests, streaming, tools, and lifecycle events
-remain owned by Google ADK.
-
-The default macOS installation installs Magnitude 0.0.8 or newer and the TUI. Complete
-Magnitude's interactive hardware/model setup once. Then one harness command discovers
-Magnitude's selected model, writes a
-validated generated composition beneath the harness state directory, supplies the
-conventional local placeholder token in process memory, and starts the WebSocket
-server:
-
-```bash
-./install.sh
-magnitude setup
-
-adk-agent-start server --workspace /absolute/path/to/repository --trust-project
-```
-
-`serve-magnitude` runs `magnitude server start` when the endpoint is not already
-available. Magnitude 0.0.6 and earlier do not expose the fixed external-harness
-service and are rejected with an exact update command. The launcher prefers the
-primary model in `~/.magnitude/state/models.json`, falls back to the first model
-reported by Magnitude, and accepts `--model MODEL_ID` as an explicit override. Use
-`--reasoning none` (or `low`, `medium`, `high`, `xhigh`) with
-`adk-coding-agent serve-magnitude` when the selected model advertises that effort;
-this makes speed versus deliberation an explicit harness choice instead of silently
-using the provider default. Use
-`--print-config` to inspect the resolved harness endpoint without starting its
-listener. Startup performs a real bounded completion probe before announcing the
-model as responding; `--no-model-probe` explicitly downgrades this to discovery-only
-readiness. After an install or upgrade, initial hardware and model assessment can take
-a few minutes; the launcher keeps probing the service through that startup window.
-
-The installer prints the complete launch sequence. Keep the harness in the first
-terminal and connect the TUI from a second terminal:
-
-```bash
-adk-agent-start tui -- --input "Inspect this repository and run its tests"
-```
-
-The generated YAML stores only an environment-variable reference, never the token.
-The checked-in [`examples/magnitude.yaml`](examples/magnitude.yaml) remains available
-for manual or non-default endpoint configuration. This repository intentionally
-reuses Magnitude's machine scan, model ranking, download, and inference lifecycle
-rather than duplicating them.
+Magnitude, `serve-magnitude`, the `local-models` extra, and the LiteLLM
+`openai_compatible` adapter have been removed. Existing installed Magnitude
+binaries, model downloads, and credentials are not touched. Old local-model YAML
+must be replaced with a retained provider configuration.
 
 ### ChatGPT subscription through Codex OAuth
 
@@ -313,17 +234,6 @@ version are written to `auth/openai-codex-selection.json`; `serve-codex` renders
 validated private composition at `server/openai-codex.yaml`. The first authenticated
 task remains the definitive end-to-end compatibility check because the subscription
 transport is provider-controlled and may evolve independently of the public ADK API.
-
-### Other OpenAI-compatible endpoints
-
-Install the local-model adapter and point a copied composition at the endpoint:
-
-```bash
-./install.sh
-cp examples/magnitude.yaml local-model.yaml
-# Edit the model id, base_url, and API-key environment reference.
-adk-coding-agent serve --config local-model.yaml --workspace /absolute/path/to/repository
-```
 
 Launcher runs can be steered from another terminal without waiting for task
 completion. `adk-coding-agent steer --repository PATH --task-id ID "new guidance"`

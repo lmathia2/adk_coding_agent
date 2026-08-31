@@ -21,9 +21,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-local-models = [
-  "litellm>=1.84,<2.0",
-]
 production = [
   "psycopg[binary]>=3.2,<4.0",
 ]
