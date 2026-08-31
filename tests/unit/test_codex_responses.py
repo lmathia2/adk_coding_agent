@@ -70,6 +70,9 @@ def _request() -> LlmRequest:
 
 def test_request_compiler_preserves_tools_history_and_stable_cache_prefix() -> None:
     request = _request()
+    assert request.contents is not None
+    assert request.contents[1].parts is not None
+    assert request.contents[2].parts is not None
     call = request.contents[1].parts[0].function_call
     response = request.contents[2].parts[0].function_response
     assert call is not None and response is not None

@@ -25,7 +25,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="agents-cli-skills-") as temp_dir:
         temp = Path(temp_dir)
         archive = temp / "source.zip"
-        urllib.request.urlretrieve(archive_url, archive)  # noqa: S310 - pinned HTTPS source
+        urllib.request.urlretrieve(archive_url, archive)
         with zipfile.ZipFile(archive) as source_zip:
             source_zip.extractall(temp)
 

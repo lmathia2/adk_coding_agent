@@ -60,7 +60,9 @@ class _ModelProvider:
         config: ModelConfig,
         *,
         secrets: Mapping[str, SecretRef],
+        bindings: RuntimeBindings | None = None,
     ) -> BaseLlm:
+        del bindings
         assert all(isinstance(secret, SecretRef) for secret in secrets.values())
         return _TestLlm(model=config.name)
 
