@@ -370,6 +370,45 @@ async def test_pending_queue_survives_server_shutdown_and_explicit_restart(tmp_p
     await restarted.aclose()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shutdown", [False, True])
+async def test_cancel_before_coroutine_entry_closes_runner_and_terminalizes(tmp_path: Path, shutdown: bool) -> None:
+    coordinator, factory = _coordinator(tmp_path)
+    first, _ = await coordinator.start(_start(), user_id="user")
+    assert not factory.executions[first.run_id].entered.is_set()
+    if shutdown:
+        await coordinator.aclose()
+    else:
+        await coordinator.cancel(CancelTaskMessage(type="task.cancel", run_id=first.run_id, idempotency_key="cancel"), user_id="user")
+    assert factory.executions[first.run_id].closed
+    assert coordinator.store.get_run(first.run_id).status == "cancelled"
+    assert coordinator.is_terminal_run(first.run_id, user_id="user")
+    assert coordinator.store.replay(first.run_id)[-1].event.type == AgUiEventType.RUN_FINISHED
+    await coordinator.aclose()
+
+
+@pytest.mark.asyncio
+async def test_startup_reconciles_interrupted_runs_without_model_execution(tmp_path: Path) -> None:
+    coordinator, factory = _coordinator(tmp_path)
+    for status in ("queued", "running"):
+        record, _ = coordinator.store.create_run(request_id=status, idempotency_key=status,
+            thread_id=status, user_id="user", input="old work", metadata=dict(factory.run_metadata))
+        if status == "running":
+            coordinator.store.update_status(record.run_id, "running")
+        coordinator.conversations.store.enqueue(record, "follow-" + status, "pending work")
+    coordinator.recover_interrupted_runs()
+    coordinator.recover_interrupted_runs()
+    assert factory.created == []
+    assert coordinator.store.active_run_ids() == ()
+    for status in ("queued", "running"):
+        record = coordinator.conversations.store.latest("user", status)
+        assert record.status == "failed"
+        assert len(coordinator.store.replay(record.run_id)) == 1
+        assert coordinator.store.replay(record.run_id)[0].event.code == "server_restarted"
+        assert len(coordinator.conversations.store.pending("user", status)) == 1
+    await coordinator.aclose()
+
+
 async def _wait_entered(execution: _QueueExecution) -> None:
     await asyncio.wait_for(execution.entered.wait(), timeout=2)
 

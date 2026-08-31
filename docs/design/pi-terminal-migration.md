@@ -108,3 +108,13 @@ run, not merely the newest run, so fast completions cannot skip transcript entri
 Unit tests cover queue ordering, retries, cancellation, blocked/error results,
 restart persistence, ownership and redacted previews. Session/model/login selectors,
 full historical transcript loading and live visual/model comparisons remain pending.
+
+## Recovery refinements
+
+Server startup terminalizes interrupted queued/running records with a replayable
+`server_restarted` error, without reinvoking models or draining pending follow-ups.
+Cancellation before an asyncio task first enters also closes its allocated Runner
+and terminalizes its run. Completed attachments can be released from the durable
+run status even when a reconnect cursor is already past the final event. Focused
+tests cover all three cases; these changes do not claim automatic task resumption
+after an unknown-effect process crash.

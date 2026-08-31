@@ -271,6 +271,12 @@ class SqliteRunEventStore:
             ).fetchone()
         return self._run_from_row(row)
 
+    def active_run_ids(self) -> tuple[str, ...]:
+        with self._connect() as connection:
+            return tuple(row["run_id"] for row in connection.execute(
+                "SELECT run_id FROM agent_runs WHERE status IN ('queued', 'running')"
+            ))
+
     def update_status(
         self,
         run_id: str,

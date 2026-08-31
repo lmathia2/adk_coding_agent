@@ -194,6 +194,10 @@ class FakeCoordinator:
     async def aclose(self) -> None:
         self.closed += 1
 
+    def is_terminal_run(self, run_id: str, *, user_id: str) -> bool:
+        self._require_owner(run_id, user_id)
+        return self.records[run_id].status in {"completed", "cancelled", "failed"}
+
     def _require_owner(self, run_id: str, user_id: str) -> None:
         record = self.records.get(run_id)
         if record is None or record.user_id != user_id:
@@ -308,6 +312,23 @@ def test_start_stream_controls_ack_and_server_derived_identity() -> None:
 
     assert coordinator.cancel_calls == 0
     assert coordinator.closed == 1
+
+
+def test_attach_after_terminal_cursor_does_not_block_the_next_turn() -> None:
+    coordinator = FakeCoordinator()
+    coordinator.records["old"] = _record("old").model_copy(update={"status": "completed"})
+    coordinator.events["old"] = (_envelope("old", 1).model_copy(update={"event": AgUiEvent(
+        type=AgUiEventType.RUN_FINISHED, run_id="old", thread_id="thread-old",
+    )}),)
+    app = create_websocket_app(coordinator, authenticator=_authenticated)
+    with TestClient(app) as client, client.websocket_connect("/ws") as socket:
+        _hello(socket)
+        socket.send_json({"type": "task.attach", "run_id": "old", "after_sequence": 1})
+        # The replay has no remaining event: terminality must come from the
+        # authoritative run record, not from seeing another RUN_FINISHED frame.
+        socket.send_json({"type": "task.start", "request_id": "new", "idempotency_key": "new", "input": "next"})
+        assert socket.receive_json()["type"] == "task.accepted"
+        assert socket.receive_json()["event"]["type"] == "RUN_STARTED"
 
 
 def test_attach_replays_after_cursor_and_validates_ack() -> None:

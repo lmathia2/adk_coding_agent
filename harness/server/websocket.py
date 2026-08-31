@@ -421,6 +421,11 @@ class _AgentWebSocketConnection:
             )
 
     async def _release_terminal_attachment(self) -> None:
+        if not self._run_terminal and self.run_id is not None:
+            terminal = getattr(self.coordinator, "is_terminal_run", None)
+            if terminal is not None:
+                with suppress(KeyError):
+                    self._run_terminal = terminal(self.run_id, user_id=self.user_id)
         if not self._run_terminal:
             return
         if self._attachment is not None:
@@ -677,6 +682,9 @@ def create_websocket_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         try:
+            recover = getattr(coordinator, "recover_interrupted_runs", None)
+            if recover is not None:
+                recover()
             yield
         finally:
             await coordinator.aclose()

@@ -437,6 +437,23 @@ class RunCoordinator:
             raise KeyError(f"unknown run: {run_id}")
         return record
 
+    def is_terminal_run(self, run_id: str, *, user_id: str) -> bool:
+        return self._owned_run(run_id, user_id).status in {"completed", "failed", "cancelled"}
+
+    def recover_interrupted_runs(self) -> None:
+        """Single-owner server startup: preserve history, never replay unknown effects."""
+        for run_id in self.store.active_run_ids():
+            if run_id in self._active:
+                continue
+            record = self.store.get_run(run_id)
+            if record is None or record.status not in {"queued", "running"}:
+                continue
+            error = "server restarted during an active run; automatic rerun refused"
+            self.journal.terminalize(run_id, status="failed", event=AgUiEvent(
+                type=AgUiEventType.RUN_ERROR, thread_id=record.thread_id, run_id=run_id,
+                code="server_restarted", message=error), source_key="server:run-error",
+                expected_status="queued" if record.status == "queued" else "running", error=error)
+
     async def start(
         self,
         message: StartTaskMessage,
@@ -912,6 +929,7 @@ class RunCoordinator:
         active.task.cancel()
         with suppress(asyncio.CancelledError):
             await active.task
+        await self._close_unstarted(message.run_id, active)
         return ControlReceipt(
             accepted=True,
             command_id=message.idempotency_key,
@@ -920,6 +938,18 @@ class RunCoordinator:
                 "may continue until its sandbox call returns"
             ),
         )
+
+    async def _close_unstarted(self, run_id: str, active: _ActiveRun) -> None:
+        # A task cancelled before its coroutine enters never executes its finally
+        # block. Close the allocated Runner and make its queued record terminal.
+        record = self.store.get_run(run_id)
+        if record is None or record.status != "queued":
+            return
+        await self._close_execution(active.execution)
+        self._active.pop(run_id, None)
+        self.journal.terminalize(run_id, status="cancelled", event=AgUiEvent(
+            type=AgUiEventType.RUN_FINISHED, thread_id=record.thread_id, run_id=run_id,
+            result={"status": "cancelled"}), source_key="server:run-finished", expected_status="queued")
 
     async def attach(
         self,
@@ -980,12 +1010,13 @@ class RunCoordinator:
 
     async def aclose(self) -> None:
         self.conversations.closed = True
-        active = tuple(self._active.values())
-        for item in active:
+        active = tuple(self._active.items())
+        for _, item in active:
             item.task.cancel()
-        for item in active:
+        for run_id, item in active:
             with suppress(asyncio.CancelledError):
                 await item.task
+            await self._close_unstarted(run_id, item)
 
 
 __all__ = [
