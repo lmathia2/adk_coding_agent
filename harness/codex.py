@@ -30,6 +30,8 @@ from harness.config import DEFAULT_COMPOSITION_PATH, parse_harness_composition
 
 CODEX_BASE_URL = "https://chatgpt.com/backend-api"
 CODEX_MODELS_URL = f"{CODEX_BASE_URL}/codex/models"
+# Catalog protocol compatibility, not the harness's package/version identity.
+CODEX_CATALOG_CLIENT_VERSION = "0.147.0"
 DEFAULT_CODEX_MODEL = "gpt-5.3-codex-spark"
 FAST_MODEL_MARKERS = ("luna", "spark", "mini-fast", "fast", "terra", "mini")
 
@@ -80,13 +82,17 @@ def discover_codex_models(
     manager: CodexCredentialManager,
     *,
     client: httpx.Client | None = None,
+    client_version: str = CODEX_CATALOG_CLIENT_VERSION,
 ) -> tuple[CodexModel, ...]:
     """Return the account-authorized API catalog, without exposing its credential."""
 
     credential = manager.resolve()
     active_client = client or httpx.Client(timeout=30)
     try:
-        response = active_client.get(CODEX_MODELS_URL, headers=_headers(credential))
+        response = active_client.get(
+            CODEX_MODELS_URL, params={"client_version": client_version},
+            headers=_headers(credential, client_version=client_version),
+        )
     finally:
         if client is None:
             active_client.close()

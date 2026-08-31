@@ -353,3 +353,16 @@ tests pass, with Ruff, Pyright, compilation and diff checks clean. The existing
 Go client's race tests also pass (cached). Streaming state is released on normal
 exit, failure and cancellation; concurrent invocations have separate authorization
 and buffers. These are deterministic contract results, not live-model benchmarks.
+
+## Live catalog compatibility
+
+The 2026-08-31 live check found a 400 error for a missing `client_version` query
+parameter. Discovery now supplies a pinned catalog compatibility version (also
+overrideable by its Python caller), while retaining the harness's own client
+identity. The same saved login then returned eight catalog entries. Unit tests
+cover default/override query and header values. This verifies account catalog
+access, not model response quality or availability for every listed model.
+
+Pi's checked-out Codex provider uses bundled model metadata; it does not make this
+same account-catalog request. The direct backend route remains a compatibility
+adapter, not the [documented App Server model/list interface](https://learn.chatgpt.com/docs/app-server#list-models-modellist).

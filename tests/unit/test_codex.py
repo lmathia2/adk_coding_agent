@@ -9,6 +9,7 @@ import yaml
 
 from harness.ai.codex_auth import CodexCredential, CodexCredentialManager, CodexCredentialStore
 from harness.codex import (
+    CODEX_CATALOG_CLIENT_VERSION,
     CODEX_MODELS_URL,
     CodexModel,
     CodexSelection,
@@ -47,7 +48,9 @@ def _manager(tmp_path: Path) -> CodexCredentialManager:
 
 def test_account_catalog_filters_disabled_models_and_ranks_fast_candidates(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert str(request.url) == CODEX_MODELS_URL
+        assert str(request.url.copy_with(query=None)) == CODEX_MODELS_URL
+        assert request.url.params["client_version"] == CODEX_CATALOG_CLIENT_VERSION
+        assert request.headers["version"] == CODEX_CATALOG_CLIENT_VERSION
         assert request.headers["chatgpt-account-id"] == "account-123"
         return httpx.Response(
             200,
@@ -75,6 +78,16 @@ def test_account_catalog_filters_disabled_models_and_ranks_fast_candidates(tmp_p
     assert fastest_candidates(models) == (
         CodexModel("gpt-5.6-luna", "Luna", "0.147.0", 3),
     )
+
+
+def test_catalog_compatibility_version_can_be_overridden_without_changing_identity(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["client_version"] == "0.150.0"
+        assert request.headers["version"] == "0.150.0"
+        assert request.headers["originator"] == "adk-coding-agent"
+        return httpx.Response(200, json={"models": [{"slug": "fixture", "supported_in_api": True}]})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert discover_codex_models(_manager(tmp_path), client=client, client_version="0.150.0")[0].id == "fixture"
 
 
 def test_benchmark_sorts_by_first_token_and_reports_unavailable_model(tmp_path: Path) -> None:
