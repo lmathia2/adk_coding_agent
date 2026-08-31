@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lmathia2/adk_coding_agent/clients/tui/internal/protocol"
@@ -19,6 +18,7 @@ import (
 )
 
 type Config struct {
+	AppVersion       string
 	InitialInput     string
 	InitialRunID     string
 	InitialCursor    int64
@@ -43,6 +43,7 @@ type Model struct {
 	negotiated      bool
 	harness         protocol.HarnessDescriptor
 	input           []rune
+	inputCursor     int
 	width           int
 	height          int
 	warning         string
@@ -50,6 +51,8 @@ type Model struct {
 	pendingControls []pendingControl
 	pingCount       uint64
 	outstandingPing string
+	modelPicker     *modelPicker
+	expandedHelp    bool
 }
 
 type pendingControl struct {
@@ -73,6 +76,9 @@ type localProcessFinishedMsg struct {
 }
 
 func New(transport *ws.Client, config Config) Model {
+	if config.AppVersion == "" {
+		config.AppVersion = "dev"
+	}
 	if config.Heartbeat <= 0 {
 		config.Heartbeat = 20 * time.Second
 	}
@@ -94,6 +100,7 @@ func New(transport *ws.Client, config Config) Model {
 	if strings.TrimSpace(config.InitialInput) != "" {
 		start := model.newStart(config.InitialInput)
 		model.pending = &start
+		model.session.User(config.InitialInput)
 	}
 	return model
 }
@@ -159,7 +166,44 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case modelCatalogLoadedMsg:
+		if m.modelPicker == nil {
+			return m, nil
+		}
+		m.modelPicker.loading = false
+		if message.err != nil {
+			m.modelPicker.err = message.err.Error()
+		} else {
+			m.modelPicker.models = message.models
+			m.modelPicker.defaultModel = message.selectedModel
+			if m.session.CodingModel != nil {
+				m.modelPicker.models = currentModelFirst(
+					m.modelPicker.models, m.session.CodingModel.Name,
+				)
+			}
+			m.modelPicker.clamp()
+		}
+		return m, nil
+	case modelSelectionFinishedMsg:
+		if m.modelPicker == nil {
+			return m, nil
+		}
+		m.modelPicker.saving = false
+		if message.err != nil {
+			detail := strings.TrimSpace(message.output)
+			if detail == "" {
+				detail = message.err.Error()
+			}
+			m.modelPicker.err = detail
+			return m, nil
+		}
+		m.modelPicker = nil
+		m.warning = "model " + message.model + " saved; restart the server to apply it"
+		return m, nil
 	case tea.KeyMsg:
+		if m.modelPicker != nil {
+			return m.updateModelPicker(message)
+		}
 		switch message.Type {
 		case tea.KeyCtrlD:
 			return m, tea.Quit
@@ -170,14 +214,31 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEnter:
 			return m.submit()
+		case tea.KeyCtrlO:
+			m.expandedHelp = !m.expandedHelp
 		case tea.KeyBackspace, tea.KeyDelete:
-			if len(m.input) > 0 {
-				m.input = m.input[:len(m.input)-1]
+			if m.inputCursor > 0 {
+				m.input = append(m.input[:m.inputCursor-1], m.input[m.inputCursor:]...)
+				m.inputCursor--
 			}
+		case tea.KeyLeft:
+			if m.inputCursor > 0 {
+				m.inputCursor--
+			}
+		case tea.KeyRight:
+			if m.inputCursor < len(m.input) {
+				m.inputCursor++
+			}
+		case tea.KeyHome, tea.KeyCtrlA:
+			m.inputCursor = 0
+		case tea.KeyEnd, tea.KeyCtrlE:
+			m.inputCursor = len(m.input)
 		case tea.KeyRunes:
-			m.input = append(m.input, message.Runes...)
+			m.input = insertRunes(m.input, m.inputCursor, message.Runes)
+			m.inputCursor += len(message.Runes)
 		case tea.KeySpace:
-			m.input = append(m.input, ' ')
+			m.input = insertRunes(m.input, m.inputCursor, []rune{' '})
+			m.inputCursor++
 		}
 	}
 	return m, nil
@@ -280,12 +341,22 @@ func (m Model) View() string {
 	if harness == "" {
 		harness = "waiting for server"
 	}
-	header := fmt.Sprintf("adk-agent  %s  harness=%s  run=%s  status=%s  seq=%d",
-		connection, harness, valueOr(m.session.RunID, "-"), m.session.Status, m.session.Cursor)
+	header := fmt.Sprintf("adk-agent v%s", m.config.AppVersion)
+	shortcuts := "escape interrupt · ctrl+c clear/exit · / commands · ctrl+o more"
+	if m.expandedHelp {
+		shortcuts = "enter send · ctrl+j newline · escape close dialog · ctrl+c interrupt/clear · ctrl+d exit · / commands · ctrl+o less"
+	}
 	output = append(output,
-		clip(header, width),
+		titleStyle.Render(header),
+		dimStyle.Render(clip(shortcuts, width)),
+		dimStyle.Render("Press ctrl+o to show full startup help."),
+		"",
+		mutedStyle.Render("The ADK coding harness streams model, tool, and verification events here."),
+		"",
+		clip(fmt.Sprintf("%s · harness=%s · run=%s · status=%s · seq=%d",
+			connection, harness, valueOr(m.session.RunID, "-"), m.session.Status, m.session.Cursor), width),
 		clip(codingModelLine(m.session), width),
-		strings.Repeat("─", min(width, utf8.RuneCountInString(header)+8)),
+		"",
 	)
 
 	for _, entry := range m.session.Entries {
@@ -293,32 +364,56 @@ func (m Model) View() string {
 		title := strings.TrimSpace(entry.Title)
 		content := strings.TrimSpace(entry.Content)
 		line := marker + " " + title
+		if entry.Kind == session.EntryUser {
+			line = content
+			content = ""
+		}
 		if content != "" {
 			line += ": " + content
 		}
-		output = append(output, wrap(line, width)...)
+		lines := wrap(line, width)
+		for _, rendered := range lines {
+			switch entry.Kind {
+			case session.EntryTool:
+				output = append(output, toolStyle.Width(max(1, width-2)).Render(rendered))
+			case session.EntryUser:
+				output = append(output, userStyle.Width(max(1, width-2)).Render(rendered))
+			case session.EntryError:
+				output = append(output, errorStyle.Render(rendered))
+			case session.EntryText:
+				output = append(output, rendered)
+			default:
+				output = append(output, dimStyle.Render(rendered))
+			}
+		}
 	}
 	if m.warning != "" {
-		output = append(output, clip("! "+m.warning, width))
+		output = append(output, warningStyle.Render(clip("! "+m.warning, width)))
 	}
 
-	footerLines := 3
+	footerLines := 4
+	if m.modelPicker != nil {
+		footerLines = len(m.renderModelPicker(width))
+	}
 	available := height - footerLines
-	const fixedHeaderLines = 3
+	const fixedHeaderLines = 9
 	if available < fixedHeaderLines {
 		available = fixedHeaderLines
 	}
 	if len(output) > available {
 		output = append(output[:fixedHeaderLines], output[len(output)-(available-fixedHeaderLines):]...)
 	}
-	prompt := "start> "
-	if m.session.RunID != "" && !terminalStatus(m.session.Status) {
-		prompt = "steer> "
+	if m.modelPicker != nil {
+		output = append(output, m.renderModelPicker(width)...)
+		return strings.Join(output, "\n")
 	}
+	prompt := "› "
+	input := renderCursor(m.input, m.inputCursor)
 	output = append(output,
-		strings.Repeat("─", width),
-		clip(prompt+string(m.input)+"█", width),
-		clip("enter send · /login /model /benchmark /start /pause /cancel /help · ctrl+d quit", width),
+		horizontalBorder(width),
+		clip(prompt+input, width),
+		dimStyle.Render(clip("enter send · ctrl+j newline · / commands · ctrl+d quit", width)),
+		horizontalBorder(width),
 	)
 	return strings.Join(output, "\n")
 }
@@ -344,6 +439,7 @@ func codingModelLine(state session.State) string {
 func (m Model) submit() (tea.Model, tea.Cmd) {
 	input := strings.TrimSpace(string(m.input))
 	m.input = nil
+	m.inputCursor = 0
 	if input == "" {
 		return m, nil
 	}
@@ -361,7 +457,8 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		}
 		commandID := m.config.ID()
 		message := protocol.NewSteerTask(m.session.RunID, input, commandID, 0)
-		m.session.Notice("steering queued", input)
+		m.session.User(input)
+		m.session.Notice("steering queued", "")
 		return m.queueControl(commandID, message)
 	}
 	return m.beginStart(input)
@@ -386,7 +483,9 @@ func (m Model) command(input string) (tea.Model, tea.Cmd) {
 		return m.runCapturedCodexCommand("available models", "models")
 	case "/model":
 		if argument == "" {
-			return m.runCapturedCodexCommand("available models", "models")
+			m.modelPicker = newModelPicker()
+			m.warning = ""
+			return m, m.loadCodexCatalog()
 		}
 		return m.runCapturedCodexCommand("model selection (restart server to apply)", "select", argument)
 	case "/benchmark":
@@ -492,6 +591,7 @@ func (m Model) beginStart(input string) (tea.Model, tea.Cmd) {
 	}
 	hadRun := m.session.RunID != ""
 	m.session = session.New(m.config.History, m.config.ContentBytes, m.config.AckEvery)
+	m.session.User(input)
 	m.pendingControls = nil
 	start := m.newStart(input)
 	m.pending = &start
@@ -600,6 +700,8 @@ func entryMarker(kind session.EntryKind) string {
 	switch kind {
 	case session.EntryText:
 		return "◆"
+	case session.EntryUser:
+		return "›"
 	case session.EntryTool:
 		return "⚙"
 	case session.EntryError:
@@ -645,6 +747,30 @@ func valueOr(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func insertRunes(values []rune, position int, inserted []rune) []rune {
+	if position < 0 {
+		position = 0
+	}
+	if position > len(values) {
+		position = len(values)
+	}
+	result := make([]rune, 0, len(values)+len(inserted))
+	result = append(result, values[:position]...)
+	result = append(result, inserted...)
+	result = append(result, values[position:]...)
+	return result
+}
+
+func renderCursor(values []rune, position int) string {
+	if position < 0 {
+		position = 0
+	}
+	if position > len(values) {
+		position = len(values)
+	}
+	return string(values[:position]) + "█" + string(values[position:])
 }
 
 func min(left, right int) int {

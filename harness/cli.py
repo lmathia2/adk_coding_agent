@@ -493,6 +493,7 @@ def _codex_command(args: argparse.Namespace) -> int:
         credential_manager,
         discover_codex_models,
         fastest_candidates,
+        load_codex_selection,
         save_codex_selection,
     )
 
@@ -546,6 +547,7 @@ def _codex_command(args: argparse.Namespace) -> int:
         manager = credential_manager(state_root)
         catalog = discover_codex_models(manager)
         if args.codex_command == "models":
+            saved = load_codex_selection(state_root)
             print(
                 json.dumps(
                     {
@@ -558,6 +560,7 @@ def _codex_command(args: argparse.Namespace) -> int:
                             for model in catalog
                         ],
                         "provider": "openai_codex",
+                        "selected_model": saved.model if saved is not None else None,
                     },
                     sort_keys=True,
                     indent=2,

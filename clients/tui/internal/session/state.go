@@ -26,6 +26,7 @@ type EntryKind string
 
 const (
 	EntryStatus EntryKind = "status"
+	EntryUser   EntryKind = "user"
 	EntryText   EntryKind = "text"
 	EntryTool   EntryKind = "tool"
 	EntryError  EntryKind = "error"
@@ -103,6 +104,10 @@ func (s *State) MarkAcknowledged(sequence int64) {
 
 func (s *State) Notice(title, content string) {
 	s.appendEntry(Entry{Kind: EntryStatus, Title: title, Content: content, Done: true})
+}
+
+func (s *State) User(content string) {
+	s.appendEntry(Entry{Kind: EntryUser, Title: "user", Content: content, Done: true})
 }
 
 func (s *State) Fail(message string) {

@@ -70,6 +70,36 @@ def test_codex_status_is_redacted_and_does_not_require_network(tmp_path: Path, c
     }
 
 
+def test_codex_models_reports_saved_default_without_private_state(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    import harness.codex
+    from harness.codex import CodexModel, CodexSelection
+
+    monkeypatch.setattr(harness.codex, "credential_manager", lambda state_root: object())
+    monkeypatch.setattr(
+        harness.codex,
+        "discover_codex_models",
+        lambda manager: (
+            CodexModel(id="gpt-fast", display_name="GPT Fast", priority=1),
+        ),
+    )
+    monkeypatch.setattr(
+        harness.codex,
+        "load_codex_selection",
+        lambda state_root: CodexSelection(
+            model="gpt-fast", reasoning="low", client_version=None
+        ),
+    )
+
+    exit_code = main(["codex", "--state-root", str(tmp_path / "state"), "models"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["selected_model"] == "gpt-fast"
+    assert "credential" not in payload
+
+
 def test_codex_login_cancellation_is_clean(tmp_path: Path, capsys, monkeypatch) -> None:
     from harness.ai.codex_auth import CodexOAuthClient
 
