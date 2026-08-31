@@ -3,25 +3,14 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
-from harness.config import SandboxConfig, SecretRef
+from harness.config import SandboxConfig
 
 from .base import CommandSandbox
 from .docker import DockerSandbox
-from .kubernetes import KubernetesSandbox
 from .local import LocalSandbox
-from .remote import HttpRemoteTransport, RemoteSandbox, RemoteTransport
-
-SecretResolver = Callable[[SecretRef], str]
-
-
-def _environment_secret(ref: SecretRef) -> str:
-    value = os.getenv(ref.env)
-    if not value:
-        raise ValueError(f"required secret environment variable is not set: {ref.env}")
-    return value
 
 
 def create_configured_command_sandbox(
@@ -31,8 +20,6 @@ def create_configured_command_sandbox(
     *,
     max_output_bytes: int,
     known_secrets: Sequence[str] = (),
-    remote_transport: RemoteTransport | None = None,
-    secret_resolver: SecretResolver = _environment_secret,
 ) -> CommandSandbox:
     """Build a sandbox entirely from validated composition and explicit bindings."""
 
@@ -59,34 +46,7 @@ def create_configured_command_sandbox(
             pids_limit=config.pids_limit,
             max_output_bytes=max_output_bytes,
         )
-    if config.kind == "kubernetes":
-        return KubernetesSandbox(
-            workspace,
-            artifact_root,
-            namespace=config.namespace,
-            pod=config.pod,
-            container=config.container,
-            remote_workspace=config.remote_workspace,
-            network_isolated=config.network_isolated,
-            known_secrets=known_secrets,
-            max_output_bytes=max_output_bytes,
-        )
-    transport = remote_transport
-    if transport is None:
-        token = secret_resolver(config.token)
-        transport = HttpRemoteTransport(
-            config.endpoint,
-            bearer_token=token,
-            max_response_bytes=config.max_response_bytes,
-        )
-    return RemoteSandbox(
-        workspace,
-        artifact_root,
-        remote_workspace=config.remote_workspace,
-        transport=transport,
-        known_secrets=known_secrets,
-        max_output_bytes=max_output_bytes,
-    )
+    raise ValueError(f"unsupported sandbox: {config.kind}")
 
 
 def _truthy(name: str, default: bool = False) -> bool:
@@ -100,7 +60,6 @@ def create_command_sandbox(
     workspace: Path,
     state_root: Path,
     *,
-    remote_transport: RemoteTransport | None = None,
     known_secrets: Sequence[str] = (),
 ) -> CommandSandbox:
     backend = os.getenv("ADK_CODING_SANDBOX", "local").strip().lower()
@@ -138,64 +97,7 @@ def create_command_sandbox(
             tmpfs_size=os.getenv("ADK_CODING_SANDBOX_TMPFS", "512m"),
             max_output_bytes=int(os.getenv("ADK_CODING_TOOL_OUTPUT_BYTES", "16000")),
         )
-    if backend == "kubernetes":
-        namespace = os.getenv("ADK_CODING_K8S_NAMESPACE", "").strip()
-        pod = os.getenv("ADK_CODING_K8S_POD", "").strip()
-        remote_workspace = os.getenv("ADK_CODING_K8S_WORKSPACE", "").strip()
-        if not namespace or not pod or not remote_workspace:
-            raise ValueError(
-                "ADK_CODING_K8S_NAMESPACE, ADK_CODING_K8S_POD, and "
-                "ADK_CODING_K8S_WORKSPACE are required for the Kubernetes sandbox"
-            )
-        return KubernetesSandbox(
-            workspace,
-            artifact_root,
-            namespace=namespace,
-            pod=pod,
-            container=os.getenv("ADK_CODING_K8S_CONTAINER") or None,
-            remote_workspace=remote_workspace,
-            network_isolated=_truthy("ADK_CODING_K8S_NETWORK_ISOLATED"),
-            known_secrets=known_secrets,
-            kubectl_binary=os.getenv("ADK_CODING_KUBECTL_BINARY", "kubectl"),
-            timeout_binary=os.getenv(
-                "ADK_CODING_K8S_TIMEOUT_BINARY", "/usr/bin/timeout"
-            ),
-            max_output_bytes=int(os.getenv("ADK_CODING_TOOL_OUTPUT_BYTES", "16000")),
-        )
-    if backend == "remote":
-        remote_workspace = os.getenv("ADK_CODING_REMOTE_WORKSPACE", "").strip()
-        if not remote_workspace:
-            raise ValueError(
-                "ADK_CODING_REMOTE_WORKSPACE is required for the remote sandbox"
-            )
-        transport = remote_transport
-        if transport is None:
-            endpoint = os.getenv("ADK_CODING_REMOTE_ENDPOINT", "").strip()
-            token = os.getenv("ADK_CODING_REMOTE_TOKEN", "").strip()
-            if not endpoint or not token:
-                raise ValueError(
-                    "ADK_CODING_REMOTE_ENDPOINT and ADK_CODING_REMOTE_TOKEN are "
-                    "required for the remote sandbox"
-                )
-            transport = HttpRemoteTransport(
-                endpoint,
-                bearer_token=token,
-                max_response_bytes=int(
-                    os.getenv("ADK_CODING_REMOTE_RESPONSE_BYTES", "2000000")
-                ),
-            )
-        return RemoteSandbox(
-            workspace,
-            artifact_root,
-            remote_workspace=remote_workspace,
-            transport=transport,
-            known_secrets=known_secrets,
-            max_output_bytes=int(os.getenv("ADK_CODING_TOOL_OUTPUT_BYTES", "16000")),
-        )
-    raise ValueError(
-        f"unsupported ADK_CODING_SANDBOX={backend!r}; use 'local', 'docker', "
-        "'kubernetes', or 'remote'"
-    )
+    raise ValueError(f"unsupported ADK_CODING_SANDBOX={backend!r}; use local or docker")
 
 
-__all__ = ["SecretResolver", "create_command_sandbox", "create_configured_command_sandbox"]
+__all__ = ["create_command_sandbox", "create_configured_command_sandbox"]

@@ -393,3 +393,11 @@ def test_duplicate_yaml_keys_are_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="duplicate YAML key"):
         load_harness_composition(config_path)
+
+
+@pytest.mark.parametrize("kind", ["kubernetes", "remote"])
+def test_removed_remote_sandbox_cannot_silently_fall_back_to_host(kind: str) -> None:
+    payload = _composition_payload()
+    payload["harness"]["config"]["sandbox"] = {"kind": kind}
+    with pytest.raises(ValidationError, match="union_tag_invalid"):
+        parse_harness_composition(payload)

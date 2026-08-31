@@ -6,6 +6,6 @@ import harness.safety.approval as approval
 import harness.tools.adk_adapter as adk_adapter
 
 
-def test_package_facades_win_over_legacy_single_file_modules() -> None:
-    assert Path(approval.__file__).name == "__init__.py"
-    assert Path(adk_adapter.__file__).name == "__init__.py"
+def test_tools_and_approval_use_direct_modules_without_shadow_packages() -> None:
+    assert Path(approval.__file__).name == "approval.py"
+    assert Path(adk_adapter.__file__).name == "adk_adapter.py"

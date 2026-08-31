@@ -170,8 +170,9 @@ agents-cli run '{"goal":"Fix the parser","acceptance_criteria":["Malformed input
 ```
 
 The local environment backend is a development adapter, not a security boundary.
-Production command execution can select Docker, a pre-provisioned Kubernetes task
-pod, or a pluggable enterprise remote sandbox with fail-closed configuration.
+Command execution can use Docker with the same mounted workspace. Kubernetes and
+remote adapters were removed because their command workspace was not wired to the
+local file tools. The unused semantic/LSP/Moderne bridge was removed as well.
 Start `serve --production` after selecting one of those adapters; production mode
 refuses the host-local sandbox before creating server state. `--print-config` reports
 both the effective sandbox kind and whether the production gate is active.

@@ -357,25 +357,8 @@ class DockerSandboxConfig(FrozenModel):
     network_disabled: Literal[True] = True
 
 
-class KubernetesSandboxConfig(FrozenModel):
-    kind: Literal["kubernetes"]
-    namespace: str = Field(min_length=1, max_length=128)
-    pod: str = Field(min_length=1, max_length=253)
-    container: str | None = Field(default=None, max_length=128)
-    remote_workspace: str = Field(pattern=r"^/")
-    network_isolated: Literal[True]
-
-
-class RemoteSandboxConfig(FrozenModel):
-    kind: Literal["remote"]
-    endpoint: str = Field(pattern=r"^https://")
-    token: SecretRef
-    remote_workspace: str = Field(pattern=r"^/")
-    max_response_bytes: int = Field(default=2_000_000, ge=1_024, le=64_000_000)
-
-
 SandboxConfig = Annotated[
-    LocalSandboxConfig | DockerSandboxConfig | KubernetesSandboxConfig | RemoteSandboxConfig,
+    LocalSandboxConfig | DockerSandboxConfig,
     Field(discriminator="kind"),
 ]
 

@@ -114,6 +114,30 @@ def test_exact_write_replay_uses_receipt_without_repeating_side_effect(
     assert (tmp_path / "result.txt").read_text(encoding="utf-8") == "stable\n"
 
 
+def test_failed_file_mutations_never_replay_as_success(tmp_path: Path) -> None:
+    tools = create_adk_tools(tmp_path, state_root=tmp_path / "state")
+    for _ in range(2):
+        result = tools.write("missing.txt", "new", expected_sha256="0" * 64)
+        assert result["status"] == "error"
+        assert not result.get("replayed")
+        assert not (tmp_path / "missing.txt").exists()
+
+
+def test_managed_files_use_atomic_core_and_confine_symlinks(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep")
+    (workspace / "escape").symlink_to(outside)
+    tools = create_adk_tools(workspace, state_root=tmp_path / "state")
+    assert tools.write("escape", "overwrite")["status"] == "blocked"
+    assert tools.read("escape")["status"] == "blocked"
+    assert outside.read_text() == "keep"
+    result = tools.write("inside.txt", "hello", expected_absent=True)
+    assert result["changed_paths"] == ["inside.txt"]
+    assert tools.read("inside.txt")["content_hashes"] == result["content_hashes"]
+
+
 def test_python_writes_and_edits_return_immediate_syntax_feedback(tmp_path: Path) -> None:
     tools = create_adk_tools(tmp_path, state_root=tmp_path / "state")
 

@@ -3,7 +3,7 @@
 ## Minimal-harness simplification
 
 - [x] Remove Magnitude, LiteLLM integration, and installer/launcher branches; retain Codex and native ADK provider seams.
-- [ ] Replace shadowed legacy tools with the tested atomic file primitives and remove unwired adapters.
+- [x] Replace shadowed legacy tools with the tested atomic file primitives and remove unwired adapters.
 - [ ] Reduce fixed-graph configuration and optional orchestration layers without weakening verification or approvals.
 - [ ] Verify retained paths and report source-line and McCabe-complexity changes.
 
