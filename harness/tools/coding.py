@@ -5,7 +5,11 @@ from __future__ import annotations
 import hashlib
 import time
 
-from harness.environment import FileConflictError, WorkspaceViolationError, active_environment
+from harness.environment import (
+    FileConflictError,
+    LocalWorkspaceEnvironment,
+    WorkspaceViolationError,
+)
 from harness.models import ToolEnvelope, ToolStatus
 
 from .output import bound_output
@@ -16,14 +20,15 @@ def _error(exc: Exception) -> ToolEnvelope:
     return ToolEnvelope(status=status, model_text=f"{type(exc).__name__}: {exc}")
 
 
-def execute_read(path: str, offset: int = 1, limit: int = 400) -> ToolEnvelope:
+def execute_read(
+    environment: LocalWorkspaceEnvironment, path: str, offset: int = 1, limit: int = 400
+) -> ToolEnvelope:
     started = time.monotonic()
     try:
         if offset < 1:
             raise ValueError("offset must be at least 1")
         if limit < 1 or limit > 400:
             raise ValueError("limit must be between 1 and 400 lines")
-        environment = active_environment()
         content = environment.read_bytes(path)
         if b"\x00" in content[:8_192]:
             raise ValueError(f"Binary file cannot be read as text: {path}")
@@ -60,6 +65,7 @@ def execute_read(path: str, offset: int = 1, limit: int = 400) -> ToolEnvelope:
 
 
 def execute_edit(
+    environment: LocalWorkspaceEnvironment,
     path: str,
     old_text: str,
     new_text: str,
@@ -67,7 +73,7 @@ def execute_edit(
 ) -> ToolEnvelope:
     started = time.monotonic()
     try:
-        result = active_environment().replace_text(
+        result = environment.replace_text(
             path,
             old_text,
             new_text,
@@ -91,6 +97,7 @@ def execute_edit(
 
 
 def execute_write(
+    environment: LocalWorkspaceEnvironment,
     path: str,
     content: str,
     expected_sha256: str | None = None,
@@ -98,7 +105,7 @@ def execute_write(
 ) -> ToolEnvelope:
     started = time.monotonic()
     try:
-        result = active_environment().atomic_write(
+        result = environment.atomic_write(
             path,
             content.encode("utf-8"),
             expected_sha256=expected_sha256,

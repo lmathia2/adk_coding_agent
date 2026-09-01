@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from harness.approvals import ApprovalStore
-from harness.environment import LocalWorkspaceEnvironment, bind_environment
+from harness.environment import LocalWorkspaceEnvironment
 from harness.models import ToolEnvelope
 from harness.repo import FffSearchService, SearchBackend, SearchError, SearchPage
 from harness.safety import ApprovalAction, ApprovalPolicy, SecretRedactor
@@ -88,9 +88,7 @@ def discover_known_secrets(additional_names: Sequence[str] = ()) -> list[str]:
         ) or upper.endswith(("_TOKEN", "_SECRET", "_PRIVATE_KEY")):
             explicit_names.add(name)
     return [
-        value
-        for name in sorted(explicit_names)
-        if (value := os.getenv(name)) and len(value) >= 4
+        value for name in sorted(explicit_names) if (value := os.getenv(name)) and len(value) >= 4
     ]
 
 
@@ -116,12 +114,8 @@ class _ArtifactResolver:
     """Resolve only harness-owned content-addressed artifacts for managed read."""
 
     def __init__(self, *, workspace: Path, state_root: Path) -> None:
-        self.workspace_artifact_root = (
-            workspace / ".artifacts" / "tool-output"
-        ).resolve()
-        self.command_artifact_root = (
-            state_root / "artifacts" / "commands"
-        ).resolve()
+        self.workspace_artifact_root = (workspace / ".artifacts" / "tool-output").resolve()
+        self.command_artifact_root = (state_root / "artifacts" / "commands").resolve()
 
     @staticmethod
     def _confined_file(root: Path, candidate: Path) -> Path:
@@ -191,8 +185,7 @@ class _ArtifactResolver:
         start = min(offset - 1, len(lines))
         selected = lines[start : start + limit]
         rendered = "\n".join(
-            f"{start + index + 1:>6} | {line}"
-            for index, line in enumerate(selected)
+            f"{start + index + 1:>6} | {line}" for index, line in enumerate(selected)
         )
         bounded = bound_output(
             rendered,
@@ -248,9 +241,7 @@ class _ManagedTools:
         state_root.mkdir(parents=True, exist_ok=True)
         self.state_root = state_root
         resolved_secrets = (
-            list(known_secrets)
-            if known_secrets is not None
-            else discover_known_secrets()
+            list(known_secrets) if known_secrets is not None else discover_known_secrets()
         )
         self.sandbox = sandbox or create_command_sandbox(
             self.workspace,
@@ -276,21 +267,25 @@ class _ManagedTools:
             allow_unknown=_truthy("ADK_CODING_ALLOW_UNKNOWN_COMMANDS"),
             approved_fingerprints=approved,
         )
-        self.task_scope = task_scope or os.getenv("ADK_CODING_TASK_ID") or hashlib.sha256(
-            self.workspace.as_posix().encode()
-        ).hexdigest()[:24]
+        self.task_scope = (
+            task_scope
+            or os.getenv("ADK_CODING_TASK_ID")
+            or hashlib.sha256(self.workspace.as_posix().encode()).hexdigest()[:24]
+        )
         self.bash_max_timeout_seconds = bash_max_timeout_seconds
         self.search_default_page_size = search_default_page_size
         self.search_max_page_size = search_max_page_size
         configured_search = (
-            search_mode
-            if search_mode is not None
-            else os.getenv("ADK_CODING_SEARCH_BACKEND", "auto")
-        ).strip().lower()
-        if configured_search not in {"auto", "disabled", "fff"}:
-            raise ValueError(
-                "ADK_CODING_SEARCH_BACKEND must be auto, fff, or disabled"
+            (
+                search_mode
+                if search_mode is not None
+                else os.getenv("ADK_CODING_SEARCH_BACKEND", "auto")
             )
+            .strip()
+            .lower()
+        )
+        if configured_search not in {"auto", "disabled", "fff"}:
+            raise ValueError("ADK_CODING_SEARCH_BACKEND must be auto, fff, or disabled")
         self.search_backend = search_backend
         self.search_unavailable_reason: str | None = None
         if search_backend is None and configured_search != "disabled":
@@ -298,17 +293,17 @@ class _ManagedTools:
                 self.search_backend = FffSearchService(self.workspace, state_root)
             else:
                 self.search_unavailable_reason = (
-                    "host-side FFF search is unavailable for a non-authoritative "
-                    "remote workspace"
+                    "host-side FFF search is unavailable for a non-authoritative remote workspace"
                 )
         elif search_backend is None:
             self.search_unavailable_reason = "FFF search is disabled by configuration"
 
     def _file_tool(
-        self, operation: Callable[..., ToolEnvelope], **arguments: Any,
+        self,
+        operation: Callable[..., ToolEnvelope],
+        **arguments: Any,
     ) -> ToolEnvelope:
-        with bind_environment(self.environment):
-            return operation(**arguments)
+        return operation(self.environment, **arguments)
 
     def _redact(self, value: Any) -> dict[str, Any]:
         normalized = _normalize_result(value)
@@ -380,9 +375,7 @@ class _ManagedTools:
             return normalized
         normalized["diagnostics"] = [diagnostic]
         normalized["model_text"] = (
-            str(normalized.get("model_text", ""))
-            + "\n\npost-write check: "
-            + diagnostic["message"]
+            str(normalized.get("model_text", "")) + "\n\npost-write check: " + diagnostic["message"]
         ).strip()
         ui_details = dict(normalized.get("ui_details") or {})
         ui_details["post_write_check"] = diagnostic["status"]
@@ -513,8 +506,7 @@ class _ManagedTools:
     ) -> dict[str, Any]:
         if not 1 <= timeout_seconds <= self.bash_max_timeout_seconds:
             raise ValueError(
-                "timeout_seconds must be between 1 and "
-                f"{self.bash_max_timeout_seconds}"
+                f"timeout_seconds must be between 1 and {self.bash_max_timeout_seconds}"
             )
         try:
             search_command = parse_search_command(
@@ -539,7 +531,9 @@ class _ManagedTools:
         policy = self.policy
         if persisted and persisted.status == "approved":
             # Never cache task-scoped or expiring decisions in the shared policy.
-            policy = replace(policy, approved_fingerprints=policy.approved_fingerprints | {fingerprint})
+            policy = replace(
+                policy, approved_fingerprints=policy.approved_fingerprints | {fingerprint}
+            )
         elif persisted and persisted.status in {"denied", "expired"}:
             return {
                 "status": "blocked",

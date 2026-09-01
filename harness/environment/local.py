@@ -9,11 +9,29 @@ import signal
 import subprocess
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from harness.models import CommandResult
 
-from .base import FileConflictError, FileMutationResult, WorkspaceViolationError
+
+class WorkspaceViolationError(ValueError):
+    pass
+
+
+class FileConflictError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class FileMutationResult:
+    path: str
+    changed: bool
+    before_sha256: str | None
+    after_sha256: str
+    diff: str
+    already_applied: bool = False
+
 
 _SAFE_ENV_KEYS = {
     "PATH",
@@ -71,7 +89,9 @@ class LocalWorkspaceEnvironment:
         if not resolved_root.is_dir():
             raise ValueError(f"Workspace does not exist or is not a directory: {resolved_root}")
         self.root = resolved_root
-        configured_artifacts = Path(artifact_root) if artifact_root is not None else Path(".artifacts")
+        configured_artifacts = (
+            Path(artifact_root) if artifact_root is not None else Path(".artifacts")
+        )
         if configured_artifacts.is_absolute():
             self.artifact_root = configured_artifacts.expanduser().resolve()
         else:

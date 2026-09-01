@@ -8,7 +8,6 @@ from harness.environment import (
     FileConflictError,
     LocalWorkspaceEnvironment,
     WorkspaceViolationError,
-    bind_environment,
 )
 from harness.models import ToolStatus
 from harness.tools import (
@@ -33,8 +32,7 @@ def test_environment_blocks_path_escape(tmp_path: Path) -> None:
 def test_read_is_line_numbered_and_bounded(tmp_path: Path) -> None:
     environment = _environment(tmp_path)
     (tmp_path / "src" / "example.py").write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
-    with bind_environment(environment):
-        result = execute_read("src/example.py", offset=2, limit=2)
+    result = execute_read(environment, "src/example.py", offset=2, limit=2)
     assert result.status is ToolStatus.OK
     assert "2 | two" in result.model_text
     assert "3 | three" in result.model_text
@@ -45,9 +43,8 @@ def test_edit_requires_a_unique_preimage_and_is_idempotent(tmp_path: Path) -> No
     environment = _environment(tmp_path)
     path = tmp_path / "src" / "example.py"
     path.write_text("value = 1\n", encoding="utf-8")
-    with bind_environment(environment):
-        first = execute_edit("src/example.py", "value = 1", "value = 2")
-        second = execute_edit("src/example.py", "value = 1", "value = 2")
+    first = execute_edit(environment, "src/example.py", "value = 1", "value = 2")
+    second = execute_edit(environment, "src/example.py", "value = 1", "value = 2")
     assert first.changed_paths == ["src/example.py"]
     assert second.status is ToolStatus.OK
     assert "already applied" in second.model_text
@@ -64,10 +61,9 @@ def test_environment_rejects_ambiguous_edit(tmp_path: Path) -> None:
 
 def test_write_supports_expected_absence_and_hash_conflict(tmp_path: Path) -> None:
     environment = _environment(tmp_path)
-    with bind_environment(environment):
-        created = execute_write("src/new.py", "answer = 42\n", expected_absent=True)
-        repeated = execute_write("src/new.py", "answer = 42\n", expected_absent=True)
-        conflict = execute_write("src/new.py", "answer = 43\n", expected_sha256="bad")
+    created = execute_write(environment, "src/new.py", "answer = 42\n", expected_absent=True)
+    repeated = execute_write(environment, "src/new.py", "answer = 42\n", expected_absent=True)
+    conflict = execute_write(environment, "src/new.py", "answer = 43\n", expected_sha256="bad")
     assert created.changed_paths == ["src/new.py"]
     assert repeated.status is ToolStatus.OK
     assert conflict.status is ToolStatus.ERROR
