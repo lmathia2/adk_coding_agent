@@ -47,6 +47,36 @@ test("one socket supports two turns with a stable conversation and retained tran
     assert.equal(session.state.view.entries.length, 4);
   } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
 });
+test("a request entered during startup is retained and sent after protocol negotiation", async () => {
+  const server = new WebSocketServer({host: "127.0.0.1", port: 0});
+  await once(server, "listening");
+  const address = server.address(); assert.ok(address && typeof address === "object");
+  const starts: object[] = [];
+  server.on("connection", socket => socket.on("message", data => {
+    const message = JSON.parse(data.toString());
+    if (message.type === "client.hello") setTimeout(() => send(socket, {
+      type: "server.hello", harness: {display_name: "Fixture", capabilities: ["streaming", "approvals"]},
+    }), 50);
+    if (message.type === "task.start") {
+      starts.push(message);
+      send(socket, {type: "task.accepted", request_id: message.request_id, run_id: "startup-run", thread_id: message.thread_id});
+      send(socket, {type: "event", sequence: 1, run_id: "startup-run", durable: true,
+        event: {type: "RUN_FINISHED", runId: "startup-run", threadId: message.thread_id, result: {status: "completed"}}});
+    }
+  }));
+  const session = new RemoteSession({url: `ws://127.0.0.1:${address.port}`, token});
+  try {
+    session.connect();
+    session.submit("hello before ready");
+    assert.equal(session.state.view.status, "starting");
+    assert.match(session.state.view.notice, /queued locally/);
+    assert.equal(session.state.view.entries[0]?.kind, "user");
+    await until(() => session.state.view.status === "completed");
+    assert.equal(starts.length, 1);
+    assert.equal((starts[0] as {input?: string}).input, "hello before ready");
+    assert.deepEqual((starts[0] as {metadata?: object}).metadata, {interactive_approvals: "true"});
+  } finally { session.close(); for (const socket of server.clients) socket.terminate(); server.close(); await once(server, "close"); }
+});
 test("hello sends fresh model and resource discovery exactly once", async () => {
   const server = new WebSocketServer({host: "127.0.0.1", port: 0});
   await once(server, "listening");

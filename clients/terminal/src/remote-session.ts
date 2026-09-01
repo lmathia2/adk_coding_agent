@@ -108,7 +108,10 @@ export class RemoteSession {
         if (!this.state.active) this.state.model(message.coding_model);
         this.refreshModel();
         if (this.state.capabilities.has("resources")) void this.refreshResources().catch(error => this.notice(error.message));
-        if (this.pendingStart) this.send(this.pendingStart);
+        if (this.pendingStart) {
+          if (this.state.capabilities.has("approvals")) this.pendingStart.metadata = {interactive_approvals: "true"};
+          this.send(this.pendingStart);
+        }
         else if (this.state.runId) this.send({type: "task.attach", run_id: this.state.runId, after_sequence: this.state.cursor});
         for (const control of this.controls.values()) this.send(control);
         for (const request of retryRequests) this.send(request.message);
@@ -174,7 +177,6 @@ export class RemoteSession {
   }
   submit(text: string, mode: "steer" | "followUp" = "steer"): void {
     if (!text.trim()) return;
-    if (!this.negotiated) throw new Error("Wait for the server connection before sending");
     if (this.loadingHistory) throw new Error("Wait for history to load or close the resume dialog");
     if (this.pendingStart) throw new Error("Waiting for the current request to be accepted");
     const id = randomUUID();
@@ -193,7 +195,8 @@ export class RemoteSession {
       this.state.begin();
       this.pendingStart = {type: "task.start", request_id: id, idempotency_key: id, thread_id: this.state.threadId, input: text};
       if (this.state.capabilities.has("approvals")) this.pendingStart.metadata = {interactive_approvals: "true"};
-      this.send(this.pendingStart);
+      if (this.negotiated) this.send(this.pendingStart);
+      else this.state.view.notice = "Waiting for the harness server; your request is queued locally";
     }
     this.state.user(id, text); this.changed();
   }
