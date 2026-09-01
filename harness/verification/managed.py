@@ -82,8 +82,7 @@ class ManagedValidationExecutor:
         details = f"Validation command not executed ({risk.value}): {reason}."
         if request_id:
             details += (
-                f" Approval request: {request_id}. Review with "
-                "`python -m harness.approvals list --status pending`."
+                f" Approval request: {request_id}. Review in the TUI with /approvals."
             )
         result = CommandResult(
             category=validation.category,

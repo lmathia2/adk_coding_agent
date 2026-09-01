@@ -103,8 +103,7 @@ gated; destructive commands are denied by default. Verification receives an
 explicit executor and cannot silently choose a different backend from the environment.
 Prepare the target project's dependencies before running its offline checks.
 
-To inspect pending approvals, use `python -m harness.approvals --help` from the
-environment and specify the task's state directory. Do not broadly allow unknown
+Inspect and decide pending approvals in the connected TUI with `/approvals`. Do not broadly allow unknown
 commands to make a test pass.
 
 ```bash

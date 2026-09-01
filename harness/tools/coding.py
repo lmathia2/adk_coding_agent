@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import time
 
 from harness.environment import FileConflictError, WorkspaceViolationError, active_environment
@@ -120,36 +119,3 @@ def execute_write(
         return envelope
     except (FileConflictError, WorkspaceViolationError, ValueError) as exc:
         return _error(exc)
-
-
-def read(path: str, offset: int = 1, limit: int = 400) -> str:
-    """Read a UTF-8 file range inside the workspace with line numbers."""
-
-    return execute_read(path, offset, limit).model_text
-
-
-def edit(path: str, old_text: str, new_text: str, expected_sha256: str | None = None) -> str:
-    """Atomically replace one exact text occurrence in a workspace file."""
-
-    return execute_edit(path, old_text, new_text, expected_sha256).model_text
-
-
-def write(
-    path: str,
-    content: str,
-    expected_sha256: str | None = None,
-    expected_absent: bool = False,
-) -> str:
-    """Atomically create or replace one UTF-8 workspace file."""
-
-    return execute_write(path, content, expected_sha256, expected_absent).model_text
-
-
-def tool_arguments_fingerprint(name: str, arguments: dict[str, object]) -> str:
-    payload = json.dumps(
-        {"name": name, "arguments": arguments},
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

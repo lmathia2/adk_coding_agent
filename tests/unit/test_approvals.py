@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from harness.approvals import ApprovalStore
-from harness.approvals.__main__ import main
 from harness.safety import ApprovalPolicy
 from harness.tools.adk_adapter import _canonical_hash, create_adk_tools
 
@@ -102,7 +100,9 @@ def test_managed_command_honors_denied_approval(tmp_path: Path, monkeypatch) -> 
 
 def test_approved_command_does_not_leak_to_another_task_or_shared_policy(tmp_path: Path) -> None:
     policy = ApprovalPolicy()
-    tools = create_adk_tools(tmp_path, state_root=tmp_path / "state", policy=policy, search_mode="disabled")
+    tools = create_adk_tools(
+        tmp_path, state_root=tmp_path / "state", policy=policy, search_mode="disabled"
+    )
     blocked = tools.bash("command printf approved", task_scope="first")
     store = ApprovalStore(tmp_path / "state/approvals.db")
     store.decide(blocked["approval_request_id"], decision="approved", actor="reviewer")
@@ -113,12 +113,20 @@ def test_approved_command_does_not_leak_to_another_task_or_shared_policy(tmp_pat
     assert policy.approved_fingerprints == set()
 
 
-def test_previously_used_approval_stops_authorizing_after_expiry(tmp_path: Path, monkeypatch) -> None:
+def test_previously_used_approval_stops_authorizing_after_expiry(
+    tmp_path: Path, monkeypatch
+) -> None:
     now = datetime.now(UTC)
     store = ApprovalStore(tmp_path / "state/approvals.db")
     command = "command printf approved"
-    request = store.request(task_id="task", fingerprint=_canonical_hash("bash", {"command": command}),
-        operation=command, risk="unknown", reason="review", expires_at=(now + timedelta(seconds=60)).isoformat())
+    request = store.request(
+        task_id="task",
+        fingerprint=_canonical_hash("bash", {"command": command}),
+        operation=command,
+        risk="unknown",
+        reason="review",
+        expires_at=(now + timedelta(seconds=60)).isoformat(),
+    )
     store.decide(request.request_id, decision="approved", actor="reviewer")
     tools = create_adk_tools(tmp_path, state_root=tmp_path / "state", search_mode="disabled")
     assert tools.bash(command, task_scope="task")["status"] == "ok"
@@ -126,36 +134,3 @@ def test_previously_used_approval_stops_authorizing_after_expiry(tmp_path: Path,
     expired = tools.bash(command, task_scope="task")
     assert expired["status"] == "blocked" and not expired["approval_required"]
     assert "expired" in expired["model_text"]
-
-
-def test_approval_cli_lists_and_decides_requests(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    database = tmp_path / "approvals.db"
-    request = ApprovalStore(database).request(
-        task_id="task",
-        fingerprint="fp",
-        operation="command",
-        risk="unknown",
-        reason="review",
-    )
-    assert main(["--database", str(database), "list", "--status", "pending"]) == 0
-    listed = json.loads(capsys.readouterr().out)
-    assert listed[0]["request_id"] == request.request_id
-
-    assert (
-        main(
-            [
-                "--database",
-                str(database),
-                "approve",
-                request.request_id,
-                "--actor",
-                "tester",
-            ]
-        )
-        == 0
-    )
-    decided = json.loads(capsys.readouterr().out)
-    assert decided["status"] == "approved"

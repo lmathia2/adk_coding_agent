@@ -10,7 +10,6 @@ from harness.approvals import (
     ApprovalDecision,
     ApprovalStore,
     ApprovalSubmission,
-    InteractiveApprovalTransport,
 )
 
 
@@ -48,9 +47,7 @@ def test_request_and_decision_submissions_replay_idempotently(
     replay = store.submit(_submission())
     assert replay.request_id == first.request_id
     with pytest.raises(ValueError, match="different request content"):
-        store.submit(
-            _submission().model_copy(update={"operation": "different command"})
-        )
+        store.submit(_submission().model_copy(update={"operation": "different command"}))
 
     decision = ApprovalDecision(
         request_id=first.request_id,
@@ -106,24 +103,3 @@ def test_approved_authorization_expires(tmp_path: Path) -> None:
 
     assert not store.is_approved(request.task_id, request.fingerprint)
     assert store.get(request.request_id).status == "expired"  # type: ignore[union-attr]
-
-
-def test_interactive_transport_uses_injected_io_and_records_denial(
-    tmp_path: Path,
-) -> None:
-    store = ApprovalStore(tmp_path / "approvals.db", clock=_clock())
-    request = store.submit(_submission())
-    answers = iter(["no", "unsafe in this environment"])
-    output: list[str] = []
-    transport = InteractiveApprovalTransport(
-        store,
-        input_fn=lambda _prompt: next(answers),
-        output_fn=output.append,
-    )
-
-    denied = transport.review(request.request_id, actor="cli-operator")
-
-    assert denied.status == "denied"
-    assert denied.decided_by == "cli-operator"
-    assert denied.decision_note == "unsafe in this environment"
-    assert any("deploy --dry-run" in line for line in output)

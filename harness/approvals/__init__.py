@@ -5,7 +5,6 @@ from .contracts import (
     ApprovalRequest,
     ApprovalSubmission,
 )
-from .interactive import InteractiveApprovalTransport
 from .store import ApprovalStore
 
 __all__ = [
@@ -13,5 +12,4 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalStore",
     "ApprovalSubmission",
-    "InteractiveApprovalTransport",
 ]
