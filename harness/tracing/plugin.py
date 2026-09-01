@@ -194,11 +194,12 @@ class HarnessTracePlugin(BasePlugin):
         known_secrets: Sequence[str] = (),
         default_task_id: str | None = None,
         clock: Callable[[], datetime] | None = None,
+        span_sink: Callable[[TraceSpan], object] | None = None,
     ) -> None:
         super().__init__(name="harness_trace")
         if max_payload_bytes < 64:
             raise ValueError("max_payload_bytes must be at least 64")
-        self.store = TraceStore(database)
+        self.store = TraceStore(database, on_append=span_sink)
         self.content_mode = content_mode
         self.max_payload_bytes = max_payload_bytes
         self.default_task_id = default_task_id

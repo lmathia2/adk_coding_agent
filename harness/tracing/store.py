@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -36,8 +36,14 @@ class TraceSpan(BaseModel):
 class TraceStore:
     """Persist per-task ordered spans without update or delete operations."""
 
-    def __init__(self, database: Path) -> None:
+    def __init__(
+        self,
+        database: Path,
+        *,
+        on_append: Callable[[TraceSpan], object] | None = None,
+    ) -> None:
         self.database = database
+        self.on_append = on_append
         self.database.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(
@@ -101,6 +107,8 @@ class TraceStore:
                     raise ValueError(
                         "trace idempotency key reused for different span content"
                     )
+                if self.on_append is not None:
+                    self.on_append(previous)
                 return previous
 
             row = connection.execute(
@@ -120,6 +128,8 @@ class TraceStore:
                 """,
                 stored.model_dump(mode="python"),
             )
+            if self.on_append is not None:
+                self.on_append(stored)
             return stored
 
     def query(

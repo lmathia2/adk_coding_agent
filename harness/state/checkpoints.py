@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 from harness.models.checkpoint import Checkpoint
 
 
 class CheckpointStore:
-    def __init__(self, database: Path) -> None:
+    def __init__(
+        self,
+        database: Path,
+        *,
+        on_save: Callable[[Checkpoint], object] | None = None,
+    ) -> None:
         self.database = database
+        self.on_save = on_save
         self.database.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.execute(
@@ -47,6 +54,8 @@ class CheckpointStore:
                     checkpoint.model_dump_json(),
                 ),
             )
+        if self.on_save is not None:
+            self.on_save(checkpoint)
 
     def get(self, checkpoint_id: str) -> Checkpoint | None:
         with self._connect() as connection:

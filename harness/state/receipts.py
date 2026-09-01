@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -28,8 +29,14 @@ class ToolReceipt(BaseModel):
 
 
 class ToolReceiptStore:
-    def __init__(self, database: Path) -> None:
+    def __init__(
+        self,
+        database: Path,
+        *,
+        on_save: Callable[[ToolReceipt], object] | None = None,
+    ) -> None:
         self.database = database
+        self.on_save = on_save
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -126,6 +133,8 @@ class ToolReceiptStore:
                 return existing
         receipt = self.get(task_id, tool_call_id)
         assert receipt is not None
+        if self.on_save is not None:
+            self.on_save(receipt)
         return receipt
 
     def finish(
@@ -160,4 +169,6 @@ class ToolReceiptStore:
                 raise KeyError(f"unknown tool receipt: {task_id}/{tool_call_id}")
         receipt = self.get(task_id, tool_call_id)
         assert receipt is not None
+        if self.on_save is not None:
+            self.on_save(receipt)
         return receipt

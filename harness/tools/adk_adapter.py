@@ -26,7 +26,7 @@ from harness.sandbox import (
     SandboxRequest,
     create_command_sandbox,
 )
-from harness.state import ToolReceiptStore
+from harness.state import ToolReceipt, ToolReceiptStore
 from harness.tools.coding import execute_edit, execute_read, execute_write
 from harness.tools.output import bound_output
 from harness.tools.search_command import (
@@ -230,6 +230,7 @@ class _ManagedTools:
         bash_max_timeout_seconds: int = 600,
         search_default_page_size: int = 20,
         search_max_page_size: int = 50,
+        receipt_sink: Callable[[ToolReceipt], object] | None = None,
     ) -> None:
         self.workspace = workspace.resolve()
         self.environment = LocalWorkspaceEnvironment(self.workspace)
@@ -248,7 +249,9 @@ class _ManagedTools:
             state_root,
             known_secrets=resolved_secrets,
         )
-        self.receipts = ToolReceiptStore(state_root / "managed-tools.db")
+        self.receipts = ToolReceiptStore(
+            state_root / "managed-tools.db", on_save=receipt_sink
+        )
         self.approvals = ApprovalStore(state_root / "approvals.db")
         self.redactor = SecretRedactor(known_secrets=resolved_secrets)
         self.artifacts = _ArtifactResolver(
@@ -717,6 +720,7 @@ def create_adk_tools(
     bash_max_timeout_seconds: int = 600,
     search_default_page_size: int = 20,
     search_max_page_size: int = 50,
+    receipt_sink: Callable[[ToolReceipt], object] | None = None,
 ) -> AdkCodingTools:
     managed = _ManagedTools(
         workspace,
@@ -730,6 +734,7 @@ def create_adk_tools(
         bash_max_timeout_seconds=bash_max_timeout_seconds,
         search_default_page_size=search_default_page_size,
         search_max_page_size=search_max_page_size,
+        receipt_sink=receipt_sink,
     )
     return AdkCodingTools(
         read=managed.read,

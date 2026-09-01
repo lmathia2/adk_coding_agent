@@ -62,7 +62,7 @@ def import_tool_receipt(store: DuckDbLedgerStore, receipt: ToolReceipt) -> Ledge
     return store.append(
         task_id=receipt.task_id,
         source="tool_receipt",
-        source_id=receipt.tool_call_id,
+        source_id=f"{receipt.tool_call_id}:{receipt.status}",
         kind=f"tool.{receipt.tool_name}",
         status=receipt.status,
         effect=effect,

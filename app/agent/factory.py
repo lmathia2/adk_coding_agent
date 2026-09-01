@@ -35,6 +35,7 @@ from harness.config import (
 )
 from harness.context import prefix_hash
 from harness.ledger import DuckDbLedgerStore, LedgerBackedEventStore
+from harness.ledger.importers import import_checkpoint, import_tool_receipt, import_trace_span
 from harness.repo import discover_instruction_files
 from harness.safety import ApprovalPolicy, SecretRedactor
 from harness.sandbox import create_configured_command_sandbox
@@ -276,6 +277,7 @@ class PiCodingHarnessFactory:
             allow_git_history_mutation=config.safety.allow_git_history_mutation,
             allow_unknown=config.safety.allow_unknown_commands,
         )
+        canonical_ledger = DuckDbLedgerStore(settings.state_root / "ledger.duckdb")
         tools = create_adk_tools(
             settings.workspace,
             state_root=settings.state_root,
@@ -287,6 +289,7 @@ class PiCodingHarnessFactory:
             bash_max_timeout_seconds=config.tools.bash_max_timeout_seconds,
             search_default_page_size=config.tools.search.default_page_size,
             search_max_page_size=config.tools.search.max_page_size,
+            receipt_sink=lambda receipt: import_tool_receipt(canonical_ledger, receipt),
         )
 
         def build_model(model_name: str):
@@ -314,7 +317,7 @@ class PiCodingHarnessFactory:
         replies = PublicReplies(SecretRedactor(known_secrets=known_secrets))
         event_store = LedgerBackedEventStore(
             JsonlEventStore(settings.state_root / "events"),
-            DuckDbLedgerStore(settings.state_root / "ledger.duckdb"),
+            canonical_ledger,
         )
         worker = build_coding_worker(
             settings,
@@ -327,7 +330,10 @@ class PiCodingHarnessFactory:
             replies=replies,
         )
         steering = SteeringQueue(settings.state_root / "state.db")
-        checkpoints = CheckpointStore(settings.state_root / "state.db")
+        checkpoints = CheckpointStore(
+            settings.state_root / "state.db",
+            on_save=lambda checkpoint: import_checkpoint(canonical_ledger, checkpoint),
+        )
         metrics_plugin = HarnessMetricsPlugin(
             database=settings.state_root / "metrics.db",
             static_prefix_hash=prefix_hash(settings.static_prefix),
@@ -417,6 +423,7 @@ class PiCodingHarnessFactory:
                     max_payload_bytes=config.tracing.max_content_bytes,
                     known_secrets=known_secrets,
                     default_task_id=settings.task_id_override,
+                    span_sink=lambda span: import_trace_span(canonical_ledger, span),
                 )
             except Exception:
                 LOGGER.exception("trace storage initialization failed; tracing is disabled")
