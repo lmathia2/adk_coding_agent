@@ -13,3 +13,9 @@ The locked runtime depends on
 [`fff-search`](https://github.com/dmtrKovalenko/fff) version 0.10.5 for native indexed
 file and content search. FFF is distributed under the MIT License; its wheel/source
 distribution retains the upstream license and copyright notice.
+
+The terminal client depends on
+[`@earendil-works/pi-tui`](https://github.com/earendil-works/pi/tree/main/packages/tui)
+version 0.84.4 for its editor, Markdown renderer, selectors, loader, input handling,
+and terminal-width utilities. The package declares the MIT License and remains an
+independent protocol client; this repository does not copy Pi's agent loop.
