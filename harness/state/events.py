@@ -26,6 +26,16 @@ class EventKind(StrEnum):
     REVIEW_COMPLETED = "review.completed"
     TASK_BLOCKED = "task.blocked"
     TASK_FINISHED = "task.finished"
+    NOTEBOOK_CREATED = "notebook.created"
+    NOTEBOOK_CELL_ADDED = "notebook.cell_added"
+    NOTEBOOK_CELL_EDITED = "notebook.cell_edited"
+    NOTEBOOK_CELL_DELETED = "notebook.cell_deleted"
+    NOTEBOOK_CELL_REORDERED = "notebook.cell_reordered"
+    NOTEBOOK_MATERIALIZED = "notebook.materialized"
+    REPL_CELL_SUBMITTED = "repl.cell_submitted"
+    REPL_CELL_COMPLETED = "repl.cell_completed"
+    REPL_CELL_FAILED = "repl.cell_failed"
+    REPL_CELL_TIMEOUT = "repl.cell_timeout"
 
 
 class LedgerPatch(BaseModel):
