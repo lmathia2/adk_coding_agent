@@ -123,6 +123,7 @@ class ManagedValidationExecutor:
         decision = policy.decide(
             validation.command,
             fingerprint=fingerprint,
+            workspace=self.root,
         )
         if decision.action != ApprovalAction.ALLOW:
             request_id: str | None = None

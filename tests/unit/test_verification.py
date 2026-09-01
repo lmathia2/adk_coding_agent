@@ -38,7 +38,7 @@ def test_validation_does_not_cache_an_expired_approval(tmp_path: Path, monkeypat
     now = datetime.now(UTC)
     sandbox = _RecordingSandbox(tmp_path)
     executor = ManagedValidationExecutor(tmp_path, state_root=tmp_path / "state", task_id="task", sandbox=sandbox)
-    validation = ValidationCommand(category="custom", command="printf approved", source="fixture")
+    validation = ValidationCommand(category="custom", command="command printf approved", source="fixture")
     request = executor.approvals.request(task_id="task", fingerprint=_fingerprint(validation), operation=validation.command,
         risk="unknown", reason="review", expires_at=(now + timedelta(seconds=60)).isoformat())
     executor.approvals.decide(request.request_id, decision="approved", actor="reviewer")

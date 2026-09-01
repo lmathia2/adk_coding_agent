@@ -48,11 +48,16 @@ historical feature checklist or book-rubric score.
   configuration paths and trust; `/skills` and `/skill:NAME` use the runtime's trusted
   directory loader. Ctrl+O shows metadata, not file bodies. Actual selected skill
   names arrive before model execution and are distinct from available resources.
-- Pi terminal command approvals: worker and verification checks wait asynchronously
-  for exact task-scoped decisions. Deny is the dialog default; deferred requests
+- Pi terminal command approvals: deterministic policy auto-executes recognized local
+  read, build, test, and workspace mutations. Dependency, network, Git-history,
+  publish/deploy, and unknown operations require exact task-scoped decisions;
+  destructive commands remain denied. Worker and verification checks wait asynchronously
+  for those decisions. Deny is the dialog default; deferred requests
   remain visible through `/approvals`. Cancellation, expiration, reconnect and
   uncertain decision retries are tested against the real server/ADK/tool stack.
-  The Pi terminal is the installed client; the superseded Go client was removed.
+  Approval dialogs accept explicit A/Y approve and D/N deny shortcuts while keeping
+  denial as the Enter default. The Pi terminal is the installed client; the superseded
+  Go client was removed.
 - Plain-language turns support a distinct `answered` outcome without inventing a
   coding task. Direct answers permit no managed shell/write/edit action and no
   explicit verification obligation; coding results still route through verification.

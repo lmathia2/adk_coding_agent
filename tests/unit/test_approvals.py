@@ -17,14 +17,14 @@ def test_approval_store_is_idempotent_and_decisions_are_final(tmp_path: Path) ->
     first = store.request(
         task_id="task",
         fingerprint="fingerprint",
-        operation="printf approved",
+        operation="command printf approved",
         risk="unknown",
         reason="review required",
     )
     duplicate = store.request(
         task_id="task",
         fingerprint="fingerprint",
-        operation="printf approved",
+        operation="command printf approved",
         risk="unknown",
         reason="review required",
     )
@@ -63,7 +63,7 @@ def test_managed_command_executes_after_exact_approval(
     monkeypatch.setenv("ADK_CODING_TASK_ID", "task")
     tools = create_adk_tools(tmp_path)
 
-    blocked = tools.bash("printf approved")
+    blocked = tools.bash("command printf approved")
     assert blocked["status"] == "blocked"
     request_id = blocked["approval_request_id"]
     assert request_id
@@ -73,7 +73,7 @@ def test_managed_command_executes_after_exact_approval(
         decision="approved",
         actor="test",
     )
-    result = tools.bash("printf approved")
+    result = tools.bash("command printf approved")
     assert result["status"] == "ok"
     assert "approved" in result["model_text"]
 
@@ -84,7 +84,7 @@ def test_managed_command_honors_denied_approval(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setenv("ADK_CODING_TASK_ID", "task")
     tools = create_adk_tools(tmp_path)
 
-    blocked = tools.bash("printf denied")
+    blocked = tools.bash("command printf denied")
     request_id = blocked["approval_request_id"]
     ApprovalStore(state / "approvals.db").decide(
         request_id,
@@ -92,7 +92,7 @@ def test_managed_command_honors_denied_approval(tmp_path: Path, monkeypatch) -> 
         actor="reviewer",
     )
 
-    denied = tools.bash("printf denied")
+    denied = tools.bash("command printf denied")
 
     assert denied["status"] == "blocked"
     assert denied["approval_required"] is False
@@ -103,11 +103,11 @@ def test_managed_command_honors_denied_approval(tmp_path: Path, monkeypatch) -> 
 def test_approved_command_does_not_leak_to_another_task_or_shared_policy(tmp_path: Path) -> None:
     policy = ApprovalPolicy()
     tools = create_adk_tools(tmp_path, state_root=tmp_path / "state", policy=policy, search_mode="disabled")
-    blocked = tools.bash("printf approved", task_scope="first")
+    blocked = tools.bash("command printf approved", task_scope="first")
     store = ApprovalStore(tmp_path / "state/approvals.db")
     store.decide(blocked["approval_request_id"], decision="approved", actor="reviewer")
-    assert tools.bash("printf approved", task_scope="first")["status"] == "ok"
-    other = tools.bash("printf approved", task_scope="second")
+    assert tools.bash("command printf approved", task_scope="first")["status"] == "ok"
+    other = tools.bash("command printf approved", task_scope="second")
     assert other["status"] == "blocked" and other["approval_required"]
     assert other["approval_request_id"] != blocked["approval_request_id"]
     assert policy.approved_fingerprints == set()
@@ -116,7 +116,7 @@ def test_approved_command_does_not_leak_to_another_task_or_shared_policy(tmp_pat
 def test_previously_used_approval_stops_authorizing_after_expiry(tmp_path: Path, monkeypatch) -> None:
     now = datetime.now(UTC)
     store = ApprovalStore(tmp_path / "state/approvals.db")
-    command = "printf approved"
+    command = "command printf approved"
     request = store.request(task_id="task", fingerprint=_canonical_hash("bash", {"command": command}),
         operation=command, risk="unknown", reason="review", expires_at=(now + timedelta(seconds=60)).isoformat())
     store.decide(request.request_id, decision="approved", actor="reviewer")

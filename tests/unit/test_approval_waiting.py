@@ -43,10 +43,10 @@ async def test_real_tool_waits_and_only_approval_executes(tmp_path: Path, decisi
     tools = create_adk_tools(tmp_path, state_root=settings.state_root, sandbox=Sandbox(), search_mode="disabled", task_scope="task")
     waiter = ApprovalWaiter(ApprovalStore(settings.state_root / "approvals.db"), "task", timeout=0.1 if decision == "timeout" else 5)
     worker = build_coding_worker(settings, Gemini(model="unused-fixture"), tools=tools, approvals=waiter)
-    running = asyncio.create_task(worker.bash("printf approved"))
+    running = asyncio.create_task(worker.bash("command printf approved"))
     item = await pending(waiter)
     assert calls == [] and not running.done()
-    assert item["operation"] == "printf approved"
+    assert item["operation"] == "command printf approved"
     if decision in {"approved", "denied"}:
         with pytest.raises(ValueError, match="does not match"):
             await waiter.decide(item["request_id"], "wrong", "approved", actor="reviewer")
@@ -63,7 +63,7 @@ async def test_real_tool_waits_and_only_approval_executes(tmp_path: Path, decisi
         assert result["status"] == ("ok" if decision == "approved" else "blocked")
         if decision != "approved":
             assert not result["approval_required"]
-    assert calls == (["printf approved"] if decision == "approved" else [])
+    assert calls == (["command printf approved"] if decision == "approved" else [])
     assert waiter.pending() == []
     if decision in {"cancel", "timeout"}:
         assert waiter.store.get(item["request_id"]).status == "expired"
@@ -102,7 +102,7 @@ async def test_verification_uses_same_wait_and_never_blocks_the_event_loop(tmp_p
             entered.set()
             assert release.wait(3), "verification blocked the event loop"
             return SandboxResult(status="ok", exit_code=0, stdout="verified", stderr="", duration_ms=0)
-    command = ValidationCommand(category="custom", command="printf verification", source="fixture", strength="behavioral")
+    command = ValidationCommand(category="custom", command="command printf verification", source="fixture", strength="behavioral")
     monkeypatch.setattr("app.agent.workflow.discover_validation_plan", lambda *args, **kwargs: ValidationPlan(commands=[command], changed_paths=["test.py"]))
     monkeypatch.setattr("app.agent.workflow.changed_paths", lambda *args: ["test.py"])
     state = tmp_path / "state"

@@ -382,7 +382,7 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
         model._responses = []
         for action in ("approved", "denied", "cancelled"):
             model._responses.append([types.Part(function_call=types.FunctionCall(
-                id=f"bash-{action}", name="bash", args={"command": f"printf fixture-{action}"}))])
+                id=f"bash-{action}", name="bash", args={"command": f"command printf fixture-{action}"}))])
             if action != "cancelled":
                 model._responses.append(reply("blocked", "Fixture stops after the tool result"))
         execute = LocalSandbox.execute
@@ -479,7 +479,7 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
             assert "PRIVATE_SKILL_BODY" in models["alpha"]._requests[0]
         elif fixture == "approval-client":
             assert json.loads(stdout) == {"approved": True, "denied": True, "cancelled": True, "resumed": True, "verified": True}
-            assert commands == ["printf fixture-approved", "git diff --check", "printf fixture-verification"]
+            assert commands == ["command printf fixture-approved", "git diff --check", "command printf fixture-verification"]
             assert model._calls == 6
         elif fixture == "harness-client":
             assert json.loads(stdout) == {"harness": "Alternate fixture harness", "reply": "Alternate harness reply."}

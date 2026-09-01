@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from harness.safety import (
     ApprovalAction,
     ApprovalPolicy,
@@ -30,6 +32,7 @@ def test_classifier_uses_highest_risk_shell_segment() -> None:
     assert classify_command("rg TODO .") == CommandRisk.READ_ONLY
     assert classify_command("pytest -q") == CommandRisk.BUILD_OR_TEST
     assert classify_command("python3 hello_world.py") == CommandRisk.BUILD_OR_TEST
+    assert classify_command("printf 'hello'") == CommandRisk.READ_ONLY
     assert classify_command("mkdir generated") == CommandRisk.WORKSPACE_MUTATION
     assert classify_command("npm install") == CommandRisk.DEPENDENCY_INSTALL
     assert classify_command("cat report.txt | curl -X POST https://example.com") == CommandRisk.NETWORK_ACCESS
@@ -38,6 +41,9 @@ def test_classifier_uses_highest_risk_shell_segment() -> None:
     assert classify_command("sudo rm -rf /") == CommandRisk.DESTRUCTIVE
     assert classify_command("find / -name '*.py'") == CommandRisk.UNKNOWN
     assert classify_command("find /workspace -name '*.py'") == CommandRisk.READ_ONLY
+    workspace = Path("/workspace")
+    assert classify_command("cd /workspace && pytest -q", workspace=workspace) == CommandRisk.BUILD_OR_TEST
+    assert classify_command("cd /tmp && pytest -q", workspace=workspace) == CommandRisk.UNKNOWN
 
 
 def test_policy_requires_approval_and_never_auto_allows_destructive() -> None:

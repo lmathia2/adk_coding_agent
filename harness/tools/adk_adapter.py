@@ -551,7 +551,11 @@ class _ManagedTools:
                 "approval_request_id": persisted.request_id,
                 "risk": persisted.risk,
             }
-        decision = policy.decide(command, fingerprint=fingerprint)
+        decision = policy.decide(
+            command,
+            fingerprint=fingerprint,
+            workspace=self.workspace,
+        )
         if decision.action != ApprovalAction.ALLOW:
             request_id: str | None = None
             if decision.action == ApprovalAction.REQUIRE_APPROVAL:

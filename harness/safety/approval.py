@@ -10,6 +10,7 @@ import re
 import shlex
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 
 
 class CommandRisk(StrEnum):
@@ -49,6 +50,7 @@ _SAFE_READ_COMMANDS = {
     "head",
     "ls",
     "pwd",
+    "printf",
     "rg",
     "sed",
     "sort",
@@ -56,6 +58,9 @@ _SAFE_READ_COMMANDS = {
     "tail",
     "wc",
     "which",
+    "test",
+    "true",
+    "false",
 }
 _BUILD_COMMANDS = {
     "cargo",
@@ -193,7 +198,22 @@ def _package_risk(tokens: list[str]) -> CommandRisk:
     return CommandRisk.BUILD_OR_TEST
 
 
-def classify_command(command: str) -> CommandRisk:
+def _cd_risk(tokens: list[str], workspace: Path | None) -> CommandRisk:
+    """Allow directory changes only when their literal target stays in the workspace."""
+
+    if workspace is None or len(tokens) != 2 or tokens[1].startswith("-"):
+        return CommandRisk.UNKNOWN
+    target = Path(tokens[1])
+    if not target.is_absolute():
+        target = workspace / target
+    try:
+        target.resolve().relative_to(workspace.resolve())
+    except (OSError, ValueError):
+        return CommandRisk.UNKNOWN
+    return CommandRisk.READ_ONLY
+
+
+def classify_command(command: str, *, workspace: Path | None = None) -> CommandRisk:
     """Return the highest-risk segment in a shell command."""
 
     normalized = command.strip()
@@ -219,6 +239,8 @@ def classify_command(command: str) -> CommandRisk:
             executable = tokens[0].rsplit("/", 1)[-1]
             if executable == "sudo":
                 risks.append(CommandRisk.DESTRUCTIVE)
+            elif executable == "cd":
+                risks.append(_cd_risk(tokens, workspace))
             elif executable == "git":
                 risks.append(_git_risk(tokens))
             elif executable in {"pip", "pip3", "uv", "npm", "npx", "pnpm", "yarn", "cargo", "go"}:
@@ -266,8 +288,14 @@ class ApprovalPolicy:
     allow_unknown: bool = False
     approved_fingerprints: set[str] = field(default_factory=set)
 
-    def decide(self, command: str, *, fingerprint: str | None = None) -> ApprovalDecision:
-        risk = classify_command(command)
+    def decide(
+        self,
+        command: str,
+        *,
+        fingerprint: str | None = None,
+        workspace: Path | None = None,
+    ) -> ApprovalDecision:
+        risk = classify_command(command, workspace=workspace)
         if fingerprint and fingerprint in self.approved_fingerprints:
             return ApprovalDecision(
                 ApprovalAction.ALLOW,

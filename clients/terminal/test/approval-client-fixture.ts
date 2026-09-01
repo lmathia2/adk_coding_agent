@@ -37,7 +37,7 @@ try {
   assert.equal(session.state.runId, run);
   assert.match(screen(), /printf fixture-approved/);
   for (const width of [20, 40, 80, 120]) assert.ok(view.root.render(width).every(line => visibleWidth(line) <= width));
-  input("\x1b[B"); input("\r");
+  input("a");
   await until(() => session.state.view.status === "blocked");
   assert.equal(view.hasDialog, false);
   assert.equal(view.editor.getText(), "preserved draft");
@@ -52,10 +52,10 @@ try {
   input("\x1b"); assert.equal(view.hasDialog, false); // defer, then interrupt
   input("\x1b"); await until(() => session.state.view.status === "cancelled");
   assert.equal(view.hasDialog, false);
-  session.submit(JSON.stringify({goal: "Approval fixture: verify the final result", verification_requirements: ["printf fixture-verification"]}));
+  session.submit(JSON.stringify({goal: "Approval fixture: verify the final result", verification_requirements: ["command printf fixture-verification"]}));
   await until(() => screen().includes("Command approval"));
   assert.match(screen(), /printf fixture-verification/);
-  input("\x1b[B"); input("\r");
+  input("a");
   await until(() => session.state.view.status === "complete");
   assert.match(session.state.view.notice, /Verification passed/);
   process.stdout.write(JSON.stringify({approved: true, denied: true, cancelled: true, resumed: true, verified: true}));

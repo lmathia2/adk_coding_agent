@@ -33,6 +33,15 @@ test("closing an in-flight approval discloses uncertainty and late replies never
   assert.match(notices[1], /not confirmed/);
 });
 
+test("approval has unambiguous keyboard shortcuts", async () => {
+  const calls: WireObject[] = [];
+  const dialog = new ApprovalDialog({async approvalRequest(_, args) { calls.push(args); return {}; }},
+    "run", request, () => {}, () => {}, () => {});
+  assert.match(stripTerminalSequences(dialog.render(80).join("\n")), /A\/Y approve · D\/N deny/);
+  dialog.handleInput("a"); await delay(5);
+  assert.equal(calls[0].decision, "approved");
+});
+
 test("approval presenter preserves drafts, defers without reopening, and closes stale requests", () => {
   let input!: (text: string) => unknown;
   const tui = {terminal: {rows: 30, columns: 100}, addChild() {}, setFocus() {}, requestRender() {},
