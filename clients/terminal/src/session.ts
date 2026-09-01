@@ -7,7 +7,7 @@ const bounded = (text: string): string => Buffer.byteLength(text) <= 65_536 ? te
 
 /** Deterministic view reducer. Audit/state events are deliberately not chat entries. */
 export class SessionState {
-  readonly view: SessionView = {entries: [], status: "connecting", workspace: "server workspace", model: "waiting for server", notice: ""};
+  readonly view: SessionView = {entries: [], status: "connecting", workspace: "server workspace", model: "waiting for server", harness: "waiting for server", notice: ""};
   threadId: string = randomUUID();
   runId = "";
   cursor = 0;

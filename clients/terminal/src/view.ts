@@ -8,6 +8,15 @@ import { resourceText } from "./resources.js";
 
 export interface Dialog extends Component, Focusable { handleInput(data: string): void; dispose?(): void; }
 
+export class SessionHeader implements Component {
+  constructor(private readonly state: SessionView) {}
+  invalidate(): void {}
+  render(width: number): string[] {
+    const identity = safeText(this.state.harness || "waiting for server").replace(/[\n\t]/g, " ");
+    return [truncateToWidth(theme.accent("adk-agent") + theme.dim(` · ${identity}`), width, "…")];
+  }
+}
+
 /** Keep identity visible without wrapping paths and model names into the editor. */
 export class SessionFooter implements Component {
   constructor(private readonly state: SessionView) {}
@@ -40,7 +49,7 @@ export class TerminalView {
   constructor(readonly tui: TUI, readonly state: SessionView, private readonly actions: SessionActions) {
     this.editor = new Editor(tui, editorTheme, { paddingX: 1 });
     this.transcript = new Transcript(state);
-    this.root.addChild(new Text(theme.accent("adk-agent") + theme.dim(" · Pi terminal / ADK harness"), 1, 0));
+    this.root.addChild(new SessionHeader(state));
     this.root.addChild(new Text(theme.dim("esc interrupt · ctrl+c clear · ctrl+d exit · / commands · ctrl+o more"), 1, 1));
     this.root.addChild(this.resources);
     this.root.addChild(this.transcript);

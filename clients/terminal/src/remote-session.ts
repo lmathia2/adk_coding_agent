@@ -101,9 +101,11 @@ export class RemoteSession {
         clearTimeout(this.helloTimer);
         this.negotiated = true; this.attempts = 0;
         this.state.view.connected = true;
+        const harness = object(message.harness);
+        this.state.view.harness = string(harness.display_name);
         this.state.view.notice = "";
         if (!this.state.active) this.state.view.status = "ready";
-        const capabilities = object(message.harness).capabilities;
+        const capabilities = harness.capabilities;
         this.state.capabilities = new Set(Array.isArray(capabilities) ? capabilities.filter((item): item is string => typeof item === "string") : []);
         if (!this.state.active) this.state.model(message.coding_model);
         this.refreshModel();

@@ -27,6 +27,7 @@ export interface SessionView {
   status: string;
   workspace: string;
   model: string;
+  harness?: string;
   notice: string;
   connected?: boolean;
   resources?: ResourceView;

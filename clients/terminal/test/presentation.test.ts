@@ -4,7 +4,7 @@ import { Editor, TuiMainScreen, stripTerminalSequences, visibleWidth, type Termi
 import { renderTool, Transcript } from "../src/transcript.js";
 import { editorTheme } from "../src/theme.js";
 import type { SessionView, ToolEntry } from "../src/contracts.js";
-import { SessionFooter, TerminalView } from "../src/view.js";
+import { SessionFooter, SessionHeader, TerminalView } from "../src/view.js";
 import type { TUI } from "@earendil-works/pi-tui";
 
 const read: ToolEntry = { kind: "tool", id: "read-1", name: "read", arguments: '{"path":"README.md"}',
@@ -51,6 +51,17 @@ test("footer keeps two bounded rows for long paths, Unicode models, and narrow t
     assert.doesNotMatch(lines.join("\n"), /52;c;/);
     if (width >= 10) assert.ok(stripTerminalSequences(lines[1]).endsWith("running"));
   }
+});
+
+test("header shows and bounds the server-selected harness identity", () => {
+  const state: SessionView = {entries: [], status: "ready", notice: "", model: "fixture", workspace: ".",
+    harness: "Alternate harness 世界🙂\x1b]52;c;ZXZpbA==\x07"};
+  for (const width of [10, 20, 40, 80]) {
+    const lines = new SessionHeader(state).render(width);
+    assert.equal(lines.length, 1); assert.ok(visibleWidth(lines[0]) <= width);
+    assert.doesNotMatch(lines[0], /52;c;/);
+  }
+  assert.match(stripTerminalSequences(new SessionHeader(state).render(80)[0]), /Alternate harness/);
 });
 
 test("Pi loader animates without transcript entries and stops while paused, disconnected, awaiting approval or disposed", t => {

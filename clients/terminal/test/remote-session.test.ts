@@ -41,6 +41,7 @@ test("one socket supports two turns with a stable conversation and retained tran
   const session = new RemoteSession({url: `ws://127.0.0.1:${address.port}/v1/agent`, token});
   try {
     session.connect(); await until(() => session.state.view.status === "ready");
+    assert.equal(session.state.view.harness, "Other harness");
     session.submit("hello"); await until(() => session.state.view.status === "answered");
     session.submit("follow-up"); await until(() => threads.length === 2 && session.state.view.status === "answered");
     assert.equal(connections, 1); assert.equal(threads[0], threads[1]);

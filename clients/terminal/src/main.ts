@@ -99,7 +99,7 @@ try {
           view.showDialog(close => new HistoryDialog(session, session.state.threadId, () => view.refresh(), close)); return;
         }
         if (command === "/session") {
-          view.showDialog(close => new SessionInfo(`Conversation: ${session.state.threadId}\nRun: ${session.state.runId || "none yet"}\nModel: ${session.state.view.model}\nStatus: ${session.state.view.status}\nQueued follow-ups: ${session.state.view.pending?.length ?? 0}\nHistory and queues are saved on the server. /resume reopens history; /queue continue starts pending work.`, close)); return;
+          view.showDialog(close => new SessionInfo(`Harness: ${session.state.view.harness || "unknown"}\nConversation: ${session.state.threadId}\nRun: ${session.state.runId || "none yet"}\nModel: ${session.state.view.model}\nStatus: ${session.state.view.status}\nQueued follow-ups: ${session.state.view.pending?.length ?? 0}\nHistory and queues are saved on the server. /resume reopens history; /queue continue starts pending work.`, close)); return;
         }
         if (command === "/model") {
           view.showDialog(close => new ModelPicker(session, () => view.refresh(), close, text => {
