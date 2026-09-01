@@ -50,6 +50,10 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert composition.server.first_event_retries == 1
     assert config.context.work_packet_tokens == 20_000
     assert config.context.max_task_input_tokens == 200_000
+    assert config.notebook_ptc.enabled is False
+    assert config.notebook_ptc.default_timeout_seconds == 120
+    assert config.notebook_ptc.max_timeout_seconds == 600
+    assert config.notebook_ptc.max_output_bytes == 16_000
     assert "tui" not in type(composition.server).model_fields
     assert config.models["coding"].provider == "google_adk"
 
@@ -208,6 +212,25 @@ def test_search_default_page_size_cannot_exceed_maximum() -> None:
 
     with pytest.raises(ValidationError, match="default search page size"):
         parse_harness_composition(payload)
+
+
+def test_notebook_ptc_default_timeout_cannot_exceed_maximum() -> None:
+    payload = _composition_payload()
+    payload["harness"]["config"]["notebook_ptc"] = {
+        "default_timeout_seconds": 61,
+        "max_timeout_seconds": 60,
+    }
+
+    with pytest.raises(ValidationError, match="default notebook PTC timeout"):
+        parse_harness_composition(payload)
+
+
+def test_notebook_ptc_configuration_changes_behavior_hash() -> None:
+    payload = _composition_payload()
+    disabled = parse_harness_composition(payload)
+    payload["harness"]["config"]["notebook_ptc"] = {"enabled": True}
+
+    assert parse_harness_composition(payload).behavior_sha256 != disabled.behavior_sha256
 
 
 def test_removed_builtin_prompt_selector_is_rejected() -> None:

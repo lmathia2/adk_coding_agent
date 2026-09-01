@@ -53,6 +53,12 @@ harness:
         default_page_size: 20
         max_page_size: 50
 
+    notebook_ptc:
+      enabled: false
+      default_timeout_seconds: 120
+      max_timeout_seconds: 600
+      max_output_bytes: 16000
+
     context:
       compact_at_tokens: 80000
       work_packet_tokens: 20000

@@ -138,6 +138,19 @@ class ToolSurfaceConfig(FrozenModel):
         return self
 
 
+class NotebookPtcConfig(FrozenModel):
+    enabled: bool = False
+    default_timeout_seconds: int = Field(default=120, ge=1, le=3_600)
+    max_timeout_seconds: int = Field(default=600, ge=1, le=3_600)
+    max_output_bytes: int = Field(default=16_000, ge=1_024, le=1_000_000)
+
+    @model_validator(mode="after")
+    def validate_timeouts(self) -> NotebookPtcConfig:
+        if self.default_timeout_seconds > self.max_timeout_seconds:
+            raise ValueError("default notebook PTC timeout cannot exceed its maximum")
+        return self
+
+
 class ContextConfig(FrozenModel):
     compact_at_tokens: int = Field(default=80_000, ge=4_096, le=2_000_000)
     work_packet_tokens: int = Field(default=20_000, ge=2_000, le=256_000)
@@ -246,6 +259,7 @@ class PiCodingConfig(FrozenModel):
     agents: dict[str, AgentConfig]
     workflow: WorkflowConfig
     tools: ToolSurfaceConfig = ToolSurfaceConfig()
+    notebook_ptc: NotebookPtcConfig = NotebookPtcConfig()
     context: ContextConfig = ContextConfig()
     safety: SafetyConfig = SafetyConfig()
     sandbox: SandboxConfig = LocalSandboxConfig()
@@ -384,6 +398,7 @@ __all__ = [
     "HarnessComposition",
     "HarnessSelectionConfig",
     "ModelConfig",
+    "NotebookPtcConfig",
     "PiCodingConfig",
     "RuntimeBindings",
     "SandboxConfig",
