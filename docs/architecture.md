@@ -98,6 +98,15 @@ still dual-written and idempotently read-repaired for pre-migration tasks. Other
 stores remain operational projections during measured migration. Artifacts use local
 files or memory.
 
+When installed through the optional `memory-search` extra, LanceDB provides immutable
+hybrid-search projections over ledger events. Projection identity includes the exact
+event rows, vectors, and embedding version; results return canonical event IDs for view
+provenance. DuckDB remains the sole authority and all Lance data is disposable. LanceDB
+and its embedding implementation are imported only when this projection is configured,
+so the default harness pays no startup or dependency cost. Projections live beneath a
+SHA-256 task directory and explicit task erasure removes that directory with the
+canonical evidence.
+
 `ledger-backfill` idempotently imports recognized legacy stores and reports source-count
 equality. Explicit task watermarks can be sealed atomically to deterministic Parquet;
 DuckLake is not installed or claimed because current scale measurements do not justify

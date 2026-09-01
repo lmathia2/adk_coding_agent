@@ -34,7 +34,12 @@ historical feature checklist or book-rubric score.
   open/unknown-effect execution, time, query-relevant task memory, and dream/failure
   views. P0-P3 prompt manifests account for source view IDs and stable hashes. A
   restricted relational catalog enforces candidate -> shadow -> active -> retired
-  promotion; only active programs may serve retrieval.
+  promotion; only active programs may serve retrieval. The optional `memory-search`
+  extra adds immutable, content-addressed LanceDB projections for combined vector and
+  keyword retrieval. They contain canonical event IDs, are rebuilt from DuckDB ledger
+  evidence, and can serve `task.memory` without becoming a second authority or adding
+  Lance imports to the default startup path. The embedding implementation remains an
+  explicit injected, versioned dependency.
 - Registered MCP capabilities can be invoked from Python through the same bounded,
   traced broker. Unknown capabilities fail closed without expanding the ADK tool list.
 - Trusted directory skills and redacted interaction traces.
@@ -122,6 +127,11 @@ this host (250 events) were 11.35 ms mean append and 6.05 ms p95 50-event tail r
 that scale does not justify a DuckLake tier.
 DuckDB can nevertheless seal an explicit task watermark to an atomic Zstd Parquet
 segment, with byte-reproducible exports and hot-versus-sealed row equality tests.
+An isolated 10,000-event LanceDB spike measured a 1.36 MB projection and warm mean
+vector/FTS/hybrid query times of 2.06/1.16/2.90 ms on this host. The optional Python
+environment occupied about 303 MB and repeat process imports took about 0.52 seconds,
+so LanceDB remains lazy and optional rather than part of the base runtime.
 An explicit destructive erasure API removes an exact task from the ledger and recognized
 operational stores, its JSONL/notebook, uniquely referenced local artifacts, and sealed
-segments carrying a task manifest. It is not invoked automatically.
+segments carrying a task manifest, including that task's derived Lance projections. It
+is not invoked automatically.

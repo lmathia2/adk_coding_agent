@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -105,6 +106,7 @@ def erase_task_state(
     candidates = [
         root / "events" / f"{digest}.jsonl",
         root / "notebooks" / f"{digest[:32]}.ipynb",
+        root / "memory-search" / digest,
     ]
     candidates.extend(
         path
@@ -120,9 +122,15 @@ def erase_task_state(
             candidates.extend((manifest, manifest.with_suffix("").with_suffix("")))
     removed: list[str] = []
     for candidate in candidates:
-        if candidate.is_file() and candidate.resolve().is_relative_to(root):
+        if not candidate.resolve().is_relative_to(root):
+            continue
+        if candidate.is_file():
             candidate.unlink()
-            removed.append(candidate.relative_to(root).as_posix())
+        elif candidate.is_dir():
+            shutil.rmtree(candidate)
+        else:
+            continue
+        removed.append(candidate.relative_to(root).as_posix())
     return ErasureResult(
         task_id_sha256=digest,
         ledger_rows=ledger_rows,

@@ -8,6 +8,7 @@ from typing import Any
 from harness.ledger import DuckDbLedgerStore, LedgerEvent
 from harness.ledger.models import canonical_json
 
+from .lance import LanceMemorySearch
 from .models import ViewRequest, ViewResult
 
 Program = Callable[[list[LedgerEvent], ViewRequest], dict[str, Any]]
@@ -113,21 +114,51 @@ PROGRAMS: dict[tuple[str, int], Program] = {
 
 
 class MemoryProgramRuntime:
-    def __init__(self, ledger: DuckDbLedgerStore) -> None:
+    def __init__(
+        self, ledger: DuckDbLedgerStore, *, semantic_search: LanceMemorySearch | None = None
+    ) -> None:
         self.ledger = ledger
+        self.semantic_search = semantic_search
 
     def compute(self, request: ViewRequest) -> ViewResult:
         program = PROGRAMS.get((request.program, request.version))
         if program is None:
             raise KeyError(f"unknown memory program: {request.program}@{request.version}")
         events = self.ledger.read(request.task_id, as_of=request.as_of)
-        data = program(events, request)
+        evidence_events = events
+        retrieval_version: str | None = None
+        if request.program == "task.memory" and request.query and self.semantic_search is not None:
+            retrieval_version = f"lancedb:{self.semantic_search.embedding_version}"
+            event_by_id = {event.event_id: event for event in events}
+            evidence_events = [
+                event_by_id[event_id]
+                for event_id in self.semantic_search.search(events, request.query)
+                if event_id in event_by_id
+            ]
+            data = {
+                "query": request.query,
+                "retrieval_version": retrieval_version,
+                "relevant": [
+                    {
+                        "seq": event.sequence,
+                        "kind": event.kind,
+                        "status": event.status,
+                        "payload": event.payload,
+                    }
+                    for event in evidence_events
+                ],
+            }
+        else:
+            data = program(events, request)
         encoded = canonical_json(data).encode()
         truncated = len(encoded) > request.max_bytes
         if truncated:
             data = {"omitted_bytes": len(encoded) - request.max_bytes, "summary": _progress(events, request)}
+            if retrieval_version is not None:
+                data["retrieval_version"] = retrieval_version
+            evidence_events = events
         watermark = max((event.sequence for event in events), default=0)
-        evidence = tuple(event.event_id for event in events)
+        evidence = tuple(event.event_id for event in evidence_events)
         view_key = canonical_json(
             {
                 "task": request.task_id,
@@ -135,6 +166,7 @@ class MemoryProgramRuntime:
                 "version": request.version,
                 "watermark": watermark,
                 "query": request.query,
+                "retrieval_version": retrieval_version,
             }
         )
         return ViewResult(

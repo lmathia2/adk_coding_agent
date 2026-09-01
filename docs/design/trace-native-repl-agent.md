@@ -12,7 +12,9 @@ state restoration. The branch also contains a DuckDB canonical-ledger shadow wri
 for task events, receipts, checkpoints, approvals, steering, metrics, public/run
 events, redacted ADK session lifecycle, and traces; deterministic seeded views and
 receipt-bearing prompt manifests; a gated relational-program lifecycle; and registered
-MCP broker routing. These are implemented foundations, not a completed cutover. The
+MCP broker routing. An optional immutable LanceDB projection now supplies combined
+vector and keyword retrieval while preserving canonical DuckDB event provenance.
+These are implemented foundations, not a completed cutover. The
 remaining operational stores, DuckLake tier, live prompt-reader cutover, and model
 ablation remain gated later work. The supported execution boundary is a trusted local
 workspace. Production or adversarial isolation is an optional deployment profile, not
@@ -1403,6 +1405,24 @@ read-only view connections use explicit watermarks.
 This is a hypothesis, not a permanent mandate. Append p99, crash recovery, checkpoint
 latency, and interactive tail-query latency are delivery gates. SQLite remains the
 fallback hot ledger if DuckDB fails those gates.
+
+#### 18.2.1 Optional LanceDB search projection
+
+LanceDB is a physical retrieval accelerator, not another historical authority. The
+optional `memory-search` extra materializes immutable, content-addressed snapshots from
+canonical event rows and caller-supplied vectors. Snapshot identity includes the event
+content, vector values, and embedding version. Hybrid results resolve to canonical
+event IDs, and deletion or corruption of a Lance directory loses no evidence.
+Each projection is nested under the SHA-256 task identity so explicit task erasure can
+remove all derived search bytes without scanning or interpreting Lance metadata.
+
+The dependency remains lazy because its installed footprint is material even though
+the data path is inexpensive. A local 10,000-event spike produced a 1.36 MB projection;
+warm mean vector, FTS, and hybrid queries took 2.06, 1.16, and 2.90 ms. The isolated
+environment occupied about 303 MB and repeat process imports took about 0.52 seconds.
+No embedding provider is selected by the harness: deployments inject a deterministic
+vectorizer and version it explicitly. Live prompt use remains subject to the same
+quality, cache, latency, and correctness ablation as every other memory view.
 
 ### 18.3 Why DuckLake is not the hot ledger
 

@@ -21,6 +21,9 @@ dependencies = [
   "uvicorn>=0.52,<1.0",
 ]
 
+[project.optional-dependencies]
+memory-search = ["lancedb>=0.38,<1.0"]
+
 [project.scripts]
 adk-coding-agent = "harness.cli:main"
 

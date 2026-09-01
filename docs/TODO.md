@@ -13,6 +13,7 @@
 - [x] Add idempotent historical backfill for recognized JSONL, SQLite, and ADK session stores with deterministic hashes and source-count equality auditing.
 - [x] Prove byte-level semantic equality for the live task-event reader, then serve task state, recent context, and compaction from canonical ledger events with idempotent compatibility-store read repair.
 - [x] Implement deterministic history, progress, open-execution, time, task-memory, and dream-mode views plus receipt-bearing P0-P3 prompt manifests.
+- [x] Add an optional immutable LanceDB hybrid-search projection with canonical event provenance; keep DuckDB as the sole ledger authority.
 - [ ] Cut ledger views into live prompt/compaction readers after byte, cache, and correctness ablations pass.
 - [x] Add candidate, shadow, active, retired lifecycle enforcement for restricted relational memory programs.
 - [x] Add atomic deterministic Parquet sealing with hot-versus-sealed watermark equality; defer DuckLake until scale measurements justify it.
