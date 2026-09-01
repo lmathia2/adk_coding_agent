@@ -142,6 +142,37 @@ async def test_notebook_native_ptc_is_one_tool_and_persists_code_state_and_effec
 
 
 @pytest.mark.asyncio
+async def test_python_routes_registered_mcp_capability_and_blocks_unknown(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+    composition = _enabled_composition()
+    config = cast(PiCodingConfig, composition.harness.config)
+    settings = settings_from_composition(
+        composition,
+        RuntimeBindings(workspace=workspace, state_root=state_root, task_id="task-mcp"),
+    )
+    worker = build_coding_worker(
+        settings,
+        cast(BaseLlm, "test-model"),
+        tools=create_adk_tools(workspace, state_root=state_root, task_scope="task-mcp"),
+        tool_config=config.tools,
+        ptc_config=config.notebook_ptc,
+        capabilities={"issues.search": lambda arguments: {"status": "ok", "items": [arguments["q"]]}},
+    )
+    assert worker.python is not None
+    result = await worker.python("agent.mcp.call('issues.search', {'q': 'timeout'})")
+    assert result["status"] == "ok"
+    assert "timeout" in result["model_text"]
+    blocked = await worker.python("agent.mcp.call('missing.tool', {})")
+    assert blocked["status"] == "ok"
+    assert "blocked" in blocked["model_text"]
+    assert worker.close is not None
+    worker.close()
+
+@pytest.mark.asyncio
 async def test_failed_cell_is_materialized_without_destroying_warm_state(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

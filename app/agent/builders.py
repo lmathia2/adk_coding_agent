@@ -52,6 +52,7 @@ def build_coding_worker(
     event_store: EventStore | None = None,
     approvals: ApprovalWaiter | None = None,
     replies: PublicReplies | None = None,
+    capabilities: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] | None = None,
 ) -> CodingWorkerBundle:
     active_tools = tools or create_adk_tools(
         settings.workspace,
@@ -62,6 +63,7 @@ def build_coding_worker(
     active_event_store = event_store or JsonlEventStore(settings.state_root / "events")
     read_default_lines = active_tool_config.read_default_lines
     bash_default_timeout = active_tool_config.bash_default_timeout_seconds
+    capability_handlers = capabilities or {}
 
     def _invoke_tool(operation: str, call: Callable[[], dict[str, Any]]) -> dict[str, Any]:
         """Keep expected and unexpected tool failures inside the tool protocol."""
@@ -216,7 +218,7 @@ def build_coding_worker(
         def _blocked(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
             raise PermissionError("capabilities are disabled while restoring replay-safe cells")
 
-        read = write = edit = bash = _blocked
+        read = write = edit = bash = call = _blocked
 
     class _CellBroker:
         def __init__(
@@ -389,6 +391,28 @@ def build_coding_worker(
                     task_scope=self.task_id,
                     invocation_id=self.invocation_id,
                 ),
+            )
+
+        def call(self, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            handler = capability_handlers.get(capability)
+            if handler is None:
+                return self._call(
+                    "mcp.call",
+                    {"capability": capability},
+                    lambda: {
+                        "status": "blocked",
+                        "model_text": f"Unknown or unavailable capability: {capability}",
+                    },
+                )
+            return self._call(
+                "mcp.call",
+                {
+                    "capability": capability,
+                    "arguments_sha256": hashlib.sha256(
+                        json.dumps(arguments, sort_keys=True, default=str).encode()
+                    ).hexdigest(),
+                },
+                lambda: handler(arguments),
             )
 
         @property

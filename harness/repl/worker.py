@@ -48,6 +48,8 @@ class ReplBroker(Protocol):
 
     def bash(self, command: str, timeout_seconds: int = 120) -> Any: ...
 
+    def call(self, capability: str, arguments: dict[str, Any]) -> Any: ...
+
 
 @dataclass(frozen=True, slots=True)
 class PythonExecutionResult:
@@ -179,6 +181,7 @@ def _agent_proxy(connection: Connection) -> SimpleNamespace:
             edit=_RemoteOperation(connection, "fs.edit"),
         ),
         shell=SimpleNamespace(run=_RemoteOperation(connection, "shell.run")),
+        mcp=SimpleNamespace(call=_RemoteOperation(connection, "mcp.call")),
     )
 
 
@@ -319,6 +322,7 @@ class PersistentPythonWorker:
             "fs.write": "write",
             "fs.edit": "edit",
             "shell.run": "bash",
+            "mcp.call": "call",
         }
         name = names.get(operation)
         if name is None:
