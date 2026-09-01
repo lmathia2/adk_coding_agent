@@ -19,7 +19,7 @@ from harness.config import (
 def _composition_payload() -> dict[str, Any]:
     harness_config = {
         "models": {"coding": {"provider": "google_adk", "name": "coding-model"}},
-        "agents": {"coding_worker": {"model": "coding", "prompt": {"instruction": "test worker"}}},
+        "agents": {"coding_worker": {"model": "coding", "instruction": "test worker"}},
         "workflow": {"max_iterations": 40},
     }
     return {
@@ -107,7 +107,7 @@ def test_loader_preserves_portable_resource_paths(tmp_path: Path) -> None:
     composition = load_harness_composition(config_path)
     config = composition.harness.config
     assert isinstance(config, PiCodingConfig)
-    assert config.agents["coding_worker"].prompt.instruction == "test worker"
+    assert config.agents["coding_worker"].instruction == "test worker"
     assert config.skills.additional_roots == (Path("skills"),)
     assert str(tmp_path) not in composition.canonical_json()
 
@@ -115,7 +115,7 @@ def test_loader_preserves_portable_resource_paths(tmp_path: Path) -> None:
 def test_behavior_hash_tracks_prompt_content() -> None:
     payload = _composition_payload()
     composition = parse_harness_composition(payload)
-    payload["harness"]["config"]["agents"]["coding_worker"]["prompt"]["instruction"] = "changed"
+    payload["harness"]["config"]["agents"]["coding_worker"]["instruction"] = "changed"
 
     assert parse_harness_composition(payload).behavior_sha256 != composition.behavior_sha256
 
@@ -169,7 +169,6 @@ def test_pi_config_rejects_unused_model_entries() -> None:
         parse_harness_composition(payload)
 
 
-
 def test_tool_surface_is_a_code_invariant_not_configuration() -> None:
     payload = _composition_payload()
     payload["harness"]["config"]["tools"] = {"visible": ["read"]}
@@ -213,10 +212,7 @@ def test_search_default_page_size_cannot_exceed_maximum() -> None:
 
 def test_removed_builtin_prompt_selector_is_rejected() -> None:
     payload = _composition_payload()
-    payload["harness"]["config"]["agents"]["coding_worker"]["prompt"] = {
-        "source": "builtin",
-        "name": "coding_worker_v1",
-    }
+    payload["harness"]["config"]["agents"]["coding_worker"]["source"] = "builtin"
 
     with pytest.raises(ValidationError, match="Extra inputs"):
         parse_harness_composition(payload)

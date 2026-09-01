@@ -97,13 +97,9 @@ class ModelConfig(FrozenModel):
         return self
 
 
-class PromptConfig(FrozenModel):
-    instruction: str = Field(min_length=1, max_length=128_000)
-
-
 class AgentConfig(FrozenModel):
     model: str = Field(min_length=1, max_length=64)
-    prompt: PromptConfig
+    instruction: str = Field(min_length=1, max_length=128_000)
 
 
 class WorkflowConfig(FrozenModel):
@@ -389,7 +385,6 @@ __all__ = [
     "HarnessSelectionConfig",
     "ModelConfig",
     "PiCodingConfig",
-    "PromptConfig",
     "RuntimeBindings",
     "SandboxConfig",
     "SecretRef",

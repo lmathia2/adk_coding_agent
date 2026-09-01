@@ -25,8 +25,7 @@ harness:
     agents:
       coding_worker:
         model: coding
-        prompt:
-          instruction: |
+        instruction: |
             You are an expert coding assistant. Answer conversation and explanation requests directly.
             Use repository tools only when the request needs them. For code changes, inspect relevant
             code, make the smallest coherent change, and let the outer workflow verify it.

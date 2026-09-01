@@ -308,9 +308,9 @@ def test_pi_factory_executes_prompt_and_agent_model_bindings(
         "primary": models["coding"],
     }
     agents["coding_worker"]["model"] = "primary"
-    agents["coding_worker"]["prompt"] = {
-        "instruction": "Return the required AgentStep JSON and keep changes extremely small.",
-    }
+    agents["coding_worker"]["instruction"] = (
+        "Return the required AgentStep JSON and keep changes extremely small."
+    )
     configured = parse_harness_composition(
         payload,
         config_models=registry.config_models(),

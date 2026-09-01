@@ -53,7 +53,6 @@ def _state_root(workspace: Path) -> Path:
     return root
 
 
-
 def runtime_bindings_from_env(configuration_root: Path) -> RuntimeBindings:
     """Read invocation identity only; YAML is the single source of behavior."""
     obsolete = {
@@ -128,7 +127,7 @@ def settings_from_composition(
         (bindings.configuration_root or DEFAULT_COMPOSITION_PATH.parent).expanduser().resolve()
     )
     worker_config = config.agents["coding_worker"]
-    instruction = worker_config.prompt.instruction.strip()
+    instruction = worker_config.instruction.strip()
     project_instructions = (
         collect_project_instructions(workspace) if bindings.project_trusted else ""
     )
