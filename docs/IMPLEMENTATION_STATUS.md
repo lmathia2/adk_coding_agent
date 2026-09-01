@@ -70,7 +70,8 @@ historical feature checklist or book-rubric score.
 ## Removed
 
 Magnitude/LiteLLM, remote/Kubernetes execution, cloud/distributed state, duplicate
-bootstrap/model/context contracts, fake graph configuration, advisory reviewer,
+bootstrap/model/context contracts, the standalone approval CLI, the context-bound
+workspace-environment protocol, fake graph configuration, advisory reviewer,
 automatic skill learning/trials/promotion, project-memory injection, disconnected
 semantic-intelligence scaffolding, and comparison-only report CLIs.
 
