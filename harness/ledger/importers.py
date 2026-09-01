@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from harness.approvals import ApprovalRequest
@@ -18,7 +18,9 @@ from .models import EventStatus, LedgerEvent, canonical_json
 from .store import DuckDbLedgerStore
 
 
-def _time(value: str) -> datetime:
+def _time(value: str | float | int) -> datetime:
+    if isinstance(value, (float, int)) or value.replace(".", "", 1).isdigit():
+        return datetime.fromtimestamp(float(value), tz=UTC)
     return datetime.fromisoformat(value)
 
 
@@ -187,9 +189,14 @@ def import_run(store: DuckDbLedgerStore, run: Any) -> LedgerEvent:
 
 
 def import_public_event(
-    store: DuckDbLedgerStore, envelope: Any
+    store: DuckDbLedgerStore,
+    envelope: Any,
+    *,
+    recorded_at: str | float | int | datetime | None = None,
 ) -> LedgerEvent:
-    timestamp = datetime.now().astimezone()
+    timestamp = (
+        _time(recorded_at) if isinstance(recorded_at, (str, float, int)) else recorded_at
+    ) or datetime.now().astimezone()
     return store.append(
         task_id=envelope.run_id,
         source="public_event",
@@ -208,11 +215,15 @@ def import_session_record(
     session_id: str,
     kind: str,
     payload: dict[str, Any],
+    *,
+    recorded_at: str | float | int | datetime | None = None,
 ) -> LedgerEvent:
     event_payload = payload.get("event")
     event_id = event_payload.get("id") if isinstance(event_payload, dict) else None
     source_id = str(event_id or hashlib.sha256(canonical_json(payload).encode()).hexdigest())
-    timestamp = datetime.now().astimezone()
+    timestamp = (
+        _time(recorded_at) if isinstance(recorded_at, (str, float, int)) else recorded_at
+    ) or datetime.now().astimezone()
     return store.append(
         task_id=session_id,
         source="adk_session",

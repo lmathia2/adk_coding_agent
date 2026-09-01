@@ -201,6 +201,13 @@ class DuckDbLedgerStore:
             ).fetchall()
         return [str(row[0]) for row in rows]
 
+    def source_counts(self) -> dict[str, int]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT source, COUNT(*) FROM ledger_events GROUP BY source ORDER BY source"
+            ).fetchall()
+        return {str(row[0]): int(row[1]) for row in rows}
+
     def content_hash(self, task_id: str) -> str:
         records = [event.model_dump(mode="json") for event in self.read(task_id)]
         return hashlib.sha256(canonical_json(records).encode()).hexdigest()
