@@ -285,7 +285,7 @@ class PiCodingHarnessFactory:
             allow_unknown=config.safety.allow_unknown_commands,
         )
         canonical_ledger: LedgerStore | None = (
-            open_ledger(settings.state_root, config.memory.ledger)
+            open_ledger(bindings.auth_state_root or settings.state_root, config.memory.ledger)
             if config.memory.enabled
             else None
         )
@@ -348,16 +348,26 @@ class PiCodingHarnessFactory:
             if canonical_ledger is not None
             else operational_events
         )
-        worker = build_coding_worker(
-            settings,
-            coding_model,
-            tools=tools,
-            tool_config=config.tools,
-            ptc_config=config.notebook_ptc,
-            event_store=event_store,
-            approvals=approvals,
-            replies=replies,
-        )
+        if config.notebook_ptc.enabled:
+            worker = build_coding_worker(
+                settings,
+                coding_model,
+                tools=tools,
+                tool_config=config.tools,
+                ptc_config=config.notebook_ptc,
+                event_store=event_store,
+                approvals=approvals,
+                replies=replies,
+            )
+        else:
+            worker = build_coding_worker(
+                settings,
+                coding_model,
+                tools=tools,
+                tool_config=config.tools,
+                approvals=approvals,
+                replies=replies,
+            )
         steering = SteeringQueue(
             settings.state_root / "state.db",
             on_change=(

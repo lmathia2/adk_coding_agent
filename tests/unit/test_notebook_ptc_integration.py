@@ -10,6 +10,7 @@ from google.adk.models import BaseLlm
 from app.agent.builders import build_coding_worker
 from app.agent.config import settings_from_composition
 from app.agent.factory import default_harness_registry
+from harness.agent import SteeringCommand
 from harness.config import (
     PiCodingConfig,
     RuntimeBindings,
@@ -84,6 +85,47 @@ def test_default_factory_keeps_main_four_tool_path_without_canonical_memory(
         assert not (state / "ledger.jsonl").exists()
     finally:
         assert assembly.close is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ledger_backend", ["jsonl", "duckdb"])
+async def test_configured_memory_backend_captures_the_same_runtime_event(
+    tmp_path: Path, ledger_backend: str
+) -> None:
+    registry = default_harness_registry()
+    payload = load_harness_composition(config_models=registry.config_models()).model_dump(
+        mode="python"
+    )
+    payload["harness"]["config"]["memory"] = {
+        "enabled": True,
+        "ledger": ledger_backend,
+        "retrieval": "lexical",
+    }
+    composition = parse_harness_composition(payload, config_models=registry.config_models())
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state = tmp_path / "state"
+    assembly = registry.build(
+        composition,
+        RuntimeBindings(workspace=workspace, state_root=state, task_id="task"),
+    )
+
+    assert assembly.controls is not None
+    receipt = await assembly.controls.steer(
+        SteeringCommand(run_id="task", content="remember this", idempotency_key="one")
+    )
+    assert receipt.accepted
+    if ledger_backend == "jsonl":
+        from harness.ledger import JsonlLedgerStore
+
+        events = JsonlLedgerStore(state / "ledger.jsonl").read("task")
+    else:
+        from harness.ledger import DuckDbLedgerStore
+
+        events = DuckDbLedgerStore(state / "ledger.duckdb").read("task")
+    assert [(event.kind, event.payload["content"]) for event in events] == [
+        ("steering.queued", "remember this")
+    ]
 
 
 def test_factory_rejects_notebook_ptc_with_docker(tmp_path: Path) -> None:
