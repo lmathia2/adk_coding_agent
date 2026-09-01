@@ -59,6 +59,11 @@ harness:
       max_timeout_seconds: 600
       max_output_bytes: 16000
 
+    memory:
+      enabled: false
+      ledger: jsonl
+      retrieval: lexical
+
     context:
       compact_at_tokens: 80000
       work_packet_tokens: 20000

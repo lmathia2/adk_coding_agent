@@ -151,6 +151,18 @@ class NotebookPtcConfig(FrozenModel):
         return self
 
 
+class MemoryConfig(FrozenModel):
+    enabled: bool = False
+    ledger: Literal["jsonl", "duckdb"] = "jsonl"
+    retrieval: Literal["lexical", "lance"] = "lexical"
+
+    @model_validator(mode="after")
+    def validate_backends(self) -> MemoryConfig:
+        if self.retrieval == "lance" and self.ledger != "duckdb":
+            raise ValueError("Lance retrieval requires the DuckDB ledger")
+        return self
+
+
 class ContextConfig(FrozenModel):
     compact_at_tokens: int = Field(default=80_000, ge=4_096, le=2_000_000)
     work_packet_tokens: int = Field(default=20_000, ge=2_000, le=256_000)
@@ -260,6 +272,7 @@ class PiCodingConfig(FrozenModel):
     workflow: WorkflowConfig
     tools: ToolSurfaceConfig = ToolSurfaceConfig()
     notebook_ptc: NotebookPtcConfig = NotebookPtcConfig()
+    memory: MemoryConfig = MemoryConfig()
     context: ContextConfig = ContextConfig()
     safety: SafetyConfig = SafetyConfig()
     sandbox: SandboxConfig = LocalSandboxConfig()

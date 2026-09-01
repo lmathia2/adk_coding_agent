@@ -54,6 +54,9 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert config.notebook_ptc.default_timeout_seconds == 120
     assert config.notebook_ptc.max_timeout_seconds == 600
     assert config.notebook_ptc.max_output_bytes == 16_000
+    assert config.memory.enabled is False
+    assert config.memory.ledger == "jsonl"
+    assert config.memory.retrieval == "lexical"
     assert "tui" not in type(composition.server).model_fields
     assert config.models["coding"].provider == "google_adk"
 
@@ -231,6 +234,18 @@ def test_notebook_ptc_configuration_changes_behavior_hash() -> None:
     payload["harness"]["config"]["notebook_ptc"] = {"enabled": True}
 
     assert parse_harness_composition(payload).behavior_sha256 != disabled.behavior_sha256
+
+
+def test_lance_retrieval_requires_duckdb() -> None:
+    payload = _composition_payload()
+    payload["harness"]["config"]["memory"] = {
+        "enabled": True,
+        "ledger": "jsonl",
+        "retrieval": "lance",
+    }
+
+    with pytest.raises(ValidationError, match="requires the DuckDB ledger"):
+        parse_harness_composition(payload)
 
 
 def test_removed_builtin_prompt_selector_is_rejected() -> None:

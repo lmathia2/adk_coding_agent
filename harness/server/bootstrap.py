@@ -22,7 +22,7 @@ from harness.config import (
     RuntimeBindings,
     load_harness_composition,
 )
-from harness.ledger import DuckDbLedgerStore
+from harness.ledger import LedgerStore, open_ledger
 from harness.ledger.importers import import_public_event, import_run, import_session_record
 from harness.persistence import build_service_bundle, settings_from_composition
 from harness.safety import SecretRedactor
@@ -182,7 +182,12 @@ def build_server_assembly(
         source_repository=resolved_workspace,
         project_trusted=trust_project,
     )
-    canonical_ledger = DuckDbLedgerStore(resolved_state_root / "ledger.duckdb")
+    memory = getattr(composition.harness.config, "memory", None)
+    canonical_ledger: LedgerStore | None = (
+        open_ledger(resolved_state_root, memory.ledger)
+        if memory is not None and memory.enabled
+        else None
+    )
     session_redactor = SecretRedactor(
         known_secrets=discover_known_secrets(), redact_high_entropy_values=True
     )
@@ -191,19 +196,31 @@ def build_server_assembly(
             composition.persistence,
             state_root=resolved_state_root,
         ),
-        session_sink=lambda session_id, kind, payload: import_session_record(
-            canonical_ledger,
-            session_id,
-            kind,
-            session_redactor.redact(payload),
-        ),
+        session_sink=(
+            lambda session_id, kind, payload: import_session_record(
+                canonical_ledger,
+                session_id,
+                kind,
+                session_redactor.redact(payload),
+            )
+        )
+        if canonical_ledger is not None
+        else None,
     )
     coordinator = RunCoordinator(
         provider_controls=LocalProviderControls(resolved_state_root),
         store=SqliteRunEventStore(
             resolved_state_root / "server" / "runs.db",
-            run_sink=lambda run: import_run(canonical_ledger, run),
-            event_sink=lambda event: import_public_event(canonical_ledger, event),
+            run_sink=(
+                (lambda run: import_run(canonical_ledger, run))
+                if canonical_ledger is not None
+                else None
+            ),
+            event_sink=(
+                (lambda event: import_public_event(canonical_ledger, event))
+                if canonical_ledger is not None
+                else None
+            ),
         ),
         broker=RunEventBroker(
             queue_capacity=composition.server.outbound_queue_size,

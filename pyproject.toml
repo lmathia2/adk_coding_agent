@@ -11,7 +11,6 @@ requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Lambert Mathias" }]
 dependencies = [
-  "duckdb>=1.4,<2.0",
   "fastapi>=0.141,<1.0",
   "fff-search==0.10.5",
   "google-adk>=2.7.1,<2.8.0",
@@ -22,13 +21,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-memory-search = ["lancedb>=0.38,<1.0"]
+memory-duckdb = ["duckdb>=1.4,<2.0"]
+memory-search = ["duckdb>=1.4,<2.0", "lancedb>=0.38,<1.0"]
 
 [project.scripts]
 adk-coding-agent = "harness.cli:main"
 
 [dependency-groups]
 dev = [
+  "duckdb>=1.4,<2.0",
   "pytest>=8.3,<9.0",
   "pytest-asyncio>=0.25,<1.0",
   "pyright>=1.1.400,<2.0",

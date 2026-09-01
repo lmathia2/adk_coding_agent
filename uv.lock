@@ -14,7 +14,6 @@ name = "adk-coding-agent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "duckdb" },
     { name = "fastapi" },
     { name = "fff-search" },
     { name = "google-adk" },
@@ -26,12 +25,17 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+memory-duckdb = [
+    { name = "duckdb" },
+]
 memory-search = [
+    { name = "duckdb" },
     { name = "lancedb" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "duckdb" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -40,7 +44,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "duckdb", specifier = ">=1.4,<2.0" },
+    { name = "duckdb", marker = "extra == 'memory-duckdb'", specifier = ">=1.4,<2.0" },
+    { name = "duckdb", marker = "extra == 'memory-search'", specifier = ">=1.4,<2.0" },
     { name = "fastapi", specifier = ">=0.141,<1.0" },
     { name = "fff-search", specifier = "==0.10.5" },
     { name = "google-adk", specifier = ">=2.7.1,<2.8.0" },
@@ -50,10 +55,11 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
     { name = "uvicorn", specifier = ">=0.52,<1.0" },
 ]
-provides-extras = ["memory-search"]
+provides-extras = ["memory-duckdb", "memory-search"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "duckdb", specifier = ">=1.4,<2.0" },
     { name = "pyright", specifier = ">=1.1.400,<2.0" },
     { name = "pytest", specifier = ">=8.3,<9.0" },
     { name = "pytest-asyncio", specifier = ">=0.25,<1.0" },

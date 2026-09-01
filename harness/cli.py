@@ -12,8 +12,6 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from harness.ledger import DuckDbLedgerStore
-from harness.ledger.backfill import audit_backfill
 from harness.state import SteeringMessage, SteeringQueue
 from harness.tracing import TraceStore
 from harness.workspace import GitWorktreeManager, WorkspaceRecord
@@ -633,6 +631,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(exported)
         return 0
     if args.command == "ledger-backfill":
+        from harness.ledger.backfill import audit_backfill
+        from harness.ledger.store import DuckDbLedgerStore
+
         state_root = args.state_root.expanduser().resolve()
         database = (
             args.database.expanduser().resolve()

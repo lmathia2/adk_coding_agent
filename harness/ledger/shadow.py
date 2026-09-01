@@ -7,14 +7,14 @@ from typing import Any
 from harness.state.event_store import EventStore
 from harness.state.events import HarnessEvent
 
+from .base import LedgerStore
 from .importers import import_harness_event
-from .store import DuckDbLedgerStore
 
 
 class LedgerBackedEventStore:
     """Serve task events from the ledger while retaining the JSONL compatibility write."""
 
-    def __init__(self, operational: EventStore, ledger: DuckDbLedgerStore) -> None:
+    def __init__(self, operational: EventStore, ledger: LedgerStore) -> None:
         self.operational = operational
         self.ledger = ledger
 

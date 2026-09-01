@@ -14,8 +14,8 @@ from harness.state.steering import SteeringMessage
 from harness.telemetry.metrics import ModelUsageSample, TaskOutcomeSample, ToolUsageSample
 from harness.tracing.store import TraceSpan
 
+from .base import LedgerStore
 from .models import EventStatus, LedgerEvent, canonical_json
-from .store import DuckDbLedgerStore
 
 
 def _time(value: str | float | int) -> datetime:
@@ -24,7 +24,7 @@ def _time(value: str | float | int) -> datetime:
     return datetime.fromisoformat(value)
 
 
-def import_harness_event(store: DuckDbLedgerStore, event: HarnessEvent) -> LedgerEvent:
+def import_harness_event(store: LedgerStore, event: HarnessEvent) -> LedgerEvent:
     return store.append(
         task_id=event.task_id,
         source="harness_event",
@@ -41,7 +41,7 @@ def import_harness_event(store: DuckDbLedgerStore, event: HarnessEvent) -> Ledge
     )
 
 
-def import_trace_span(store: DuckDbLedgerStore, span: TraceSpan) -> LedgerEvent:
+def import_trace_span(store: LedgerStore, span: TraceSpan) -> LedgerEvent:
     phases: dict[str, EventStatus] = {
         "requested": "requested",
         "started": "started",
@@ -68,7 +68,7 @@ def import_trace_span(store: DuckDbLedgerStore, span: TraceSpan) -> LedgerEvent:
     )
 
 
-def import_tool_receipt(store: DuckDbLedgerStore, receipt: ToolReceipt) -> LedgerEvent:
+def import_tool_receipt(store: LedgerStore, receipt: ToolReceipt) -> LedgerEvent:
     effect = "applied" if receipt.status == "completed" and receipt.side_effect_key else "intended" if receipt.side_effect_key else "none"
     return store.append(
         task_id=receipt.task_id,
@@ -85,7 +85,7 @@ def import_tool_receipt(store: DuckDbLedgerStore, receipt: ToolReceipt) -> Ledge
     )
 
 
-def import_checkpoint(store: DuckDbLedgerStore, checkpoint: Checkpoint) -> LedgerEvent:
+def import_checkpoint(store: LedgerStore, checkpoint: Checkpoint) -> LedgerEvent:
     return store.append(
         task_id=checkpoint.task_id,
         source="checkpoint",
@@ -99,7 +99,7 @@ def import_checkpoint(store: DuckDbLedgerStore, checkpoint: Checkpoint) -> Ledge
     )
 
 
-def import_approval(store: DuckDbLedgerStore, approval: ApprovalRequest) -> LedgerEvent:
+def import_approval(store: LedgerStore, approval: ApprovalRequest) -> LedgerEvent:
     statuses: dict[str, EventStatus] = {
         "pending": "requested",
         "approved": "completed",
@@ -120,7 +120,7 @@ def import_approval(store: DuckDbLedgerStore, approval: ApprovalRequest) -> Ledg
     )
 
 
-def import_steering(store: DuckDbLedgerStore, message: SteeringMessage) -> LedgerEvent:
+def import_steering(store: LedgerStore, message: SteeringMessage) -> LedgerEvent:
     statuses: dict[str, EventStatus] = {
         "queued": "requested",
         "leased": "started",
@@ -141,7 +141,7 @@ def import_steering(store: DuckDbLedgerStore, message: SteeringMessage) -> Ledge
 
 
 def import_metric(
-    store: DuckDbLedgerStore,
+    store: LedgerStore,
     sample: ModelUsageSample | ToolUsageSample | TaskOutcomeSample,
 ) -> LedgerEvent:
     if isinstance(sample, ModelUsageSample):
@@ -165,7 +165,7 @@ def import_metric(
     )
 
 
-def import_run(store: DuckDbLedgerStore, run: Any) -> LedgerEvent:
+def import_run(store: LedgerStore, run: Any) -> LedgerEvent:
     statuses: dict[str, EventStatus] = {
         "queued": "requested",
         "running": "started",
@@ -189,7 +189,7 @@ def import_run(store: DuckDbLedgerStore, run: Any) -> LedgerEvent:
 
 
 def import_public_event(
-    store: DuckDbLedgerStore,
+    store: LedgerStore,
     envelope: Any,
     *,
     recorded_at: str | float | int | datetime | None = None,
@@ -211,7 +211,7 @@ def import_public_event(
 
 
 def import_session_record(
-    store: DuckDbLedgerStore,
+    store: LedgerStore,
     session_id: str,
     kind: str,
     payload: dict[str, Any],

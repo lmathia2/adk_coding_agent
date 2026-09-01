@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from harness.approvals import ApprovalStore
-from harness.ledger import DuckDbLedgerStore
+from harness.ledger import DuckDbLedgerStore, JsonlLedgerStore
 from harness.ledger.importers import (
     import_approval,
     import_harness_event,
@@ -56,6 +56,33 @@ def test_append_is_idempotent_gap_free_and_rejects_conflicts(tmp_path: Path) -> 
     )
     assert [event.sequence for event in store.read("task")] == [1, 2]
     assert second.status == "observed"
+
+
+def test_jsonl_and_duckdb_emit_byte_equal_canonical_events(tmp_path: Path) -> None:
+    observed = datetime(2026, 1, 2, tzinfo=UTC)
+    recorded = observed + timedelta(seconds=1)
+    stores = [
+        JsonlLedgerStore(tmp_path / "ledger.jsonl"),
+        DuckDbLedgerStore(tmp_path / "ledger.duckdb"),
+    ]
+    for store in stores:
+        store.append(
+            task_id="task",
+            source="test",
+            source_id="one",
+            kind="operation.timeout",
+            status="timeout",
+            effect="unknown",
+            payload={"missing": "completion"},
+            observed_at=observed,
+            recorded_at=recorded,
+        )
+
+    assert stores[0].read("task") == stores[1].read("task")
+    assert stores[0].content_hash("task") == stores[1].content_hash("task")
+    assert stores[0].source_counts() == stores[1].source_counts() == {"test": 1}
+    assert stores[0].erase_task("task") == 1
+    assert stores[0].read("task") == []
 
 
 def test_import_is_deterministic_and_as_of_uses_observed_time(tmp_path: Path) -> None:

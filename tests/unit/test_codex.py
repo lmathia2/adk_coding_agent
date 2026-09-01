@@ -166,3 +166,4 @@ def test_generated_codex_config_can_enable_notebook_ptc(tmp_path: Path) -> None:
 
     payload = yaml.safe_load(config.read_text(encoding="utf-8"))
     assert payload["harness"]["config"]["notebook_ptc"]["enabled"] is True
+    assert payload["harness"]["config"]["memory"]["enabled"] is True

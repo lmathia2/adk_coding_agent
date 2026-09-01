@@ -287,6 +287,8 @@ def write_codex_config(
     if selection.client_version:
         coding["client_version"] = selection.client_version
     payload["harness"]["config"]["notebook_ptc"]["enabled"] = notebook_ptc
+    if notebook_ptc:
+        payload["harness"]["config"]["memory"]["enabled"] = True
     parse_harness_composition(payload)
     rendered = yaml.safe_dump(payload, sort_keys=False)
     destination = destination.expanduser().resolve()

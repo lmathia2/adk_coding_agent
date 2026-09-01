@@ -5,7 +5,7 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
-from harness.ledger import DuckDbLedgerStore, LedgerEvent
+from harness.ledger import LedgerEvent, LedgerStore
 from harness.ledger.models import canonical_json
 
 from .lance import LanceMemorySearch
@@ -124,7 +124,7 @@ PROGRAMS: dict[tuple[str, int], Program] = {
 
 class MemoryProgramRuntime:
     def __init__(
-        self, ledger: DuckDbLedgerStore, *, semantic_search: LanceMemorySearch | None = None
+        self, ledger: LedgerStore, *, semantic_search: LanceMemorySearch | None = None
     ) -> None:
         self.ledger = ledger
         self.semantic_search = semantic_search

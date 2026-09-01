@@ -61,6 +61,31 @@ def test_factory_exposes_only_python_when_notebook_ptc_is_enabled(tmp_path: Path
     assembly.close()
 
 
+def test_default_factory_keeps_main_four_tool_path_without_canonical_memory(
+    tmp_path: Path,
+) -> None:
+    registry = default_harness_registry()
+    composition = load_harness_composition(config_models=registry.config_models())
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state = tmp_path / "state"
+    assembly = registry.build(
+        composition,
+        RuntimeBindings(workspace=workspace, state_root=state, task_id="task"),
+    )
+    try:
+        worker = cast(LlmAgent, assembly.agents["coding_worker"])
+        tool_names = {
+            getattr(tool, "name", getattr(tool, "__name__", ""))
+            for tool in worker.tools
+        }
+        assert tool_names == {"read", "bash", "edit", "write"}
+        assert not (state / "ledger.duckdb").exists()
+        assert not (state / "ledger.jsonl").exists()
+    finally:
+        assert assembly.close is None
+
+
 def test_factory_rejects_notebook_ptc_with_docker(tmp_path: Path) -> None:
     registry = default_harness_registry()
     payload = load_harness_composition(config_models=registry.config_models()).model_dump(

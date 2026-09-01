@@ -34,7 +34,7 @@ from harness.config import (
     RuntimeBindings,
 )
 from harness.context import prefix_hash
-from harness.ledger import DuckDbLedgerStore, LedgerBackedEventStore
+from harness.ledger import LedgerBackedEventStore, LedgerStore, open_ledger
 from harness.ledger.importers import (
     import_approval,
     import_checkpoint,
@@ -284,7 +284,11 @@ class PiCodingHarnessFactory:
             allow_git_history_mutation=config.safety.allow_git_history_mutation,
             allow_unknown=config.safety.allow_unknown_commands,
         )
-        canonical_ledger = DuckDbLedgerStore(settings.state_root / "ledger.duckdb")
+        canonical_ledger: LedgerStore | None = (
+            open_ledger(settings.state_root, config.memory.ledger)
+            if config.memory.enabled
+            else None
+        )
         tools = create_adk_tools(
             settings.workspace,
             state_root=settings.state_root,
@@ -296,8 +300,16 @@ class PiCodingHarnessFactory:
             bash_max_timeout_seconds=config.tools.bash_max_timeout_seconds,
             search_default_page_size=config.tools.search.default_page_size,
             search_max_page_size=config.tools.search.max_page_size,
-            receipt_sink=lambda receipt: import_tool_receipt(canonical_ledger, receipt),
-            approval_sink=lambda approval: import_approval(canonical_ledger, approval),
+            receipt_sink=(
+                (lambda receipt: import_tool_receipt(canonical_ledger, receipt))
+                if canonical_ledger is not None
+                else None
+            ),
+            approval_sink=(
+                (lambda approval: import_approval(canonical_ledger, approval))
+                if canonical_ledger is not None
+                else None
+            ),
         )
 
         def build_model(model_name: str):
@@ -317,8 +329,10 @@ class PiCodingHarnessFactory:
             approvals = ApprovalWaiter(
                 ApprovalStore(
                     settings.state_root / "approvals.db",
-                    on_change=lambda approval: import_approval(
-                        canonical_ledger, approval
+                    on_change=(
+                        (lambda approval: import_approval(canonical_ledger, approval))
+                        if canonical_ledger is not None
+                        else None
                     ),
                 ),
                 settings.task_id_override or "",
@@ -328,9 +342,11 @@ class PiCodingHarnessFactory:
                 ),
             )
         replies = PublicReplies(SecretRedactor(known_secrets=known_secrets))
-        event_store = LedgerBackedEventStore(
-            JsonlEventStore(settings.state_root / "events"),
-            canonical_ledger,
+        operational_events = JsonlEventStore(settings.state_root / "events")
+        event_store = (
+            LedgerBackedEventStore(operational_events, canonical_ledger)
+            if canonical_ledger is not None
+            else operational_events
         )
         worker = build_coding_worker(
             settings,
@@ -344,11 +360,19 @@ class PiCodingHarnessFactory:
         )
         steering = SteeringQueue(
             settings.state_root / "state.db",
-            on_change=lambda message: import_steering(canonical_ledger, message),
+            on_change=(
+                (lambda message: import_steering(canonical_ledger, message))
+                if canonical_ledger is not None
+                else None
+            ),
         )
         checkpoints = CheckpointStore(
             settings.state_root / "state.db",
-            on_save=lambda checkpoint: import_checkpoint(canonical_ledger, checkpoint),
+            on_save=(
+                (lambda checkpoint: import_checkpoint(canonical_ledger, checkpoint))
+                if canonical_ledger is not None
+                else None
+            ),
         )
         metrics_plugin = HarnessMetricsPlugin(
             database=settings.state_root / "metrics.db",
@@ -357,7 +381,11 @@ class PiCodingHarnessFactory:
             default_model=settings.model,
             default_task_id=settings.task_id_override,
             pricing=self._pricing,
-            metric_sink=lambda sample: import_metric(canonical_ledger, sample),
+            metric_sink=(
+                (lambda sample: import_metric(canonical_ledger, sample))
+                if canonical_ledger is not None
+                else None
+            ),
         )
         workspace_manager = (
             GitWorktreeManager(settings.source_repository, settings.state_root)
@@ -440,7 +468,11 @@ class PiCodingHarnessFactory:
                     max_payload_bytes=config.tracing.max_content_bytes,
                     known_secrets=known_secrets,
                     default_task_id=settings.task_id_override,
-                    span_sink=lambda span: import_trace_span(canonical_ledger, span),
+                    span_sink=(
+                        (lambda span: import_trace_span(canonical_ledger, span))
+                        if canonical_ledger is not None
+                        else None
+                    ),
                 )
             except Exception:
                 LOGGER.exception("trace storage initialization failed; tracing is disabled")

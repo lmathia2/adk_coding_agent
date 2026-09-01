@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from harness.ledger import DuckDbLedgerStore
+from harness.ledger import DuckDbLedgerStore, JsonlLedgerStore, LedgerStore
 from harness.memory import MemoryProgramRuntime, ViewRequest, compile_prompt
 
 
-def _ledger(path: Path) -> DuckDbLedgerStore:
-    store = DuckDbLedgerStore(path)
+def _ledger(path: Path, *, jsonl: bool = False) -> LedgerStore:
+    store: LedgerStore = JsonlLedgerStore(path) if jsonl else DuckDbLedgerStore(path)
     start = datetime(2026, 1, 1, tzinfo=UTC)
     store.append(task_id="task", source="test", source_id="1", kind="task.started", status="started", observed_at=start)
     store.append(task_id="task", source="test", source_id="2", kind="file.write", status="completed", effect="applied", observed_at=start + timedelta(seconds=2), payload={"path": "app.py"})
@@ -59,3 +59,14 @@ def test_prompt_manifest_is_byte_stable_and_accounts_for_view_sources(tmp_path: 
     assert first.components[0].source_view_ids == ()
     assert all(component.source_view_ids for component in first.components[1:])
     assert first.prompt_hash == __import__("hashlib").sha256(first.render().encode()).hexdigest()
+
+
+def test_seed_views_are_backend_independent(tmp_path: Path) -> None:
+    request = ViewRequest(task_id="task", program="dream.analysis")
+    duck = MemoryProgramRuntime(_ledger(tmp_path / "ledger.duckdb")).compute(request)
+    jsonl = MemoryProgramRuntime(
+        _ledger(tmp_path / "ledger.jsonl", jsonl=True)
+    ).compute(request)
+
+    assert duck.data == jsonl.data
+    assert duck.evidence_event_ids == jsonl.evidence_event_ids
