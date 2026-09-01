@@ -42,6 +42,10 @@ server-side; isolated run state did not replace the user's running server.
   The refinement discovers adjacent unittest modules even without project metadata,
   requires at least one executed test, and keeps sandbox HOME/bytecode caches under
   run artifacts rather than making them appear as source changes.
+  A fresh rerun of the identical prompt then completed: the worker and independent
+  verifier both ran five tests, the durable run status was `completed`, and no
+  sandbox-home/cache path appeared in the source diff. This closes that specific
+  coding case, not the remaining representative-task and migration gates.
 - Presentation now reuses Pi's actual animated `Loader`. It adds no transcript
   entries, keeps informational notices separate, and stops on approval waits,
   disconnect, pause, completion and disposal. The footer has two width-bounded
