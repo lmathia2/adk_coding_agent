@@ -1,7 +1,9 @@
 # ADK Coding Agent
 
 A small, configurable Google ADK coding harness with a Pi-style terminal client.
-One coding worker uses four tools: `read`, `bash`, `edit`, and `write`.
+One coding worker uses four tools by default: `read`, `bash`, `edit`, and `write`.
+The experimental local-only notebook PTC mode instead exposes one `python` tool;
+enable it with `harness.config.notebook_ptc.enabled: true`.
 The server owns task state, steering, approval requests, and deterministic verification.
 
 ## 1. Install

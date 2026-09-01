@@ -1,5 +1,21 @@
 # Implementation TODO
 
+## Trace-native notebook PTC
+
+- [x] Add a disabled-by-default, local-only notebook PTC configuration gate.
+- [x] Add deterministic append-only notebook reduction and nbformat materialization.
+- [x] Add a persistent CPython worker with bounded output, timeout termination, and safe-cell restoration.
+- [x] Route nested file and shell capabilities through existing policy, approval, receipt, and redaction paths.
+- [x] Record submitted/completed/failed/timed-out cells and requested/completed/failed/blocked capabilities.
+- [x] Externalize oversized rich MIME outputs as content-addressed artifacts.
+- [ ] Replace fragmented historical stores with the canonical DuckDB/DuckLake ledger after schema and migration benchmarks.
+- [ ] Implement cache-aware prefix, progress, task-memory, and dream-mode views as versioned memory programs.
+- [ ] Run the four-tool versus notebook-PTC quality, token, latency, and cache-hit ablation before changing the default.
+- [ ] Add a production isolation backend before enabling notebook PTC outside trusted local workspaces.
+
+See `docs/design/trace-native-repl-agent.md` for tenets, contracts, phased gates,
+and the implementation/evaluation rubric.
+
 ## Pi terminal experience
 
 - [x] Prove standalone Pi toolkit reuse with deterministic rendering fixtures.

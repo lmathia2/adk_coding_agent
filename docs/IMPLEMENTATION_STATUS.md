@@ -12,6 +12,12 @@ historical feature checklist or book-rubric score.
   and ADK model-provider registries.
 - One ADK coding worker with four tools; bounded context, stable prefix hashes,
   compact repository manifests, and native FFF discovery.
+- Experimental, disabled-by-default notebook-native PTC mode for the local sandbox:
+  the worker exposes one persistent `python` tool, routes nested file and shell calls
+  through the existing policy/approval adapters, appends lifecycle events, and
+  deterministically materializes a durable nbformat transcript. Completed safe cells
+  restore Python state after a worker restart; failures, timeouts, blocked calls, and
+  unknown effects remain explicit in the event history.
 - Trusted directory skills and redacted interaction traces.
 - Atomic confined file mutations, replay receipts, command approvals, and
   local/Docker command execution.
@@ -86,3 +92,6 @@ not a model-quality benchmark.
 
 Remaining limitations include the host-local trust boundary, single-process state
 ownership, experimental ADK APIs, and the still-complex server run controller.
+Notebook-native PTC currently supports only the local sandbox; it is not a security
+sandbox. The canonical cross-session DuckDB/DuckLake ledger, computed memory views,
+cache-aware compaction, and measured four-tool-versus-PTC ablation remain later phases.
