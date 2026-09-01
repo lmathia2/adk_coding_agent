@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -58,10 +59,16 @@ def seal_task_events(
     with temporary.open("rb") as stream:
         os.fsync(stream.fileno())
     temporary.replace(destination)
-    return SealedSegment(
+    segment = SealedSegment(
         task_id=task_id,
         through_sequence=watermark,
         row_count=int(count_row[0]),
         path=destination,
         content_sha256=hashlib.sha256(destination.read_bytes()).hexdigest(),
     )
+    manifest = destination.with_suffix(destination.suffix + ".manifest.json")
+    manifest.write_text(
+        json.dumps(segment.model_dump(mode="json"), sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    return segment

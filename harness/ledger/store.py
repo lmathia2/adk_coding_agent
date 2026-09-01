@@ -211,3 +211,21 @@ class DuckDbLedgerStore:
     def content_hash(self, task_id: str) -> str:
         records = [event.model_dump(mode="json") for event in self.read(task_id)]
         return hashlib.sha256(canonical_json(records).encode()).hexdigest()
+
+    def erase_task(self, task_id: str) -> int:
+        """Physically remove one task when retention policy overrides audit history."""
+
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN TRANSACTION")
+            try:
+                row = connection.execute(
+                    "SELECT COUNT(*) FROM ledger_events WHERE task_id=?", [task_id]
+                ).fetchone()
+                assert row is not None
+                connection.execute("DELETE FROM ledger_events WHERE task_id=?", [task_id])
+                connection.execute("COMMIT")
+                connection.execute("CHECKPOINT")
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
+        return int(row[0])
