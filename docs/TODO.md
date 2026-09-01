@@ -1,5 +1,24 @@
 # Implementation TODO
 
+## Trace-native notebook PTC agent proposal
+
+The proposed successor architecture is specified in
+`docs/design/trace-native-repl-agent.md`. It is not part of the supported runtime
+until the migration and ablation gates in that document pass.
+
+- [ ] Freeze contracts and record the current four-tool baseline.
+- [ ] Add the canonical ledger behind existing behavior and prove replay equality.
+- [ ] Implement canonical notebook reduction/materialization plus seeded deterministic
+  views and retrieval receipts.
+- [ ] Add cache-epoch prompt construction, bounded notebook context, and structured
+  compaction/resume views.
+- [ ] Add notebook-native PTC, the persistent CPython worker, and capability broker
+  behind a feature flag.
+- [ ] Run a same-model four-tool versus notebook-native one-tool ablation.
+- [ ] Add validated/shadowed agent-authored memory programs.
+- [ ] Add DuckLake retention and analytics only when scale measurements justify it.
+- [ ] Cut over and remove superseded stores only after all hard gates pass.
+
 ## Pi terminal experience
 
 - [x] Prove standalone Pi toolkit reuse with deterministic rendering fixtures.
