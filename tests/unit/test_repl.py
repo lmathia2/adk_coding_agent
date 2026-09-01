@@ -1,0 +1,121 @@
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from harness.repl import PersistentPythonWorker
+
+
+class _Broker:
+    def __init__(self) -> None:
+        self.files: dict[str, str] = {"input.txt": "hello"}
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    def read(self, path: str, offset: int = 1, limit: int = 400) -> dict[str, Any]:
+        self.calls.append(("read", (path, offset, limit)))
+        return {"status": "ok", "model_text": self.files[path]}
+
+    def write(
+        self,
+        path: str,
+        content: str,
+        expected_sha256: str | None = None,
+        expected_absent: bool = False,
+    ) -> dict[str, Any]:
+        self.calls.append(("write", (path, content, expected_sha256, expected_absent)))
+        self.files[path] = content
+        return {"status": "ok", "changed_paths": [path]}
+
+    def edit(
+        self,
+        path: str,
+        old_text: str,
+        new_text: str,
+        expected_sha256: str | None = None,
+    ) -> dict[str, Any]:
+        self.calls.append(("edit", (path, old_text, new_text, expected_sha256)))
+        self.files[path] = self.files[path].replace(old_text, new_text)
+        return {"status": "ok", "changed_paths": [path]}
+
+    def bash(self, command: str, timeout_seconds: int = 120) -> dict[str, Any]:
+        self.calls.append(("bash", (command, timeout_seconds)))
+        return {"status": "ok", "model_text": "command output"}
+
+
+def test_worker_preserves_namespace_and_captures_outputs() -> None:
+    broker = _Broker()
+    with PersistentPythonWorker() as worker:
+        first = worker.execute("value = 40\nprint('saved')", broker, 5)
+        second = worker.execute("print('again', value)\nvalue + 2", broker, 5)
+
+    assert first.status == "ok"
+    assert first.stdout == "saved\n"
+    assert second.status == "ok"
+    assert second.stdout == "again 40\n"
+    assert second.value_repr == "42"
+
+
+def test_worker_routes_capabilities_through_parent_broker() -> None:
+    broker = _Broker()
+    code = """
+source = agent.fs.read("input.txt")
+agent.fs.write("output.txt", source["model_text"] + " world", expected_absent=True)
+agent.fs.edit("output.txt", "world", "agent")
+result = agent.shell.run("git status --short", timeout_seconds=7)
+(source["model_text"], result["model_text"])
+"""
+    with PersistentPythonWorker() as worker:
+        result = worker.execute(code, broker, 5)
+
+    assert result.status == "ok"
+    assert result.value_repr == "('hello', 'command output')"
+    assert broker.files["output.txt"] == "hello agent"
+    assert [name for name, _ in broker.calls] == ["read", "write", "edit", "bash"]
+
+
+def test_worker_reports_errors_without_losing_prior_state() -> None:
+    broker = _Broker()
+    with PersistentPythonWorker() as worker:
+        worker.execute("value = 9", broker, 5)
+        failed = worker.execute("print('before')\n1 / 0", broker, 5)
+        restored = worker.execute("value", broker, 5)
+
+    assert failed.status == "error"
+    assert failed.stdout == "before\n"
+    assert failed.error_type == "ZeroDivisionError"
+    assert "division by zero" in (failed.error_message or "")
+    assert restored.value_repr == "9"
+
+
+def test_timeout_discards_worker_state_and_marks_effect_unknown() -> None:
+    broker = _Broker()
+    with PersistentPythonWorker() as worker:
+        worker.execute("value = 'old'", broker, 5)
+        timed_out = worker.execute("while True:\n    pass", broker, 0.15)
+        after_restart = worker.execute("'value' in globals()", broker, 5)
+
+    assert timed_out.status == "timeout"
+    assert timed_out.effect_unknown is True
+    assert after_restart.status == "ok"
+    assert after_restart.value_repr == "False"
+
+
+def test_direct_effectful_imports_and_builtins_are_blocked() -> None:
+    broker = _Broker()
+    with PersistentPythonWorker() as worker:
+        imported = worker.execute("import pathlib", broker, 5)
+        opened = worker.execute("open('outside.txt', 'w')", broker, 5)
+
+    assert imported.status == "error"
+    assert imported.error_type == "PermissionError"
+    assert opened.status == "error"
+    assert opened.error_type == "PermissionError"
+
+
+def test_close_returns_promptly_after_normal_execution() -> None:
+    broker = _Broker()
+    worker = PersistentPythonWorker()
+    worker.execute("1 + 1", broker, 5)
+    started = time.monotonic()
+    worker.close()
+    assert time.monotonic() - started < 2
