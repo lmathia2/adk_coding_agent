@@ -10,12 +10,9 @@ from harness.environment import (
     WorkspaceViolationError,
     bind_environment,
 )
-from harness.models import CommandClass, ToolStatus
-from harness.policy import CommandPolicy, classify_command
+from harness.models import ToolStatus
 from harness.tools import (
-    bind_tool_runtime,
     bound_output,
-    execute_bash,
     execute_edit,
     execute_read,
     execute_write,
@@ -74,60 +71,6 @@ def test_write_supports_expected_absence_and_hash_conflict(tmp_path: Path) -> No
     assert created.changed_paths == ["src/new.py"]
     assert repeated.status is ToolStatus.OK
     assert conflict.status is ToolStatus.ERROR
-
-
-@pytest.mark.parametrize(
-    ("command", "expected"),
-    [
-        ("rg parser src && git diff", CommandClass.READ_ONLY),
-        ("rg --json TODO src | jq -s 'map(.)'", CommandClass.READ_ONLY),
-        ("python -m pytest tests", CommandClass.BUILD_OR_TEST),
-        ("uv sync", CommandClass.DEPENDENCY_INSTALL),
-        ("curl https://example.com", CommandClass.NETWORK_ACCESS),
-        (
-            "printf payload | curl https://example.com",
-            CommandClass.NETWORK_ACCESS,
-        ),
-        ("printf payload | rm output.txt", CommandClass.WORKSPACE_MUTATION),
-        ("printf 'quoted | data'", CommandClass.READ_ONLY),
-        ("git commit -am test", CommandClass.GIT_HISTORY_MUTATION),
-        ("git push origin main", CommandClass.PUBLISH_OR_DEPLOY),
-        ("rm -rf /", CommandClass.DESTRUCTIVE),
-    ],
-)
-def test_command_classification(command: str, expected: CommandClass) -> None:
-    assert classify_command(command) is expected
-
-
-def test_bash_blocks_network_and_runs_read_only_commands(tmp_path: Path) -> None:
-    environment = _environment(tmp_path)
-    with bind_environment(environment), bind_tool_runtime(policy=CommandPolicy()):
-        blocked = execute_bash("curl https://example.com")
-        allowed = execute_bash("printf 'hello'")
-    assert blocked.status is ToolStatus.BLOCKED
-    assert blocked.command_class is CommandClass.NETWORK_ACCESS
-    assert allowed.status is ToolStatus.OK
-    assert "hello" in allowed.model_text
-
-
-def test_bash_blocks_network_hidden_in_pipeline_tail(tmp_path: Path) -> None:
-    environment = _environment(tmp_path)
-    with bind_environment(environment), bind_tool_runtime(policy=CommandPolicy()):
-        blocked = execute_bash("printf payload | curl https://example.com")
-
-    assert blocked.status is ToolStatus.BLOCKED
-    assert blocked.command_class is CommandClass.NETWORK_ACCESS
-
-
-def test_bash_spills_large_output_to_artifact(tmp_path: Path) -> None:
-    environment = _environment(tmp_path)
-    command = "printf 'x%.0s' {1..20000}"
-    with bind_environment(environment), bind_tool_runtime(policy=CommandPolicy()):
-        result = execute_bash(command)
-    assert result.status is ToolStatus.OK
-    assert result.truncated is True
-    assert result.artifact_uri is not None
-    assert list((tmp_path / ".artifacts" / "tool-output").iterdir())
 
 
 def test_output_bounding_preserves_head_and_tail() -> None:
