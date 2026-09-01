@@ -94,3 +94,25 @@ def test_compatibility_store_shadow_appends_without_changing_reducer_sequence(
         first.event_id,
         second.event_id,
     ]
+
+
+def test_source_namespaces_prevent_cross_store_idempotency_collisions(tmp_path: Path) -> None:
+    ledger = DuckDbLedgerStore(tmp_path / "ledger.duckdb")
+    event = HarnessEvent(
+        event_id="event",
+        task_id="task",
+        sequence=1,
+        kind="checkpoint.created",
+        payload={"source": "event"},
+        idempotency_key="checkpoint:same",
+    )
+    import_harness_event(ledger, event)
+    ledger.append(
+        task_id="task",
+        source="checkpoint",
+        source_id="same",
+        kind="checkpoint.created",
+        payload={"source": "projection"},
+        idempotency_key="checkpoint:same",
+    )
+    assert len(ledger.read("task")) == 2

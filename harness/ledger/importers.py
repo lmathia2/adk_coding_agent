@@ -25,7 +25,11 @@ def import_harness_event(store: DuckDbLedgerStore, event: HarnessEvent) -> Ledge
         kind=event.kind,
         payload=event.payload,
         observed_at=event.timestamp,
-        idempotency_key=event.idempotency_key or f"harness:{event.event_id}",
+        idempotency_key=(
+            f"harness:{event.idempotency_key}"
+            if event.idempotency_key is not None
+            else f"harness:{event.event_id}"
+        ),
         recorded_at=event.timestamp,
     )
 
