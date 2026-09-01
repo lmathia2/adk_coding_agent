@@ -19,15 +19,6 @@ from .fff_search import (
     SearchPage,
     SearchUnavailableError,
 )
-from .index import (
-    FileRecord,
-    IndexSnapshot,
-    ParseResult,
-    SearchHit,
-    StructuralIndex,
-    StructuralParser,
-    SymbolRecord,
-)
 
 __all__ = [
     "DEFAULT_SEARCH_LIMIT",
@@ -35,20 +26,13 @@ __all__ = [
     "MAX_SEARCH_LIMIT",
     "BuildCommand",
     "FffSearchService",
-    "FileRecord",
-    "IndexSnapshot",
-    "ParseResult",
     "RepositoryManifest",
     "SearchBackend",
     "SearchCursorError",
     "SearchError",
-    "SearchHit",
     "SearchMode",
     "SearchPage",
     "SearchUnavailableError",
-    "StructuralIndex",
-    "StructuralParser",
-    "SymbolRecord",
     "build_repository_manifest",
     "collect_project_instructions",
     "discover_instruction_files",

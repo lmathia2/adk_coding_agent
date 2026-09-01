@@ -38,7 +38,7 @@ from harness.orchestration import (
     task_id_for,
 )
 from harness.orchestration.runtime import can_answer_directly
-from harness.repo import StructuralIndex, build_repository_manifest
+from harness.repo import build_repository_manifest
 from harness.state import (
     CheckpointStore,
     EventKind,
@@ -71,13 +71,11 @@ class PiWorkflowDependencies:
     steering_queue: SteeringQueue
     checkpoint_store: CheckpointStore
     metrics_store: MetricsStore
-    repository_index: StructuralIndex
     workspace_manager: GitWorktreeManager | None
     coding_worker: BaseAgent
     validation_executor: Callable[[str], ManagedValidationExecutor]
     static_prefix_hash: str
     static_prefix_tokens: int
-    repository_map_tokens: int
     work_packet_tokens: int
     max_task_input_tokens: int
     work_packet_section_tokens: dict[str, int]
@@ -683,24 +681,11 @@ async def _orchestrate_owned(
             )
 
         manifest = build_repository_manifest(settings.workspace)
-        repository_map = ""
-        if request.mode == "coding" or ledger.iteration:
-            deps.repository_index.index_repository()
-            query = " ".join(
-                part for part in (ledger.goal, ledger.next_action or "") if part
-            )
-            repository_map = deps.repository_index.render_map(
-                query,
-                changed_paths=ledger.files_modified,
-                recent_paths=ledger.files_read,
-                max_tokens=deps.repository_map_tokens,
-            )
         packet = build_work_packet(
             ledger,
             conversation=history,
             selected_skills=skill_runtime.text,
             repository_manifest=manifest.to_compact_text(),
-            repository_map=repository_map,
             compaction_summary=compaction_summary,
             recent_events=_render_recent_events(deps, task_id),
             steering_messages=steering,

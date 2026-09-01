@@ -34,7 +34,7 @@ from harness.config import (
     RuntimeBindings,
 )
 from harness.context import prefix_hash
-from harness.repo import StructuralIndex, discover_instruction_files
+from harness.repo import discover_instruction_files
 from harness.safety import ApprovalPolicy, SecretRedactor
 from harness.sandbox import create_configured_command_sandbox
 from harness.state import CheckpointStore, JsonlEventStore, SteeringQueue, rebuild_ledger
@@ -308,10 +308,6 @@ class PiCodingHarnessFactory:
             steering_queue=steering,
             checkpoint_store=checkpoints,
             metrics_store=metrics_plugin.store,
-            repository_index=StructuralIndex(
-                settings.workspace,
-                settings.state_root / "repo-index.json",
-            ),
             workspace_manager=workspace_manager,
             coding_worker=worker.agent,
             replies=replies,
@@ -325,7 +321,6 @@ class PiCodingHarnessFactory:
             ),
             static_prefix_hash=prefix_hash(settings.static_prefix),
             static_prefix_tokens=len(settings.static_prefix) // 4,
-            repository_map_tokens=config.context.repository_map_tokens,
             work_packet_tokens=config.context.work_packet_tokens,
             max_task_input_tokens=config.context.max_task_input_tokens,
             work_packet_section_tokens={
@@ -336,7 +331,6 @@ class PiCodingHarnessFactory:
                     0,
                 ),
                 "REPOSITORY MANIFEST": config.context.manifest_tokens,
-                "REPOSITORY MAP": config.context.repository_map_tokens,
                 "COMPACTED HISTORY": config.context.compaction_tokens,
                 "RECENT EVENTS": config.context.recent_event_tokens,
                 "USER STEERING": config.context.steering_tokens,

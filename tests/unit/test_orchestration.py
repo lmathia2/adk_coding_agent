@@ -78,11 +78,9 @@ def test_work_packet_is_deterministic_and_steering_is_last() -> None:
         ledger,
         selected_skills="Be careful",
         repository_manifest="Python project",
-        repository_map="auth.py: login",
         recent_events=["read auth.py"],
         steering_messages=["Do not change the API"],
     )
-    assert packet.index("## TASK") < packet.index("## REPOSITORY MAP")
     assert packet.rfind("## USER STEERING") > packet.index("## RECENT EVENTS")
 
 
@@ -91,7 +89,6 @@ def test_work_packet_enforces_section_and_total_token_budgets() -> None:
         _ledger(),
         selected_skills="instructions " * 10_000,
         repository_manifest="manifest " * 10_000,
-        repository_map="map " * 10_000,
         compaction_summary="history " * 10_000,
         recent_events=["event " * 10_000],
         steering_messages=["steer " * 10_000],
@@ -100,7 +97,6 @@ def test_work_packet_enforces_section_and_total_token_budgets() -> None:
             "TASK": 100,
             "SELECTED SKILLS": 100,
             "REPOSITORY MANIFEST": 100,
-            "REPOSITORY MAP": 100,
             "COMPACTED HISTORY": 100,
             "RECENT EVENTS": 100,
             "USER STEERING": 100,

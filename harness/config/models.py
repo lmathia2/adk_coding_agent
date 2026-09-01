@@ -174,7 +174,6 @@ class ContextConfig(FrozenModel):
     work_packet_tokens: int = Field(default=20_000, ge=2_000, le=256_000)
     max_task_input_tokens: int = Field(default=200_000, ge=8_000, le=20_000_000)
     recent_event_limit: int = Field(default=12, ge=1, le=100)
-    repository_map_tokens: int = Field(default=1_200, ge=128, le=16_000)
     skill_context_bytes: int = Field(default=24_000, ge=0, le=1_000_000)
     max_selected_skills: int = Field(default=3, ge=0, le=20)
     ledger_tokens: int = Field(default=2_000, ge=200, le=16_000)

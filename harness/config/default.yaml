@@ -52,7 +52,6 @@ harness:
       work_packet_tokens: 20000
       max_task_input_tokens: 200000
       recent_event_limit: 12
-      repository_map_tokens: 1200
       skill_context_bytes: 24000
       max_selected_skills: 3
       ledger_tokens: 2000
