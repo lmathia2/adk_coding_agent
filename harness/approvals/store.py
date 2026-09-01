@@ -134,6 +134,14 @@ class ApprovalStore:
     def expire_due(self) -> int:
         now = self._now().isoformat()
         with self._connect() as connection:
+            due = connection.execute(
+                """
+                SELECT request_id FROM approval_requests
+                WHERE status IN ('pending', 'approved')
+                    AND expires_at IS NOT NULL AND expires_at<=?
+                """,
+                (now,),
+            ).fetchall()
             cursor = connection.execute(
                 """
                 UPDATE approval_requests
@@ -150,6 +158,18 @@ class ApprovalStore:
                 """,
                 (now, now),
             )
+            rows = [
+                connection.execute(
+                    "SELECT * FROM approval_requests WHERE request_id=?",
+                    (row["request_id"],),
+                ).fetchone()
+                for row in due
+            ]
+        if self._on_change is not None:
+            for row in rows:
+                request = self._from_row(row)
+                if request is not None:
+                    self._on_change(request)
         return max(cursor.rowcount, 0)
 
     def get(self, request_id: str) -> ApprovalRequest | None:
