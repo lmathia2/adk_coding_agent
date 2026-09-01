@@ -67,6 +67,44 @@ def test_discovery_selects_syntax_targeted_tests_and_diff(tmp_path: Path) -> Non
     assert "test_auth.py" in test.command
 
 
+def test_metadata_free_python_change_runs_adjacent_unittest(tmp_path: Path) -> None:
+    (tmp_path / "hello.py").write_text("def greet(): return 'hello'\n", encoding="utf-8")
+    (tmp_path / "test_hello.py").write_text(
+        "import unittest\nfrom hello import greet\n\n"
+        "class TestGreet(unittest.TestCase):\n"
+        "    def test_greet(self): self.assertEqual(greet(), 'hello')\n",
+        encoding="utf-8",
+    )
+    plan = discover_validation_plan(
+        RepositoryManifest(root=tmp_path), ["hello.py", "test_hello.py"]
+    )
+    tests = [command for command in plan.commands if command.category == "test"]
+    assert len(tests) == 1
+    assert tests[0].command == (
+        "python -m unittest discover -s . -p test_hello.py -v"
+    )
+    assert tests[0].minimum_test_count == 1
+
+
+def test_metadata_free_unittest_must_execute_at_least_one_test(tmp_path: Path) -> None:
+    plan = ValidationPlan(
+        changed_paths=["hello.py"],
+        commands=[ValidationCommand(category="test", command="python -m unittest -v",
+            source="fixture", minimum_test_count=1)],
+    )
+
+    def execute(command):
+        return CommandResult(category=command.category, command=command.command,
+            exit_code=0, stderr="Ran 0 tests in 0.000s\n\nOK")
+
+    report, results = run_validation_plan(
+        tmp_path, plan, acceptance_criteria=["Implementation works"], executor=execute
+    )
+    assert not report.passed
+    assert results[0].status == "error"
+    assert "observed 0" in results[0].stderr
+
+
 def test_scope_reports_forbidden_and_outside_paths() -> None:
     violations = check_scope(
         ["src/auth.py", "deployment/prod.tf", "README.md"],

@@ -31,6 +31,32 @@ def test_local_sandbox_executes_inside_workspace(tmp_path: Path) -> None:
     assert (workspace / "result.txt").read_text(encoding="utf-8") == "hello"
 
 
+def test_local_sandbox_keeps_home_and_python_caches_outside_workspace(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    artifacts = tmp_path / "artifacts"
+    sandbox = LocalSandbox(workspace, artifacts)
+
+    result = sandbox.execute(
+        SandboxRequest(
+            command=(
+                "python -c \"import os, pathlib; "
+                "pathlib.Path(os.environ['HOME'], 'marker').write_text('ok'); "
+                "print(os.environ['HOME']); print(os.environ['PYTHONPYCACHEPREFIX'])\""
+            )
+        )
+    )
+
+    assert result.status == "ok"
+    assert result.stdout.splitlines() == [
+        str(artifacts / "home"), str(artifacts / "pycache")
+    ]
+    assert (artifacts / "home" / "marker").read_text() == "ok"
+    assert not (workspace / ".sandbox-home").exists()
+
+
 def test_local_sandbox_spills_full_output_and_honors_byte_budget(
     tmp_path: Path,
 ) -> None:

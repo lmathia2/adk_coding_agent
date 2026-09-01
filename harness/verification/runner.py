@@ -23,6 +23,30 @@ class CommandExecutor(Protocol):
     def __call__(self, command: ValidationCommand, /) -> CommandResult: ...
 
 
+def enforce_test_count(
+    command: ValidationCommand, result: CommandResult
+) -> CommandResult:
+    """Fail closed when a discovered test runner succeeds without running tests."""
+
+    if not result.passed or command.minimum_test_count == 0:
+        return result
+    output = f"{result.stdout}\n{result.stderr}"
+    counts = [int(value) for value in re.findall(r"Ran\s+(\d+)\s+tests?", output)]
+    observed = max(counts, default=0)
+    if observed >= command.minimum_test_count:
+        return result
+    diagnostic = (
+        f"expected at least {command.minimum_test_count} test(s), observed {observed}"
+    )
+    return result.model_copy(
+        update={
+            "status": "error",
+            "exit_code": 1,
+            "stderr": f"{result.stderr.rstrip()}\n{diagnostic}".strip(),
+        }
+    )
+
+
 def _test_counts(results: list[CommandResult]) -> tuple[int, int]:
     passed = failed = 0
     for result in results:
@@ -180,7 +204,7 @@ def run_validation_plan(
     results: list[CommandResult] = []
     for command in plan.commands:
         raw_result = executor(command)
-        result = raw_result.model_copy(
+        result = enforce_test_count(command, raw_result).model_copy(
             update={
                 "required": command.required,
                 "strength": command.effective_strength,

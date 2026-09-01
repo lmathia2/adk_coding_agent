@@ -54,6 +54,7 @@ from harness.verification import (
     build_report,
     check_scope,
     discover_validation_plan,
+    enforce_test_count,
 )
 from harness.workspace import GitWorktreeManager
 
@@ -486,7 +487,9 @@ async def _verify_task(
                 result = await asyncio.to_thread(executor, command)
             else:
                 result = result.model_copy(update={"stderr": f"Validation command not executed: approval {decision.status}."})
-        result = result.model_copy(update={"required": command.required, "strength": command.effective_strength})
+        result = enforce_test_count(command, result).model_copy(
+            update={"required": command.required, "strength": command.effective_strength}
+        )
         command_results.append(result)
         if command.required and not result.passed:
             break

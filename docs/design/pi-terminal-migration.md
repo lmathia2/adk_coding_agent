@@ -39,6 +39,9 @@ server-side; isolated run state did not replace the user's running server.
   checks in the metadata-free workspace. Verification rejected completion and the
   model repeated work. The run was explicitly cancelled with Escape. This is a
   failed coding-parity case, not a passing task; Pi finished its five tests.
+  The refinement discovers adjacent unittest modules even without project metadata,
+  requires at least one executed test, and keeps sandbox HOME/bytecode caches under
+  run artifacts rather than making them appear as source changes.
 - Presentation now reuses Pi's actual animated `Loader`. It adds no transcript
   entries, keeps informational notices separate, and stops on approval waits,
   disconnect, pause, completion and disposal. The footer has two width-bounded

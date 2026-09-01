@@ -52,6 +52,7 @@ class ValidationCommand(BaseModel):
     source: str
     required: bool = True
     targeted: bool = False
+    minimum_test_count: int = Field(default=0, ge=0)
     strength: VerificationStrength | None = None
     timeout_seconds: int = Field(default=300, ge=1, le=3_600)
 

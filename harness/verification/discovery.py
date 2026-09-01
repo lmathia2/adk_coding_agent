@@ -104,6 +104,24 @@ def discover_validation_plan(
                 targeted=targeted,
             )
         )
+    elif adjacent_tests:
+        for test_path in adjacent_tests:
+            path = Path(test_path)
+            if path.suffix.lower() != ".py":
+                continue
+            start = path.parent.as_posix()
+            commands.append(
+                ValidationCommand(
+                    category="test",
+                    command=(
+                        "python -m unittest discover "
+                        f"-s {shlex.quote(start)} -p {shlex.quote(path.name)} -v"
+                    ),
+                    source=f"adjacent unittest module {test_path}",
+                    targeted=True,
+                    minimum_test_count=1,
+                )
+            )
 
     commands.append(
         ValidationCommand(

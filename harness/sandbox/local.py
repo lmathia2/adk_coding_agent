@@ -71,11 +71,12 @@ class LocalSandbox:
 
     def _environment(self, request: SandboxRequest) -> dict[str, str]:
         safe_defaults = {
-            "HOME": str(self.workspace / ".sandbox-home"),
+            "HOME": str(self.artifact_root / "home"),
             "LANG": os.getenv("LANG", "C.UTF-8"),
             "LC_ALL": os.getenv("LC_ALL", "C.UTF-8"),
             "PATH": os.getenv("PATH", "/usr/local/bin:/usr/bin:/bin"),
             "PYTHONUNBUFFERED": "1",
+            "PYTHONPYCACHEPREFIX": str(self.artifact_root / "pycache"),
         }
         home = Path(safe_defaults["HOME"])
         home.mkdir(parents=True, exist_ok=True)
