@@ -19,9 +19,11 @@ historical feature checklist or book-rubric score.
   restore Python state after a worker restart; failures, timeouts, blocked calls, and
   unknown effects remain explicit in the event history.
 - A canonical DuckDB ledger now shadow-captures task events, tool-receipt transitions,
-  checkpoints, and ADK trace spans with source-namespaced idempotency, observed and
-  recorded timestamps, temporal reads, deterministic hashes, and gap-free task order.
-  Existing JSONL/SQLite stores remain operational projections during migration.
+  checkpoints, approvals (including expiration), steering, metrics, public/run events,
+  redacted ADK session lifecycle, and ADK trace spans. Source-namespaced idempotency,
+  observed and recorded timestamps, temporal reads, deterministic hashes, gap-free task
+  order, and a process-wide single-writer lock are tested. Existing JSONL/SQLite stores
+  remain operational projections until historical backfill and replay equality pass.
 - Versioned deterministic memory programs provide model history, task progress,
   open/unknown-effect execution, time, query-relevant task memory, and dream/failure
   views. P0-P3 prompt manifests account for source view IDs and stable hashes. A

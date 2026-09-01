@@ -9,7 +9,8 @@ described in `docs/architecture.md`. A disabled-by-default local-only Phase 0 no
 provides the persistent CPython worker, one-tool broker path, append-only lifecycle
 events, deterministic notebook materialization, rich-output artifacts, and safe-cell
 state restoration. The branch also contains a DuckDB canonical-ledger shadow writer
-for task events, receipts, checkpoints, and traces; deterministic seeded views and
+for task events, receipts, checkpoints, approvals, steering, metrics, public/run
+events, redacted ADK session lifecycle, and traces; deterministic seeded views and
 receipt-bearing prompt manifests; a gated relational-program lifecycle; and registered
 MCP broker routing. These are implemented foundations, not a completed cutover. The
 remaining operational stores, production isolation, DuckLake tier, live prompt-reader

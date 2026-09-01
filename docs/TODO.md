@@ -9,7 +9,8 @@
 - [x] Record submitted/completed/failed/timed-out cells and requested/completed/failed/blocked capabilities.
 - [x] Externalize oversized rich MIME outputs as content-addressed artifacts.
 - [x] Add the canonical DuckDB event schema, idempotent writer, temporal reads, deterministic importers, and shadow capture for task events, receipts, checkpoints, and traces.
-- [ ] Finish migration of approvals, steering, metrics, public/run events, and ADK sessions; prove projection equality before removing operational stores.
+- [x] Shadow-capture approvals, steering, metrics, public/run events, and redacted ADK session lifecycle alongside task events, receipts, checkpoints, and traces.
+- [ ] Backfill existing stores and prove every ledger-derived projection equals its operational source before removing or bypassing those stores.
 - [x] Implement deterministic history, progress, open-execution, time, task-memory, and dream-mode views plus receipt-bearing P0-P3 prompt manifests.
 - [ ] Cut ledger views into live prompt/compaction readers after byte, cache, and correctness ablations pass.
 - [x] Add candidate, shadow, active, retired lifecycle enforcement for restricted relational memory programs.
