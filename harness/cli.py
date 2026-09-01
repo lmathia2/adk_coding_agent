@@ -160,6 +160,12 @@ def _parser() -> argparse.ArgumentParser:
         target.add_argument("--state-root", type=Path)
         command.add_argument("--task-id", required=True)
 
+    # Minimal command for simple connectivity checks.
+    subparsers.add_parser(
+        "hello",
+        help="Print a friendly greeting",
+    )
+
     steer = subparsers.add_parser(
         "steer",
         help="Queue user guidance for an active or resumable task",
@@ -555,6 +561,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _serve_codex(args)
     if args.command == "codex":
         return _codex_command(args)
+    if args.command == "hello":
+        print(json.dumps({"message": "hello"}))
+        return 0
     if args.command in {"steer", "steering-status"}:
         state_root = _steering_state_root(
             repository=args.repository,
