@@ -142,6 +142,8 @@ tokens. Defaults:
 
 `ADK_CODING_AGENT_STATE_ROOT` overrides the launcher's default state directory.
 `ADK_CODING_AGENT_SERVER_URL` overrides the TUI URL, not the server listener.
+`ADK_CODING_AGENT_TUI_COMMAND` can select an alternate compatible terminal executable;
+the checkout's pinned Pi-style terminal is used by default.
 The TUI process receives `ADK_CODING_AGENT_TOKEN` from the token file and
 `ADK_CODING_AGENT_STATE_ROOT` from the resolved directory. Tokens are not command-line
 arguments. The default endpoint is `ws://127.0.0.1:8765/v1/agent`; it is not a browser UI.

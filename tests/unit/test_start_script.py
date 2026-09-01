@@ -24,6 +24,11 @@ def _environment(fake_bin: Path, home: Path) -> dict[str, str]:
     environment.pop("ADK_CODING_AGENT_STATE_ROOT", None)
     environment.pop("ADK_CODING_AGENT_SERVER_URL", None)
     environment.pop("ADK_CODING_AGENT_TOKEN", None)
+    terminal = fake_bin / "adk-agent-tui"
+    if terminal.exists():
+        environment["ADK_CODING_AGENT_TUI_COMMAND"] = str(terminal)
+    else:
+        environment.pop("ADK_CODING_AGENT_TUI_COMMAND", None)
     return environment
 
 
@@ -69,6 +74,17 @@ def test_start_script_is_executable_and_has_valid_help() -> None:
     assert "adk-agent-start run" in completed.stdout
     assert "ADK_CODING_AGENT_STATE_ROOT" in completed.stdout
     assert "ADK_CODING_AGENT_SERVER_URL" in completed.stdout
+
+
+def test_installed_launcher_symlink_resolves_checkout_terminal(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    installed = tmp_path / "bin/adk-agent-start"
+    installed.parent.mkdir()
+    installed.symlink_to(root / "start.sh")
+    assert os.access(installed.resolve(), os.X_OK)
+    completed = subprocess.run((str(installed), "--help"), check=True,
+        capture_output=True, text=True)
+    assert "adk-agent-start run" in completed.stdout
 
 
 def test_server_uses_current_directory_and_shared_default_state(tmp_path: Path) -> None:
