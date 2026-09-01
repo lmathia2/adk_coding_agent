@@ -183,6 +183,11 @@ class PiCodingHarnessFactory:
         PiCodingConfig.model_validate(config.model_dump())
         if config.notebook_ptc.enabled and config.sandbox.kind != "local":
             raise ValueError("notebook-native PTC currently requires the local sandbox")
+        if config.memory.enabled and config.memory.retrieval == "lance":
+            raise ValueError(
+                "live Lance retrieval requires a configured embedding provider; "
+                "use lexical retrieval until that provider is wired"
+            )
         unknown_providers = sorted(
             {
                 model.provider

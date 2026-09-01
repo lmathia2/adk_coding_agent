@@ -158,6 +158,8 @@ class MemoryConfig(FrozenModel):
 
     @model_validator(mode="after")
     def validate_backends(self) -> MemoryConfig:
+        if not self.enabled and (self.ledger != "jsonl" or self.retrieval != "lexical"):
+            raise ValueError("disabled memory cannot select an active backend")
         if self.retrieval == "lance" and self.ledger != "duckdb":
             raise ValueError("Lance retrieval requires the DuckDB ledger")
         return self

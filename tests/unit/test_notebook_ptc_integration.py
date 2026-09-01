@@ -149,6 +149,29 @@ def test_factory_rejects_notebook_ptc_with_docker(tmp_path: Path) -> None:
                 task_id="task",
             ),
         )
+
+
+def test_factory_rejects_unwired_live_lance_retrieval(tmp_path: Path) -> None:
+    registry = default_harness_registry()
+    payload = load_harness_composition(config_models=registry.config_models()).model_dump(
+        mode="python"
+    )
+    payload["harness"]["config"]["memory"] = {
+        "enabled": True,
+        "ledger": "duckdb",
+        "retrieval": "lance",
+    }
+    composition = parse_harness_composition(payload, config_models=registry.config_models())
+
+    with pytest.raises(ValueError, match="embedding provider"):
+        registry.build(
+            composition,
+            RuntimeBindings(
+                workspace=tmp_path / "workspace",
+                state_root=tmp_path / "state",
+                task_id="task",
+            ),
+        )
 @pytest.mark.asyncio
 async def test_notebook_native_ptc_is_one_tool_and_persists_code_state_and_effects(
     tmp_path: Path,

@@ -248,6 +248,18 @@ def test_lance_retrieval_requires_duckdb() -> None:
         parse_harness_composition(payload)
 
 
+def test_disabled_memory_rejects_ignored_backend_selection() -> None:
+    payload = _composition_payload()
+    payload["harness"]["config"]["memory"] = {
+        "enabled": False,
+        "ledger": "duckdb",
+        "retrieval": "lexical",
+    }
+
+    with pytest.raises(ValidationError, match="disabled memory"):
+        parse_harness_composition(payload)
+
+
 def test_removed_builtin_prompt_selector_is_rejected() -> None:
     payload = _composition_payload()
     payload["harness"]["config"]["agents"]["coding_worker"]["source"] = "builtin"
