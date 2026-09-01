@@ -85,13 +85,16 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
 
 
 def test_agents_cli_uses_yaml_behavior_and_runtime_environment(monkeypatch, tmp_path) -> None:
+    import shutil
+
     import yaml
 
-    from harness.config import load_harness_composition
+    from harness.config import DEFAULT_COMPOSITION_PATH, load_harness_composition
 
     config = importlib.import_module("app.agent.config")
     payload = load_harness_composition().model_dump(mode="json")
     payload["harness"]["config"]["context"]["skill_context_bytes"] = 12000
+    shutil.copytree(DEFAULT_COMPOSITION_PATH.parent / "prompts", tmp_path / "prompts")
     path = tmp_path / "harness.yaml"
     path.write_text(yaml.safe_dump(payload))
     monkeypatch.setenv("ADK_CODING_CONFIG", str(path))
