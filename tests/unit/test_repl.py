@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import pytest
+
 from harness.repl import PersistentPythonWorker
 
 
@@ -40,6 +42,10 @@ class _Broker:
     def bash(self, command: str, timeout_seconds: int = 120) -> dict[str, Any]:
         self.calls.append(("bash", (command, timeout_seconds)))
         return {"status": "ok", "model_text": "command output"}
+
+    def call(self, capability: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(("call", (capability, arguments)))
+        return {"status": "ok"}
 
 
 def test_worker_preserves_namespace_and_captures_outputs() -> None:
@@ -101,12 +107,12 @@ def test_timeout_discards_worker_state_and_marks_effect_unknown() -> None:
     with PersistentPythonWorker() as worker:
         worker.execute("value = 'old'", broker, 5)
         timed_out = worker.execute("while True:\n    pass", broker, 0.15)
-        after_restart = worker.execute("'value' in globals()", broker, 5)
+        after_restart = worker.execute("value", broker, 5)
 
     assert timed_out.status == "timeout"
     assert timed_out.effect_unknown is True
-    assert after_restart.status == "ok"
-    assert after_restart.value_repr == "False"
+    assert after_restart.status == "error"
+    assert after_restart.error_type == "NameError"
 
 
 def test_direct_effectful_imports_and_builtins_are_blocked() -> None:
@@ -119,6 +125,23 @@ def test_direct_effectful_imports_and_builtins_are_blocked() -> None:
     assert imported.error_type == "PermissionError"
     assert opened.status == "error"
     assert opened.error_type == "PermissionError"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "import os",
+        "import socket",
+        "().__class__.__base__.__subclasses__()",
+        "globals()['__builtins__']",
+        "getattr(agent, '__class__')",
+    ],
+)
+def test_common_host_capability_bypasses_are_blocked(code: str) -> None:
+    with PersistentPythonWorker() as worker:
+        result = worker.execute(code, _Broker(), 5)
+    assert result.status == "error"
+    assert result.error_type == "PermissionError"
 
 
 def test_close_returns_promptly_after_normal_execution() -> None:

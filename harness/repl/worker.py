@@ -113,11 +113,31 @@ _BLOCKED_MODULES = frozenset(
         "urllib",
     }
 )
-_BLOCKED_CALLS = frozenset({"breakpoint", "compile", "eval", "exec", "input", "open", "__import__"})
+_BLOCKED_CALLS = frozenset(
+    {
+        "__import__",
+        "breakpoint",
+        "compile",
+        "delattr",
+        "eval",
+        "exec",
+        "getattr",
+        "globals",
+        "input",
+        "locals",
+        "open",
+        "setattr",
+        "vars",
+    }
+)
 
 
 def _validate_source(tree: ast.AST) -> None:
     for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id.startswith("__"):
+            raise PermissionError("dunder namespace access is blocked")
+        if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            raise PermissionError("dunder attribute access is blocked")
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             names = [item.name for item in node.names] if isinstance(node, ast.Import) else [node.module or ""]
             for name in names:
