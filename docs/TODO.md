@@ -16,7 +16,7 @@
   - [x] Wire command approval decisions to waiting worker/verification execution and terminal controls.
   - [x] Stream eligible public replies with immutable control headers, verification gates and reconnect tests.
   - [ ] Finish quiet activity presentation and live visual/latency comparisons.
-  - [ ] Migrate installation/launching after the new client passes the delivery gates.
+  - [x] Migrate installation/launching after the new client passes the delivery gates.
 - [ ] Verify conversational/coding examples, replay and harness swap; remove Go TUI.
 
 See `docs/design/pi-terminal-migration.md` for delivery gates.

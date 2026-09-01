@@ -98,7 +98,9 @@ def test_install_script_macos_plan_includes_full_local_tui_stack(tmp_path: Path)
 
     assert "Detected platform: macOS" in completed.stdout
     assert "Magnitude:" not in completed.stdout
-    assert "Bubble Tea TUI: 1" in completed.stdout
+    assert "Pi-style terminal: 1" in completed.stdout
+    assert "Node.js" in (root / "install.sh").read_text(encoding="utf-8")
+    assert "Go 1.24" not in (root / "install.sh").read_text(encoding="utf-8")
 
 
 def test_install_script_rejects_removed_options() -> None:

@@ -16,7 +16,7 @@ historical feature checklist or book-rubric score.
   task-scoped approvals.
 - Local task events, SQLite checkpoints/steering/metrics/run registry,
   SQLite or in-memory ADK sessions, and local or in-memory artifacts.
-- WebSocket/AG-UI transport, replay, steering, cancellation, and Bubble Tea TUI.
+- WebSocket/AG-UI transport, replay, steering, cancellation, and Pi-toolkit terminal.
 - Pi harness public-output opt-in: structured worker text stays internal; the workflow
   publishes prose and a compact outcome explicitly. Coding completion replies are
   withheld until deterministic verification passes. Other ADK factories keep their
@@ -29,7 +29,7 @@ historical feature checklist or book-rubric score.
   client mid-reply without duplicating text or model execution.
 - Standalone Pi terminal toolkit client with authenticated transport, multi-turn
   conversations and replay, tested against the real server/ADK stack with a scripted
-  model (not yet the default installed client).
+  model and now installed by default.
 - Server-owned durable follow-ups, bounded conversation queries, queue continuation
   and removal controls; the terminal catches up through successor runs in order.
 - Read-only public transcript pages with a stable snapshot cursor, event/byte
@@ -52,7 +52,7 @@ historical feature checklist or book-rubric score.
   for exact task-scoped decisions. Deny is the dialog default; deferred requests
   remain visible through `/approvals`. Cancellation, expiration, reconnect and
   uncertain decision retries are tested against the real server/ADK/tool stack.
-  This is in the new terminal; the installed Go client is not yet migrated.
+  The Pi terminal is the installed client; the superseded Go client was removed.
 - Plain-language turns support a distinct `answered` outcome without inventing a
   coding task. Direct answers permit no managed shell/write/edit action and no
   explicit verification obligation; coding results still route through verification.

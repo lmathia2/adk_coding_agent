@@ -1,9 +1,9 @@
 # Development
 
-## New Pi terminal client (migration preview)
+## Pi terminal client
 
-The default installer still builds the Go client until the migration gates pass.
-To exercise the new client, use Node.js 22.19+ and build from this checkout:
+The default installer builds the protocol-only Pi-toolkit client. For client work,
+use Node.js 22.19+ and build from this checkout:
 
 ```bash
 npm ci --prefix clients/terminal
@@ -28,7 +28,7 @@ state root. The client reads `ADK_CODING_AGENT_TOKEN` when set, otherwise
 shows server paths, `/login` and `/model` control the provider, `/resume` restores
 history, and `/approvals` reviews waiting commands. Escape defers an approval dialog;
 Escape from the editor requests cancellation. See the migration design for remaining
-gates; the preview is not yet a claim of full Pi parity.
+live comparison gates; installation alone is not a claim of full Pi parity.
 
 The default prompt streams eligible conversational Markdown using a typed control
 header. Custom prompts returning the older JSON `message` format still work but
@@ -47,10 +47,10 @@ Follow [installation and TUI startup](../README.md). Development setup:
 .venv/bin/pytest tests/unit tests/integration
 .venv/bin/ruff check app harness tests
 .venv/bin/pyright --pythonpath .venv/bin/python app harness
-(cd clients/tui && go test -race ./...)
+npm test --prefix clients/terminal
 ```
 
-Python 3.11+, uv, Git, and Go 1.24+ are required for the full developer stack.
+Python 3.11+, uv, Git, and Node.js 22.19+ are required for the full developer stack.
 Tests do not need cloud credentials. Live behavior requires separately authorized
 provider access. Do not interpret deterministic smoke tests as model benchmarks.
 

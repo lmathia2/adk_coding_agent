@@ -18,17 +18,18 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: clients/tui
+        working-directory: clients/terminal
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-node@v4
         with:
-          go-version: "1.24.x"
-          cache-dependency-path: clients/tui/go.sum
-      - name: Test TUI with race detector
-        run: go test -race ./...
-      - name: Build TUI
-        run: go build ./...
+          node-version: "22.19.0"
+          cache: npm
+          cache-dependency-path: clients/terminal/package-lock.json
+      - name: Install locked TUI dependencies
+        run: npm ci --ignore-scripts
+      - name: Build and test TUI
+        run: npm test
 
   deterministic-tests:
     runs-on: ubuntu-latest

@@ -8,7 +8,7 @@ evidence of coding quality.
 
 ```bash
 .venv/bin/pytest tests/unit tests/integration
-(cd clients/tui && go test -race ./...)
+npm test --prefix clients/terminal
 ```
 
 These cover file confinement/atomicity, failed-operation receipts, repository
