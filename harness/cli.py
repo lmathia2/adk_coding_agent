@@ -12,6 +12,8 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from harness.ledger import DuckDbLedgerStore
+from harness.ledger.backfill import audit_backfill
 from harness.state import SteeringMessage, SteeringQueue
 from harness.tracing import TraceStore
 from harness.workspace import GitWorktreeManager, WorkspaceRecord
@@ -153,6 +155,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     trace_export.add_argument("--state-root", type=Path, required=True)
     trace_export.add_argument("--task-id", required=True)
+
+    ledger_backfill = subparsers.add_parser(
+        "ledger-backfill",
+        help="Idempotently import recognized local stores and audit source counts",
+    )
+    ledger_backfill.add_argument("--state-root", type=Path, required=True)
+    ledger_backfill.add_argument("--database", type=Path)
 
     def add_steering_target(command: argparse.ArgumentParser) -> None:
         target = command.add_mutually_exclusive_group(required=True)
@@ -608,6 +617,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if exported:
             print(exported)
         return 0
+    if args.command == "ledger-backfill":
+        state_root = args.state_root.expanduser().resolve()
+        database = (
+            args.database.expanduser().resolve()
+            if args.database is not None
+            else state_root / "ledger.duckdb"
+        )
+        audit = audit_backfill(state_root, DuckDbLedgerStore(database))
+        print(audit.model_dump_json(indent=2))
+        return 0 if audit.matched else 1
     if args.command == "cleanup":
         repository = args.repository.resolve()
         state = (args.state_root or _default_state_root(repository)).resolve()

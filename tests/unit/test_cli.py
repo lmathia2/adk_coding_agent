@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from harness.cli import main, prepare_run
+from harness.state import JsonlEventStore
 from harness.tracing import TraceSpan, TraceStore
 
 
@@ -227,6 +228,15 @@ def test_trace_export(tmp_path: Path, capsys) -> None:
     ) == 0
     exported = json.loads(capsys.readouterr().out)
     assert exported["task_id"] == "task-1"
+
+
+def test_ledger_backfill_cli_reports_replay_equality(tmp_path: Path, capsys) -> None:
+    state = tmp_path / "state"
+    JsonlEventStore(state / "events").append("task", "task.created", {"goal": "test"})
+    assert main(["ledger-backfill", "--state-root", str(state)]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["matched"] is True
+    assert report["imported_records"]["harness_events"] == 1
 
 
 
