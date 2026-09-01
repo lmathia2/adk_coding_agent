@@ -21,6 +21,13 @@ def _repository(root: Path) -> Path:
     return root
 
 
+def test_hello_command_prints_greeting(capsys) -> None:
+    exit_code = main(["hello"])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out) == {"message": "hello"}
+
+
 def test_prepare_run_sets_workspace_identity_environment(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository")
     preparation = prepare_run(
