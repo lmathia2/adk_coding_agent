@@ -81,6 +81,22 @@ stock Pi and ADK terminal had already completed the identical `hello.py` prompt 
 five passing tests; only the corrected ADK run adds independent completion gating.
 No cost/speed superiority is claimed from these runs.
 
+### Live terminal recovery
+
+A `slugify.py` coding turn was started and the terminal exited while the server run
+continued. A newly launched client listed the run as active under `/resume`, restored
+its partial user/tool transcript, presented the outstanding default-Deny approval,
+and completed after the exact test command was approved. Durable evidence contains
+one run record, one ADK invocation, two non-replayed writes, one non-replayed shell
+call, five normal model-loop samples, and six passing slug tests. A final relaunch
+restored the completed transcript and `/session` retained `Pi-inspired ADK coding
+harness`, model, run and conversation identity.
+
+The first live restore exposed a presentation-only defect: historical reducer state
+replaced the negotiated harness label with `waiting for server`. The client now
+preserves the live server harness across restore, with a deterministic regression
+test. No model/tool action was duplicated by either restore.
+
 ## Prototype evidence
 
 `npm test --prefix clients/terminal` passes four focused tests using the actual Pi
