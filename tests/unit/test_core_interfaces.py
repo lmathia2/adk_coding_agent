@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from pathlib import Path
 
 import pytest
@@ -13,15 +13,10 @@ from pydantic import ValidationError
 
 from harness.agent import (
     AdkHarnessAssembly,
-    AgentEvent,
-    AgentEventType,
-    AgentRunRequest,
-    AgentRuntime,
     AgentSnapshot,
     ControlCommand,
     ControlReceipt,
     HarnessBuildInfo,
-    HarnessControlHooks,
     HarnessDescriptor,
     HarnessFactory,
     HarnessRegistry,
@@ -80,27 +75,13 @@ class _ProviderRegistry:
         return (self._provider.provider_id,)
 
 
-class _AgentRuntime:
+class _ControlHooks:
     def __init__(self, descriptor: HarnessDescriptor) -> None:
         self._descriptor = descriptor
 
     @property
     def descriptor(self) -> HarnessDescriptor:
         return self._descriptor
-
-    async def run(self, request: AgentRunRequest) -> AsyncIterator[AgentEvent]:
-        yield AgentEvent(
-            type=AgentEventType.RUN_STARTED,
-            run_id=request.run_id,
-            sequence=1,
-            durable=True,
-        )
-        yield AgentEvent(
-            type=AgentEventType.TEXT_DELTA,
-            run_id=request.run_id,
-            sequence=2,
-            payload={"delta": "done"},
-        )
 
     async def steer(self, command: SteeringCommand) -> ControlReceipt:
         return ControlReceipt(accepted=True, command_id=command.idempotency_key or "steer-1")
@@ -145,7 +126,7 @@ class _HarnessFactory:
             build_info=HarnessBuildInfo(
                 behavior_sha256=composition.behavior_sha256,
             ),
-            controls=_AgentRuntime(self.descriptor),
+            controls=_ControlHooks(self.descriptor),
         )
 
 
@@ -187,28 +168,6 @@ def test_model_provider_builds_an_adk_model_instead_of_a_second_runtime() -> Non
     assert isinstance(registry, AdkModelProviderRegistry)
     assert isinstance(model, BaseLlm)
     assert model.model == "test-model"
-
-
-@pytest.mark.asyncio
-async def test_shared_runtime_streams_sequenced_events_and_controls() -> None:
-    runtime = _AgentRuntime(_descriptor())
-    request = AgentRunRequest(
-        run_id="run-1",
-        thread_id="thread-1",
-        user_id="user-1",
-        input="Fix the parser",
-    )
-
-    events = [event async for event in runtime.run(request)]
-    receipt = await runtime.steer(
-        SteeringCommand(run_id=request.run_id, content="Preserve the public API")
-    )
-
-    assert isinstance(runtime, AgentRuntime)
-    assert isinstance(runtime, HarnessControlHooks)
-    assert [event.sequence for event in events] == [1, 2]
-    assert events[0].durable is True
-    assert receipt.accepted is True
 
 
 def test_harness_registry_builds_an_adk_app_assembly(tmp_path: Path) -> None:

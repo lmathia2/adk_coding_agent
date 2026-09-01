@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal, Protocol, runtime_checkable
@@ -71,33 +71,6 @@ class HarnessBuildInfo(FrozenModel):
     compact_at_tokens: int | None = Field(default=None, ge=1)
 
 
-class AgentRunRequest(FrozenModel):
-    run_id: str = Field(min_length=1, max_length=256)
-    thread_id: str = Field(min_length=1, max_length=256)
-    user_id: str = Field(min_length=1, max_length=256)
-    input: str = Field(min_length=1, max_length=50_000)
-    metadata: dict[str, str] = Field(default_factory=dict)
-
-
-class AgentEventType(StrEnum):
-    RUN_STARTED = "run_started"
-    TEXT_DELTA = "text_delta"
-    TOOL = "tool"
-    STATE = "state"
-    CHECKPOINT = "checkpoint"
-    VERIFICATION = "verification"
-    RUN_FINISHED = "run_finished"
-    ERROR = "error"
-
-
-class AgentEvent(FrozenModel):
-    type: AgentEventType
-    run_id: str = Field(min_length=1, max_length=256)
-    sequence: int = Field(ge=0)
-    payload: dict[str, object] = Field(default_factory=dict)
-    durable: bool = False
-
-
 class SteeringCommand(FrozenModel):
     run_id: str = Field(min_length=1, max_length=256)
     content: str = Field(min_length=1)
@@ -155,24 +128,6 @@ class AdkHarnessAssembly:
 
 
 @runtime_checkable
-class AgentRuntime(Protocol):
-    """Shared server runtime implemented once by the ADK Runner adapter."""
-
-    @property
-    def descriptor(self) -> HarnessDescriptor: ...
-
-    def run(self, request: AgentRunRequest) -> AsyncIterator[AgentEvent]: ...
-
-    async def steer(self, command: SteeringCommand) -> ControlReceipt: ...
-
-    async def pause(self, command: ControlCommand) -> ControlReceipt: ...
-
-    async def cancel(self, command: ControlCommand) -> ControlReceipt: ...
-
-    async def snapshot(self, run_id: str) -> AgentSnapshot: ...
-
-
-@runtime_checkable
 class ModelConfigurableHarness(Protocol):
     """Optional configuration seam; no model invocation or UI dependency."""
 
@@ -200,10 +155,6 @@ class HarnessFactory(Protocol):
 
 __all__ = [
     "AdkHarnessAssembly",
-    "AgentEvent",
-    "AgentEventType",
-    "AgentRunRequest",
-    "AgentRuntime",
     "AgentSnapshot",
     "ControlCommand",
     "ControlReceipt",

@@ -1,11 +1,7 @@
-"""Reusable agent runtime and harness registry contracts."""
+"""Reusable ADK harness assembly and registry contracts."""
 
 from .contracts import (
     AdkHarnessAssembly,
-    AgentEvent,
-    AgentEventType,
-    AgentRunRequest,
-    AgentRuntime,
     AgentSnapshot,
     ControlCommand,
     ControlReceipt,
@@ -23,10 +19,6 @@ from .registry import HarnessRegistry
 
 __all__ = [
     "AdkHarnessAssembly",
-    "AgentEvent",
-    "AgentEventType",
-    "AgentRunRequest",
-    "AgentRuntime",
     "AgentSnapshot",
     "ControlCommand",
     "ControlReceipt",

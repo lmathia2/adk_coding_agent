@@ -62,31 +62,8 @@ class ApprovalDecision(BaseModel):
     note: str | None = None
 
 
-class ApprovalLease(BaseModel):
-    """Exclusive, expiring delivery of a pending request to one consumer."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    lease_id: str = Field(default_factory=lambda: uuid4().hex)
-    consumer_id: str = Field(min_length=1)
-    request: ApprovalRequest
-    leased_at: str
-    lease_expires_at: str
-    attempt: int = Field(ge=1)
-    acknowledged_at: str | None = None
-
-    _normalize_leased_at = field_validator("leased_at")(_normalized_timestamp)
-    _normalize_lease_expires_at = field_validator("lease_expires_at")(
-        _normalized_timestamp
-    )
-    _normalize_acknowledged_at = field_validator("acknowledged_at")(
-        _normalized_timestamp
-    )
-
-
 __all__ = [
     "ApprovalDecision",
-    "ApprovalLease",
     "ApprovalRequest",
     "ApprovalSubmission",
     "utc_timestamp",

@@ -144,8 +144,8 @@ The model-provider interface is intentionally only an adapter that builds an ADK
 `BaseLlm` from validated configuration and secret references. ADK continues to own
 model calls and streaming; the harness does not define a second model-request/event
 stack. Likewise, harness factories return ADK `App` assemblies rather than custom
-execution engines. The shared server-side `AgentRuntime` is implemented once around
-ADK `Runner`, not once per harness.
+execution engines. The shared server invokes each assembly through ADK `Runner`,
+not through a second harness-specific runtime interface.
 
 ## Delivery status
 

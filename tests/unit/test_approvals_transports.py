@@ -8,12 +8,9 @@ import pytest
 
 from harness.approvals import (
     ApprovalDecision,
-    ApprovalHTTPRequest,
-    ApprovalHTTPTransport,
     ApprovalStore,
     ApprovalSubmission,
     InteractiveApprovalTransport,
-    ManagedApprovalQueue,
 )
 
 
@@ -89,7 +86,7 @@ def test_expired_request_cannot_be_decided_or_leased(tmp_path: Path) -> None:
             decision="approved",
             actor="late-operator",
         )
-    assert ManagedApprovalQueue(store).lease("worker") == []
+    assert store.list(status="pending") == []
 
 
 def test_approved_authorization_expires(tmp_path: Path) -> None:
@@ -130,87 +127,3 @@ def test_interactive_transport_uses_injected_io_and_records_denial(
     assert denied.decided_by == "cli-operator"
     assert denied.decision_note == "unsafe in this environment"
     assert any("deploy --dry-run" in line for line in output)
-
-
-def test_http_transport_is_framework_neutral_and_idempotent(tmp_path: Path) -> None:
-    store = ApprovalStore(tmp_path / "approvals.db", clock=_clock())
-    transport = ApprovalHTTPTransport(store)
-    submission = _submission().model_dump(mode="json")
-
-    created = transport.handle(
-        ApprovalHTTPRequest(
-            method="POST",
-            path="/approval-requests",
-            json_body=submission,
-        )
-    )
-    replayed = transport.handle(
-        ApprovalHTTPRequest(
-            method="POST",
-            path="/approval-requests",
-            json_body=submission,
-        )
-    )
-
-    assert created.status_code == 201
-    assert replayed.status_code == 200
-    assert isinstance(created.body, dict)
-    assert isinstance(replayed.body, dict)
-    assert replayed.body["request_id"] == created.body["request_id"]
-
-    decision = transport.handle(
-        ApprovalHTTPRequest(
-            method="POST",
-            path="/approval-decisions",
-            json_body={
-                "request_id": created.body["request_id"],
-                "decision": "denied",
-                "actor": "api-operator",
-            },
-        )
-    )
-    replayed_decision = transport.handle(
-        ApprovalHTTPRequest(
-            method="POST",
-            path="/approval-decisions",
-            json_body={
-                "request_id": created.body["request_id"],
-                "decision": "denied",
-                "actor": "api-operator",
-            },
-        )
-    )
-    assert decision.status_code == 200
-    assert replayed_decision.body == decision.body
-
-
-def test_managed_queue_leases_exclusively_and_replays_ack(tmp_path: Path) -> None:
-    clock = _clock()
-    store = ApprovalStore(tmp_path / "approvals.db", clock=clock)
-    request = store.submit(_submission())
-    first_queue = ManagedApprovalQueue(store)
-    second_queue = ManagedApprovalQueue(store)
-
-    first = first_queue.lease("consumer-a", lease_seconds=5)[0]
-    assert second_queue.lease("consumer-b", lease_seconds=5) == []
-    with pytest.raises(ValueError, match="undecided"):
-        first_queue.ack(first.lease_id, consumer_id="consumer-a")
-
-    clock.advance(seconds=6)
-    second = second_queue.lease("consumer-b", lease_seconds=5)[0]
-    assert second.request.request_id == request.request_id
-    assert second.attempt == 2
-    assert second.lease_id != first.lease_id
-    with pytest.raises(KeyError):
-        first_queue.ack(first.lease_id, consumer_id="consumer-a")
-
-    store.decide(
-        request.request_id,
-        decision="denied",
-        actor="consumer-b",
-    )
-    acknowledged = second_queue.ack(second.lease_id, consumer_id="consumer-b")
-    replayed = second_queue.ack(second.lease_id, consumer_id="consumer-b")
-    assert acknowledged.request.status == "denied"
-    assert replayed == acknowledged
-    assert second_queue.lease("consumer-c") == []
