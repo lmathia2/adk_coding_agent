@@ -10,10 +10,13 @@
 - [x] Externalize oversized rich MIME outputs as content-addressed artifacts.
 - [x] Add the canonical DuckDB event schema, idempotent writer, temporal reads, deterministic importers, and shadow capture for task events, receipts, checkpoints, and traces.
 - [x] Shadow-capture approvals, steering, metrics, public/run events, and redacted ADK session lifecycle alongside task events, receipts, checkpoints, and traces.
-- [ ] Backfill existing stores and prove every ledger-derived projection equals its operational source before removing or bypassing those stores.
+- [x] Add idempotent historical backfill for recognized JSONL, SQLite, and ADK session stores with deterministic hashes and source-count equality auditing.
+- [ ] Prove semantic equality for each live ledger-derived reader before removing or bypassing its operational source.
 - [x] Implement deterministic history, progress, open-execution, time, task-memory, and dream-mode views plus receipt-bearing P0-P3 prompt manifests.
 - [ ] Cut ledger views into live prompt/compaction readers after byte, cache, and correctness ablations pass.
 - [x] Add candidate, shadow, active, retired lifecycle enforcement for restricted relational memory programs.
+- [x] Add atomic deterministic Parquet sealing with hot-versus-sealed watermark equality; defer DuckLake until scale measurements justify it.
+- [x] Add explicit physical task erasure covering ledger rows, recognized operational SQLite rows, JSONL, notebooks, uniquely referenced artifacts, and manifested sealed segments.
 - [ ] Run the four-tool versus notebook-PTC quality, token, latency, and cache-hit ablation before changing the default.
 - [ ] Add and exercise a production isolation backend before enabling notebook PTC outside trusted local workspaces; Docker is unavailable on the current development host.
 

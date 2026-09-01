@@ -23,7 +23,11 @@ historical feature checklist or book-rubric score.
   redacted ADK session lifecycle, and ADK trace spans. Source-namespaced idempotency,
   observed and recorded timestamps, temporal reads, deterministic hashes, gap-free task
   order, and a process-wide single-writer lock are tested. Existing JSONL/SQLite stores
-  remain operational projections until historical backfill and replay equality pass.
+  remain operational projections. An idempotent `ledger-backfill` command imports all
+  recognized local stores and audits source counts; deterministic fixtures reproduce
+  identical task, run, and session hashes across fresh ledgers. The audit now compares
+  every expected canonical event byte-for-byte, not only counts. Reader-specific view
+  equality is still required before cutover.
 - Versioned deterministic memory programs provide model history, task progress,
   open/unknown-effect execution, time, query-relevant task memory, and dream/failure
   views. P0-P3 prompt manifests account for source view IDs and stable hashes. A
@@ -112,3 +116,8 @@ cutover, live prompt/view adoption, DuckLake archival, production isolation, and
 measured four-tool-versus-PTC ablation remain gated work. DuckDB smoke measurements on
 this host (250 events) were 11.35 ms mean append and 6.05 ms p95 50-event tail read;
 that scale does not justify a DuckLake tier.
+DuckDB can nevertheless seal an explicit task watermark to an atomic Zstd Parquet
+segment, with byte-reproducible exports and hot-versus-sealed row equality tests.
+An explicit destructive erasure API removes an exact task from the ledger and recognized
+operational stores, its JSONL/notebook, uniquely referenced local artifacts, and sealed
+segments carrying a task manifest. It is not invoked automatically.

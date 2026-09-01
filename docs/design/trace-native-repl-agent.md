@@ -16,6 +16,14 @@ MCP broker routing. These are implemented foundations, not a completed cutover. 
 remaining operational stores, production isolation, DuckLake tier, live prompt-reader
 cutover, and model ablation remain gated later work.
 
+Historical backfill and atomic Parquet sealing are now implemented. Backfill reproduces
+stable task/run/session hashes and audits recognized source counts. Parquet tests prove
+hot/sealed equality at an explicit watermark. These do not satisfy semantic reader
+cutover or the scale gate for adding DuckLake. A separate explicit erasure path now
+physically removes exact task rows and recognized operational records, JSONL, notebooks,
+unshared artifacts, and manifested segments; automated retention policy remains an
+operator decision rather than an implicit runtime behavior.
+
 ## 1. Executive decision
 
 The target agent has three primary authorities with deliberately different jobs:

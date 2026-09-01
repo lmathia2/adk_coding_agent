@@ -93,6 +93,16 @@ approvals, steering, metrics, public/run events, redacted ADK session lifecycle,
 ADK traces. JSONL and SQLite remain operational projections during measured migration;
 historical backfill and projection-equality gates have not cut readers over. Artifacts
 use local files or memory.
+
+`ledger-backfill` idempotently imports recognized legacy stores and reports source-count
+equality. Explicit task watermarks can be sealed atomically to deterministic Parquet;
+DuckLake is not installed or claimed because current scale measurements do not justify
+another catalog tier.
+
+Physical erasure is an explicit operator-authorized exception to append-only retention.
+It removes an exact task from canonical and recognized operational stores plus its
+notebook, unshared artifacts, JSONL stream, and manifested sealed segments. Shared
+content-addressed artifacts are retained while another ledger task references them.
 PostgreSQL, GCS, Vertex, and distributed-worker leases are not supported.
 
 Steering is durably queued and consumed at safe model/tool/work-batch boundaries.
