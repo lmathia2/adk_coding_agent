@@ -68,9 +68,15 @@ polling; they are single observations and therefore not a performance benchmark.
 | --- | --- | --- | ---: |
 | `hello.py` plus five unittest cases | `completed` | worker tests + independent five-test run | 16.35 s |
 | specified Unicode RLE codec | `completed` | four unittest methods, 200 seeded round trips, independent verifier | 51.93 s |
+| specified JSON Pointer parser/resolver | `completed` | five unittest methods, exact-command approval, independent verifier | 53.07 s |
 | three-bullet verifier explanation | `answered` | no tools; first public text at 2.05 s | 2.77 s |
 
 An independent RLE oracle then passed five valid and fifteen invalid vectors. The
+JSON Pointer implementation also passed independent root, escaped-key, mapping-key,
+array-index and malformed-input vectors. Its model used an absolute `cd && test`
+command, so the conservative policy paused at a default-Deny dialog; approving only
+that fingerprint resumed the run once and verification completed.
+The
 stock Pi and ADK terminal had already completed the identical `hello.py` prompt with
 five passing tests; only the corrected ADK run adds independent completion gating.
 No cost/speed superiority is claimed from these runs.
