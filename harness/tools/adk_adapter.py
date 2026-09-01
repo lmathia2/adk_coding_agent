@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from harness.approvals import ApprovalStore
+from harness.approvals import ApprovalRequest, ApprovalStore
 from harness.environment import LocalWorkspaceEnvironment
 from harness.models import ToolEnvelope
 from harness.repo import FffSearchService, SearchBackend, SearchError, SearchPage
@@ -231,6 +231,7 @@ class _ManagedTools:
         search_default_page_size: int = 20,
         search_max_page_size: int = 50,
         receipt_sink: Callable[[ToolReceipt], object] | None = None,
+        approval_sink: Callable[[ApprovalRequest], object] | None = None,
     ) -> None:
         self.workspace = workspace.resolve()
         self.environment = LocalWorkspaceEnvironment(self.workspace)
@@ -252,7 +253,9 @@ class _ManagedTools:
         self.receipts = ToolReceiptStore(
             state_root / "managed-tools.db", on_save=receipt_sink
         )
-        self.approvals = ApprovalStore(state_root / "approvals.db")
+        self.approvals = ApprovalStore(
+            state_root / "approvals.db", on_change=approval_sink
+        )
         self.redactor = SecretRedactor(known_secrets=resolved_secrets)
         self.artifacts = _ArtifactResolver(
             workspace=self.workspace,
@@ -721,6 +724,7 @@ def create_adk_tools(
     search_default_page_size: int = 20,
     search_max_page_size: int = 50,
     receipt_sink: Callable[[ToolReceipt], object] | None = None,
+    approval_sink: Callable[[ApprovalRequest], object] | None = None,
 ) -> AdkCodingTools:
     managed = _ManagedTools(
         workspace,
@@ -735,6 +739,7 @@ def create_adk_tools(
         search_default_page_size=search_default_page_size,
         search_max_page_size=search_max_page_size,
         receipt_sink=receipt_sink,
+        approval_sink=approval_sink,
     )
     return AdkCodingTools(
         read=managed.read,

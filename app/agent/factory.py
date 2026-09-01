@@ -35,7 +35,14 @@ from harness.config import (
 )
 from harness.context import prefix_hash
 from harness.ledger import DuckDbLedgerStore, LedgerBackedEventStore
-from harness.ledger.importers import import_checkpoint, import_tool_receipt, import_trace_span
+from harness.ledger.importers import (
+    import_approval,
+    import_checkpoint,
+    import_metric,
+    import_steering,
+    import_tool_receipt,
+    import_trace_span,
+)
 from harness.repo import discover_instruction_files
 from harness.safety import ApprovalPolicy, SecretRedactor
 from harness.sandbox import create_configured_command_sandbox
@@ -290,6 +297,7 @@ class PiCodingHarnessFactory:
             search_default_page_size=config.tools.search.default_page_size,
             search_max_page_size=config.tools.search.max_page_size,
             receipt_sink=lambda receipt: import_tool_receipt(canonical_ledger, receipt),
+            approval_sink=lambda approval: import_approval(canonical_ledger, approval),
         )
 
         def build_model(model_name: str):
@@ -307,7 +315,12 @@ class PiCodingHarnessFactory:
         approvals = None
         if bindings.interactive_approvals:
             approvals = ApprovalWaiter(
-                ApprovalStore(settings.state_root / "approvals.db"),
+                ApprovalStore(
+                    settings.state_root / "approvals.db",
+                    on_change=lambda approval: import_approval(
+                        canonical_ledger, approval
+                    ),
+                ),
                 settings.task_id_override or "",
                 timeout=min(
                     composition.server.approval_wait_timeout_seconds,
@@ -329,7 +342,10 @@ class PiCodingHarnessFactory:
             approvals=approvals,
             replies=replies,
         )
-        steering = SteeringQueue(settings.state_root / "state.db")
+        steering = SteeringQueue(
+            settings.state_root / "state.db",
+            on_change=lambda message: import_steering(canonical_ledger, message),
+        )
         checkpoints = CheckpointStore(
             settings.state_root / "state.db",
             on_save=lambda checkpoint: import_checkpoint(canonical_ledger, checkpoint),
@@ -341,6 +357,7 @@ class PiCodingHarnessFactory:
             default_model=settings.model,
             default_task_id=settings.task_id_override,
             pricing=self._pricing,
+            metric_sink=lambda sample: import_metric(canonical_ledger, sample),
         )
         workspace_manager = (
             GitWorktreeManager(settings.source_repository, settings.state_root)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -41,8 +42,14 @@ class SteeringMessage(BaseModel):
 
 
 class SteeringQueue:
-    def __init__(self, database: Path) -> None:
+    def __init__(
+        self,
+        database: Path,
+        *,
+        on_change: Callable[[SteeringMessage], object] | None = None,
+    ) -> None:
         self.database = database
+        self._on_change = on_change
         self.database.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.execute(
@@ -128,7 +135,10 @@ class SteeringQueue:
                 "SELECT * FROM steering_messages WHERE message_id=?", (message_id,)
             ).fetchone()
         assert row is not None
-        return self._from_row(row)
+        message = self._from_row(row)
+        if self._on_change is not None:
+            self._on_change(message)
+        return message
 
     def lease(
         self,
@@ -169,7 +179,7 @@ class SteeringQueue:
                     (owner, lease_until.isoformat(), *ids),
                 )
             connection.execute("COMMIT")
-        return [
+        leased = [
             message.model_copy(
                 update={
                     "status": "leased",
@@ -179,6 +189,10 @@ class SteeringQueue:
             )
             for message in map(self._from_row, rows)
         ]
+        if self._on_change is not None:
+            for message in leased:
+                self._on_change(message)
+        return leased
 
     def leased_by(self, task_id: str, owner: str) -> list[SteeringMessage]:
         """Return the owner's live leases in deterministic delivery order."""
@@ -250,7 +264,15 @@ class SteeringQueue:
                 """,
                 (*message_ids, owner),
             )
-        return cursor.rowcount
+            rows = connection.execute(
+                f"SELECT * FROM steering_messages WHERE message_id IN ({placeholders})",
+                message_ids,
+            ).fetchall()
+        count = cursor.rowcount
+        if self._on_change is not None:
+            for row in rows:
+                self._on_change(self._from_row(row))
+        return count
 
     def release(self, message_ids: list[str], owner: str) -> int:
         if not message_ids:
@@ -265,4 +287,11 @@ class SteeringQueue:
                 """,
                 (*message_ids, owner),
             )
+            rows = connection.execute(
+                f"SELECT * FROM steering_messages WHERE message_id IN ({placeholders})",
+                message_ids,
+            ).fetchall()
+        if self._on_change is not None:
+            for row in rows:
+                self._on_change(self._from_row(row))
         return cursor.rowcount

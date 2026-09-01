@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from harness.approvals import ApprovalRequest
 from harness.models.checkpoint import Checkpoint
 from harness.state.events import HarnessEvent
 from harness.state.receipts import ToolReceipt
+from harness.state.steering import SteeringMessage
+from harness.telemetry.metrics import ModelUsageSample, TaskOutcomeSample, ToolUsageSample
 from harness.tracing.store import TraceSpan
 
 from .models import EventStatus, LedgerEvent
@@ -89,4 +92,70 @@ def import_checkpoint(store: DuckDbLedgerStore, checkpoint: Checkpoint) -> Ledge
         payload=checkpoint.model_dump(mode="json"),
         idempotency_key=f"checkpoint:{checkpoint.checkpoint_id}",
         recorded_at=checkpoint.created_at,
+    )
+
+
+def import_approval(store: DuckDbLedgerStore, approval: ApprovalRequest) -> LedgerEvent:
+    statuses: dict[str, EventStatus] = {
+        "pending": "requested",
+        "approved": "completed",
+        "denied": "blocked",
+        "expired": "timeout",
+    }
+    timestamp = _time(approval.decided_at or approval.requested_at)
+    return store.append(
+        task_id=approval.task_id,
+        source="approval",
+        source_id=f"{approval.request_id}:{approval.status}",
+        kind=f"approval.{approval.status}",
+        status=statuses[approval.status],
+        observed_at=timestamp,
+        payload=approval.model_dump(mode="json"),
+        idempotency_key=f"approval:{approval.request_id}:{approval.status}",
+        recorded_at=timestamp,
+    )
+
+
+def import_steering(store: DuckDbLedgerStore, message: SteeringMessage) -> LedgerEvent:
+    statuses: dict[str, EventStatus] = {
+        "queued": "requested",
+        "leased": "started",
+        "acked": "completed",
+    }
+    timestamp = _time(message.created_at)
+    return store.append(
+        task_id=message.task_id,
+        source="steering",
+        source_id=f"{message.message_id}:{message.status}",
+        kind=f"steering.{message.status}",
+        status=statuses[message.status],
+        observed_at=timestamp,
+        payload=message.model_dump(mode="json"),
+        idempotency_key=f"steering:{message.message_id}:{message.status}",
+        recorded_at=timestamp,
+    )
+
+
+def import_metric(
+    store: DuckDbLedgerStore,
+    sample: ModelUsageSample | ToolUsageSample | TaskOutcomeSample,
+) -> LedgerEvent:
+    if isinstance(sample, ModelUsageSample):
+        source_id, kind, timestamp = sample.sample_id, "metric.model", sample.created_at
+    elif isinstance(sample, ToolUsageSample):
+        source_id, kind, timestamp = sample.sample_id, "metric.tool", sample.created_at
+    else:
+        source_id = f"{sample.task_id}:{sample.status}:{sample.completed_at}"
+        kind, timestamp = "metric.outcome", sample.completed_at
+    observed_at = _time(timestamp)
+    return store.append(
+        task_id=sample.task_id,
+        source="metric",
+        source_id=source_id,
+        kind=kind,
+        status="completed",
+        observed_at=observed_at,
+        payload=sample.model_dump(mode="json"),
+        idempotency_key=f"metric:{source_id}",
+        recorded_at=observed_at,
     )

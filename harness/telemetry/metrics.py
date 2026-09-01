@@ -7,6 +7,7 @@ visible even when total input tokens appear stable.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -74,8 +75,17 @@ class TaskOutcomeSample(BaseModel):
 
 
 class MetricsStore:
-    def __init__(self, database: Path) -> None:
+    def __init__(
+        self,
+        database: Path,
+        *,
+        on_record: Callable[
+            [ModelUsageSample | ToolUsageSample | TaskOutcomeSample], object
+        ]
+        | None = None,
+    ) -> None:
         self.database = database
+        self._on_record = on_record
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -156,6 +166,8 @@ class MetricsStore:
                 """,
                 sample.model_dump(mode="python"),
             )
+        if self._on_record is not None:
+            self._on_record(sample)
 
     def record_tool_usage(self, sample: ToolUsageSample) -> None:
         data = sample.model_dump(mode="python")
@@ -171,6 +183,8 @@ class MetricsStore:
                 """,
                 data,
             )
+        if self._on_record is not None:
+            self._on_record(sample)
 
     def record_outcome(self, sample: TaskOutcomeSample) -> None:
         data = sample.model_dump(mode="python")
@@ -198,6 +212,8 @@ class MetricsStore:
                 """,
                 data,
             )
+        if self._on_record is not None:
+            self._on_record(sample)
 
     def task_summary(self, task_id: str) -> dict[str, float | int | str | None]:
         with self._connect() as connection:

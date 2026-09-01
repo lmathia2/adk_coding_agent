@@ -16,9 +16,16 @@ Clock = Callable[[], datetime]
 class ApprovalStore:
     """SQLite approval transport suitable for CLI, API, or managed workers."""
 
-    def __init__(self, database: Path, *, clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        database: Path,
+        *,
+        clock: Clock | None = None,
+        on_change: Callable[[ApprovalRequest], object] | None = None,
+    ) -> None:
         self.database = database
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._on_change = on_change
         self.database.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.executescript(
@@ -117,6 +124,8 @@ class ApprovalStore:
             raise ValueError(
                 "approval fingerprint reused with different request content"
             )
+        if self._on_change is not None:
+            self._on_change(request)
         return request
 
     def submit(self, submission: ApprovalSubmission) -> ApprovalRequest:
@@ -161,6 +170,9 @@ class ApprovalStore:
                 "WHERE request_id=? AND task_id=? AND status='pending'",
                 (self._now().isoformat(), request_id, task_id),
             )
+        changed = self.get(request_id)
+        if changed is not None and self._on_change is not None:
+            self._on_change(changed)
 
     def for_fingerprint(
         self,
@@ -264,6 +276,8 @@ class ApprovalStore:
             ).fetchone()
         result = self._from_row(updated)
         assert result is not None
+        if self._on_change is not None:
+            self._on_change(result)
         return result
 
     def is_approved(self, task_id: str, fingerprint: str) -> bool:

@@ -5,10 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from harness.approvals import ApprovalStore
 from harness.ledger import DuckDbLedgerStore
-from harness.ledger.importers import import_harness_event
+from harness.ledger.importers import import_approval, import_harness_event, import_steering
 from harness.ledger.shadow import LedgerBackedEventStore
-from harness.state import JsonlEventStore
+from harness.state import JsonlEventStore, SteeringQueue
 from harness.state.events import HarnessEvent
 
 
@@ -116,3 +117,34 @@ def test_source_namespaces_prevent_cross_store_idempotency_collisions(tmp_path: 
         idempotency_key="checkpoint:same",
     )
     assert len(ledger.read("task")) == 2
+
+
+def test_approval_and_steering_transitions_are_replayable_evidence(tmp_path: Path) -> None:
+    ledger = DuckDbLedgerStore(tmp_path / "ledger.duckdb")
+    approvals = ApprovalStore(
+        tmp_path / "approvals.db",
+        on_change=lambda item: import_approval(ledger, item),
+    )
+    request = approvals.request(
+        task_id="task",
+        fingerprint="fingerprint",
+        operation="shell",
+        risk="external write",
+        reason="test",
+    )
+    approvals.decide(request.request_id, decision="approved", actor="operator")
+    steering = SteeringQueue(
+        tmp_path / "state.db",
+        on_change=lambda item: import_steering(ledger, item),
+    )
+    message = steering.enqueue("task", "continue", idempotency_key="steer")
+    steering.lease("task", "worker")
+    steering.ack([message.message_id], "worker")
+
+    assert [event.kind for event in ledger.read("task")] == [
+        "approval.pending",
+        "approval.approved",
+        "steering.queued",
+        "steering.leased",
+        "steering.acked",
+    ]

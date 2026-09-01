@@ -9,14 +9,14 @@ import os
 import threading
 import time
 from collections import defaultdict, deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from google.adk.plugins.base_plugin import BasePlugin
 
-from .metrics import MetricsStore, ModelUsageSample, ToolUsageSample
+from .metrics import MetricsStore, ModelUsageSample, TaskOutcomeSample, ToolUsageSample
 
 LOGGER = logging.getLogger(__name__)
 
@@ -198,9 +198,13 @@ class HarnessMetricsPlugin(BasePlugin):
         default_model: str,
         default_task_id: str | None = None,
         pricing: Mapping[str, ModelPricing] | None = None,
+        metric_sink: Callable[
+            [ModelUsageSample | ToolUsageSample | TaskOutcomeSample], object
+        ]
+        | None = None,
     ) -> None:
         super().__init__(name="harness_metrics")
-        self.store = MetricsStore(database)
+        self.store = MetricsStore(database, on_record=metric_sink)
         self.static_prefix_hash = static_prefix_hash
         self.static_prefix_tokens = max(static_prefix_tokens, 0)
         self.default_model = default_model
