@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Literal, Protocol, runtime_checkable
@@ -125,6 +125,7 @@ class AdkHarnessAssembly:
     # public boundary. Other registered ADK harnesses retain normal text streaming.
     explicit_public_messages: bool = False
     approvals: ApprovalWaiter | None = None
+    close: Callable[[], None] | None = None
 
 
 @runtime_checkable

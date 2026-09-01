@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import aclosing, suppress
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
@@ -147,6 +147,7 @@ class AdkRunExecution:
         coding_model_status: PublicModelStatus | None = None,
         explicit_public_messages: bool = False,
         approvals: ApprovalWaiter | None = None,
+        close_callback: Callable[[], None] | None = None,
     ) -> None:
         self.record = record
         self.runner = runner
@@ -158,6 +159,7 @@ class AdkRunExecution:
         self._explicit_public_messages = explicit_public_messages
         self._closed = False
         self.approvals = approvals
+        self._close_callback = close_callback
 
     @property
     def coding_model_status(self) -> PublicModelStatus | None:
@@ -302,7 +304,11 @@ class AdkRunExecution:
         if self._closed:
             return
         self._closed = True
-        await self.runner.close()
+        try:
+            await self.runner.close()
+        finally:
+            if self._close_callback is not None:
+                await asyncio.to_thread(self._close_callback)
 
 
 class AdkRunExecutionFactory:
@@ -398,6 +404,7 @@ class AdkRunExecutionFactory:
             coding_model_status=coding_model_status,
             explicit_public_messages=assembly.explicit_public_messages,
             approvals=assembly.approvals,
+            close_callback=assembly.close,
         )
 
 

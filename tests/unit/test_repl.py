@@ -73,6 +73,15 @@ result = agent.shell.run("git status --short", timeout_seconds=7)
     assert [name for name, _ in broker.calls] == ["read", "write", "edit", "bash"]
 
 
+def test_worker_returns_mime_bundle_as_rich_display() -> None:
+    with PersistentPythonWorker() as worker:
+        result = worker.execute('{"image/png": b"png-bytes", "text/plain": "plot"}', _Broker(), 5)
+
+    assert result.status == "ok"
+    assert result.value_repr is None
+    assert result.display_data == {"image/png": b"png-bytes", "text/plain": "plot"}
+
+
 def test_worker_reports_errors_without_losing_prior_state() -> None:
     broker = _Broker()
     with PersistentPythonWorker() as worker:

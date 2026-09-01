@@ -1142,6 +1142,7 @@ async def test_real_adk_runner_creates_session_and_maps_output_without_credentia
     service = InMemorySessionService()
     app = App(name="credential_free_app", root_agent=_CredentialFreeAgent(name="worker"))
     runner = Runner(app=app, session_service=service, auto_create_session=False)
+    closed: list[str] = []
     execution = AdkRunExecution(
         record=record,
         runner=runner,
@@ -1154,6 +1155,7 @@ async def test_real_adk_runner_creates_session_and_maps_output_without_credentia
             name="test-local-model",
             readiness=ModelReadiness.ADAPTER_INITIALIZED,
         ),
+        close_callback=lambda: closed.append("worker"),
     )
 
     batches = [batch async for batch in execution.events()]
@@ -1165,6 +1167,7 @@ async def test_real_adk_runner_creates_session_and_maps_output_without_credentia
     await execution.aclose()
 
     assert session is not None
+    assert closed == ["worker"]
     assert session.state["run_id"] == record.run_id
     events = [event for batch in batches for event in batch.events]
     assert [event.type for event in events] == [

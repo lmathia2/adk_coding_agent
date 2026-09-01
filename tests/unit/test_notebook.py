@@ -4,7 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 
-from harness.notebook import canonical_notebook_bytes, materialize_notebook, reduce_notebook
+from harness.notebook import (
+    canonical_notebook_bytes,
+    externalize_mime_bundle,
+    materialize_notebook,
+    reduce_notebook,
+)
 from harness.state import EventKind, HarnessEvent
 
 
@@ -96,3 +101,19 @@ def test_rematerialization_is_byte_stable_and_atomic(tmp_path: Path) -> None:
     assert first == second == path.read_bytes()
     assert hashlib.sha256(first).hexdigest() == hashlib.sha256(second).hexdigest()
     assert list(tmp_path.iterdir()) == [path]
+
+
+def test_large_rich_output_is_content_addressed_and_deduplicated(tmp_path: Path) -> None:
+    bundle = {"image/png": b"image-bytes", "text/plain": "plot"}
+    first, first_refs = externalize_mime_bundle(
+        bundle, artifact_root=tmp_path / "artifacts", max_inline_bytes=4
+    )
+    second, second_refs = externalize_mime_bundle(
+        bundle, artifact_root=tmp_path / "artifacts", max_inline_bytes=4
+    )
+
+    assert first == second
+    assert first_refs == second_refs
+    assert "image/png" not in first
+    assert first["application/vnd.agent.artifact+json"][0]["media_type"] == "image/png"
+    assert len(list((tmp_path / "artifacts").iterdir())) == 1

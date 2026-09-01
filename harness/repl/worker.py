@@ -55,6 +55,7 @@ class PythonExecutionResult:
     stdout: str = ""
     stderr: str = ""
     value_repr: str | None = None
+    display_data: dict[str, Any] | None = None
     error_type: str | None = None
     error_message: str | None = None
     traceback: tuple[str, ...] = ()
@@ -206,7 +207,14 @@ def _execute_cell(
                 if final_expression is not None
                 else None
             )
-        value_repr = None if value is None else repr(value)
+        display_data = (
+            value
+            if isinstance(value, dict)
+            and value
+            and all(isinstance(key, str) and "/" in key for key in value)
+            else None
+        )
+        value_repr = None if value is None or display_data is not None else repr(value)
         if value_repr is not None and len(value_repr.encode()) > max_output_bytes:
             value_repr = value_repr.encode()[:max_output_bytes].decode(errors="ignore")
             stdout.truncated = True
@@ -215,6 +223,7 @@ def _execute_cell(
             "stdout": stdout.getvalue(),
             "stderr": stderr.getvalue(),
             "value_repr": value_repr,
+            "display_data": display_data,
             "output_truncated": stdout.truncated or stderr.truncated,
         }
     except BaseException as error:
@@ -261,6 +270,7 @@ class PersistentPythonWorker:
         self.max_output_bytes = max_output_bytes
         self._process: BaseProcess | None = None
         self._connection: Connection | None = None
+        self._kernel_epoch: str | None = None
         self._lock = threading.Lock()
 
     def _start(self) -> None:
@@ -279,17 +289,28 @@ class PersistentPythonWorker:
         child.close()
         self._connection = parent
         self._process = process
+        self._kernel_epoch = uuid4().hex
 
     def _discard(self) -> None:
         connection, process = self._connection, self._process
         self._connection = None
         self._process = None
+        self._kernel_epoch = None
         if connection is not None:
             connection.close()
         if process is not None:
             if process.is_alive():
                 process.kill()
             process.join(timeout=1)
+
+    @property
+    def kernel_epoch(self) -> str:
+        """Return the current worker lifetime, starting the worker when needed."""
+
+        with self._lock:
+            self._start()
+            assert self._kernel_epoch is not None
+            return self._kernel_epoch
 
     @staticmethod
     def _broker_operation(broker: ReplBroker, operation: str) -> Callable[..., Any]:
@@ -370,6 +391,7 @@ class PersistentPythonWorker:
                         stdout=response.get("stdout", ""),
                         stderr=response.get("stderr", ""),
                         value_repr=response.get("value_repr"),
+                        display_data=response.get("display_data"),
                         error_type=response.get("error_type"),
                         error_message=response.get("error_message"),
                         traceback=tuple(response.get("traceback", ())),

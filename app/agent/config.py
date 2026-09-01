@@ -17,6 +17,17 @@ from harness.config import (
 from harness.context import build_static_prefix
 from harness.repo import collect_project_instructions
 
+NOTEBOOK_PTC_INSTRUCTION = """
+Notebook-native programmatic tool calling is enabled. Your only model-visible tool is
+`python(code)`. Each call appends and executes one durable notebook cell in a persistent
+CPython worker. Compose managed capabilities through `agent.fs.read`, `agent.fs.write`,
+`agent.fs.edit`, and `agent.shell.run`; filter intermediate results in Python and expose
+only what is useful. The notebook records code and selected outputs, while the append-only
+ledger records execution and nested capability outcomes. Do not use direct filesystem,
+process, or network APIs. A notebook is not proof that a side effect completed, and cells
+that write or have unknown effects must never be replayed automatically.
+""".strip()
+
 
 @dataclass(frozen=True, slots=True)
 class HarnessSettings:
@@ -139,6 +150,11 @@ def settings_from_composition(
     if project_instructions:
         instruction += "\n\nStable project instructions:\n" + project_instructions
 
+    tool_names = ("read", "bash", "edit", "write")
+    if config.notebook_ptc.enabled:
+        instruction += "\n\n" + NOTEBOOK_PTC_INSTRUCTION
+        tool_names = ("python",)
+
     coding_model = config.models[worker_config.model].name
     skill_roots: list[Path] = []
     if config.skills.project_root_enabled and bindings.project_trusted:
@@ -172,6 +188,7 @@ def settings_from_composition(
         static_instruction=instruction,
         static_prefix=build_static_prefix(
             model_name=coding_model,
+            tool_names=tool_names,
             instruction=instruction,
         ),
         trace_mode=config.tracing.mode,

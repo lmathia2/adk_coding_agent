@@ -172,6 +172,8 @@ class PiCodingHarnessFactory:
 
     def _validate_supported_shape(self, config: PiCodingConfig) -> None:
         PiCodingConfig.model_validate(config.model_dump())
+        if config.notebook_ptc.enabled and config.sandbox.kind != "local":
+            raise ValueError("notebook-native PTC currently requires the local sandbox")
         unknown_providers = sorted(
             {
                 model.provider
@@ -190,7 +192,8 @@ class PiCodingHarnessFactory:
         if not isinstance(config, PiCodingConfig):
             raise TypeError("pi_coding_v1 requires PiCodingConfig")
         settings = settings_from_composition(composition, bindings)
-        items = [ResourceItem(kind="tool", name=name) for name in FOUR_CODING_TOOLS]
+        tool_names = ("python",) if config.notebook_ptc.enabled else FOUR_CODING_TOOLS
+        items = [ResourceItem(kind="tool", name=name) for name in tool_names]
         items.append(ResourceItem(kind="prompt", name="coding-worker"))
         warnings = []
         if settings.project_trusted:
@@ -308,15 +311,17 @@ class PiCodingHarnessFactory:
                 ),
             )
         replies = PublicReplies(SecretRedactor(known_secrets=known_secrets))
+        event_store = JsonlEventStore(settings.state_root / "events")
         worker = build_coding_worker(
             settings,
             coding_model,
             tools=tools,
             tool_config=config.tools,
+            ptc_config=config.notebook_ptc,
+            event_store=event_store,
             approvals=approvals,
             replies=replies,
         )
-        event_store = JsonlEventStore(settings.state_root / "events")
         steering = SteeringQueue(settings.state_root / "state.db")
         checkpoints = CheckpointStore(settings.state_root / "state.db")
         metrics_plugin = HarnessMetricsPlugin(
@@ -441,13 +446,14 @@ class PiCodingHarnessFactory:
                 model_providers={
                     name: model.provider for name, model in sorted(config.models.items())
                 },
-                tool_names=FOUR_CODING_TOOLS,
+                tool_names=("python",) if config.notebook_ptc.enabled else FOUR_CODING_TOOLS,
                 max_iterations=config.workflow.max_iterations,
                 compact_at_tokens=config.context.compact_at_tokens,
             ),
             agents=agents,
             explicit_public_messages=True,
             approvals=approvals,
+            close=worker.close,
             controls=_PiControlHooks(
                 steering=steering,
                 deps=deps,
