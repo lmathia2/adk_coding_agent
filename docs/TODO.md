@@ -14,6 +14,9 @@
 - [x] Prove byte-level semantic equality for the live task-event reader, then serve task state, recent context, and compaction from canonical ledger events with idempotent compatibility-store read repair.
 - [x] Implement deterministic history, progress, open-execution, time, task-memory, and dream-mode views plus receipt-bearing P0-P3 prompt manifests.
 - [x] Add an optional immutable LanceDB hybrid-search projection with canonical event provenance; keep DuckDB as the sole ledger authority.
+- [x] Preserve the main four-tool path when canonical memory is disabled and add a canonical JSONL fallback with byte-equal deterministic views.
+- [x] Make DuckDB and LanceDB optional installation extras selected through validated YAML.
+- [ ] Wire an explicit embedding provider before allowing live `retrieval: lance` prompt use.
 - [ ] Cut ledger views into live prompt/compaction readers after byte, cache, and correctness ablations pass.
 - [x] Add candidate, shadow, active, retired lifecycle enforcement for restricted relational memory programs.
 - [x] Add atomic deterministic Parquet sealing with hot-versus-sealed watermark equality; defer DuckLake until scale measurements justify it.

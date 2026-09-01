@@ -18,31 +18,34 @@ historical feature checklist or book-rubric score.
   deterministically materializes a durable nbformat transcript. Completed safe cells
   restore Python state after a worker restart; failures, timeouts, blocked calls, and
   unknown effects remain explicit in the event history.
-- A canonical DuckDB ledger now shadow-captures task events, tool-receipt transitions,
+- Optional canonical memory now shadow-captures task events, tool-receipt transitions,
   checkpoints, approvals (including expiration), steering, metrics, public/run events,
-  redacted ADK session lifecycle, and ADK trace spans. Source-namespaced idempotency,
+  redacted ADK session lifecycle, and ADK trace spans into a configured JSONL or DuckDB
+  ledger shared by the server and its runs. Source-namespaced idempotency,
   observed and recorded timestamps, temporal reads, deterministic hashes, gap-free task
-  order, and a process-wide single-writer lock are tested. Existing JSONL/SQLite stores
-  remain operational projections. An idempotent `ledger-backfill` command imports all
+  order, and process-local single-writer locks are tested. Canonical memory is disabled
+  by default, preserving the main four-tool persistence path. When enabled, JSONL is
+  dependency-free and DuckDB is selected explicitly through YAML. Existing JSONL/SQLite
+  stores remain operational projections. An idempotent `ledger-backfill` command imports all
   recognized local stores and audits source counts; deterministic fixtures reproduce
   identical task, run, and session hashes across fresh ledgers. The audit now compares
   every expected canonical event byte-for-byte, not only counts. The live task-event
-  reader now proves byte-equal reconstruction and serves task replay, recent context,
-  and compaction from canonical ledger events; JSONL remains a dual-written,
-  idempotently read-repaired compatibility projection.
+  reader proves byte-equal reconstruction when canonical memory is enabled; otherwise
+  task replay, recent context, and compaction retain the main JSONL path.
 - Versioned deterministic memory programs provide model history, task progress,
   open/unknown-effect execution, time, query-relevant task memory, and dream/failure
   views. P0-P3 prompt manifests account for source view IDs and stable hashes. A
   restricted relational catalog enforces candidate -> shadow -> active -> retired
   promotion; only active programs may serve retrieval. Execution copies only the
   requested task into an isolated DuckDB connection, disables external access, and
-  caps returned rows. The optional `memory-search`
+  caps returned rows. DuckDB is in the optional `memory-duckdb` extra. The optional `memory-search`
   extra adds immutable, content-addressed LanceDB projections for combined vector and
   keyword retrieval. They contain canonical event IDs, are rebuilt from DuckDB ledger
   evidence, and can serve `task.memory` without becoming a second authority or adding
   Lance imports to the default startup path. Cached projections embed only the query.
   The embedding implementation remains an explicit injected, versioned dependency;
-  changing it requires a new version.
+  changing it requires a new version. Live `retrieval: lance` configuration fails
+  closed until an embedding provider is wired.
 - Registered MCP capabilities can be invoked from Python through the same bounded,
   traced broker. Unknown capabilities fail closed without expanding the ADK tool list.
 - Trusted directory skills and redacted interaction traces.

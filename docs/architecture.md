@@ -90,13 +90,12 @@ entire Python harness or its host-side file/search primitives. See
 
 ## State and interaction
 
-The canonical DuckDB ledger captures task events, receipts, checkpoints,
+When canonical memory is enabled, the configured JSONL or DuckDB ledger captures task events, receipts, checkpoints,
 approvals, steering, metrics, public/run events, redacted ADK session lifecycle, and
-ADK traces. Task-state replay, recent context, and compaction now read the canonical
-task-event projection after byte-level equality tests; the JSONL compatibility store is
-still dual-written and idempotently read-repaired for pre-migration tasks. Other SQLite
-stores remain operational projections during measured migration. Artifacts use local
-files or memory.
+ADK traces. JSONL is the dependency-free local backend; DuckDB is an optional analytical
+backend. With canonical memory disabled, the factory uses the unchanged main task JSONL
+and SQLite stores. Other SQLite stores remain operational projections during measured
+migration. Artifacts use local files or memory.
 
 When installed through the optional `memory-search` extra, LanceDB provides immutable
 hybrid-search projections over ledger events. Projection identity includes the exact
@@ -107,6 +106,9 @@ and its embedding implementation are imported only when this projection is confi
 so the default harness pays no startup or dependency cost. Projections live beneath a
 SHA-256 task directory and explicit task erasure removes that directory with the
 canonical evidence.
+
+Lance is currently a tested programmatic projection, not a live prompt reader. YAML
+selection fails closed until an explicit embedding provider is available.
 
 `ledger-backfill` idempotently imports recognized legacy stores and reports source-count
 equality. Explicit task watermarks can be sealed atomically to deterministic Parquet;

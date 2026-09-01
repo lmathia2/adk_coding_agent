@@ -4,6 +4,8 @@ A small, configurable Google ADK coding harness with a Pi-style terminal client.
 One coding worker uses four tools by default: `read`, `bash`, `edit`, and `write`.
 The experimental local-only notebook PTC mode instead exposes one `python` tool;
 enable it with `harness.config.notebook_ptc.enabled: true`.
+Canonical memory is independently configurable: the dependency-free local profile uses
+JSONL and lexical views, while DuckDB and LanceDB remain optional accelerators.
 The server owns task state, steering, approval requests, and deterministic verification.
 
 ## 1. Install
@@ -206,6 +208,34 @@ YAML configures executable settings; loop topology belongs to the harness
 implementation. Unknown/removed options fail validation.
 The worker prompt lives in the YAML behavior bundle, so copied configurations stay portable.
 Volatile state stays out of the stable instruction prefix.
+
+The default remains backward compatible with the four-tool harness and its existing
+stores:
+
+```yaml
+notebook_ptc:
+  enabled: false
+memory:
+  enabled: false
+  ledger: jsonl
+  retrieval: lexical
+```
+
+For notebook PTC with a canonical dependency-free ledger:
+
+```yaml
+notebook_ptc:
+  enabled: true
+memory:
+  enabled: true
+  ledger: jsonl
+  retrieval: lexical
+```
+
+Set `ledger: duckdb` for SQL-backed canonical history after installing the
+`memory-duckdb` extra. Lance projections remain an optional programmatic API until a
+live embedding provider is configured; `retrieval: lance` therefore fails closed at
+server startup instead of being silently ignored.
 
 Skills are read from trusted directories, selected deterministically, and disclosed
 within a byte/token budget. Redacted interaction traces remain available:

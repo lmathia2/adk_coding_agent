@@ -12,7 +12,9 @@ state restoration. The branch also contains a DuckDB canonical-ledger shadow wri
 for task events, receipts, checkpoints, approvals, steering, metrics, public/run
 events, redacted ADK session lifecycle, and traces; deterministic seeded views and
 receipt-bearing prompt manifests; a gated relational-program lifecycle; and registered
-MCP broker routing. An optional immutable LanceDB projection now supplies combined
+MCP broker routing. Canonical memory can use dependency-free JSONL or optional DuckDB,
+is disabled by default for main compatibility, and is shared across server runs when
+enabled. An optional immutable LanceDB projection supplies combined
 vector and keyword retrieval while preserving canonical DuckDB event provenance.
 These are implemented foundations, not a completed cutover. The
 remaining operational stores, DuckLake tier, live prompt-reader cutover, and model
@@ -1380,12 +1382,14 @@ mean every byte must live in one file:
 - analytical replicas carry explicit source watermarks and never become a competing
   history.
 
-### 18.2 Local MVP: embedded DuckDB
+### 18.2 Local MVP: configured JSONL or embedded DuckDB
 
-Use one embedded DuckDB database owned by the single server process:
+Use one canonical ledger owned by the single server process. JSONL is the
+dependency-free default when memory is enabled; DuckDB is the explicit analytical
+backend:
 
 ```text
-STATE_ROOT/ledger/agent.duckdb
+STATE_ROOT/ledger.jsonl | STATE_ROOT/ledger.duckdb
 STATE_ROOT/artifacts/sha256/...
 STATE_ROOT/notebooks/<session_id>/<lane>.ipynb
 STATE_ROOT/workspaces/...
@@ -1396,15 +1400,16 @@ the current projection; content-addressed notebook snapshots live in the artifac
 store at checkpoints, branches, and explicit exports. The ledger records every
 materialized hash and watermark, so the file can always be verified or rebuilt.
 
-DuckDB is selected for the local MVP because the workload is append-heavy,
+JSONL keeps the initial local profile small and implements the same canonical event
+contract with an O(total events) scan ceiling. DuckDB is selected when the workload is append-heavy,
 single-process, and increasingly analytical. It supports SQL over JSON and Parquet,
 columnar scans, projection/filter pushdown, windowing, aggregation, and in-process
 parallelism. A dedicated `LedgerWriter` serializes sequence allocation and commits;
 read-only view connections use explicit watermarks.
 
 This is a hypothesis, not a permanent mandate. Append p99, crash recovery, checkpoint
-latency, and interactive tail-query latency are delivery gates. SQLite remains the
-fallback hot ledger if DuckDB fails those gates.
+latency, and interactive tail-query latency are delivery gates. Backend changes are
+explicit configuration; storage failures never trigger a silent fallback.
 
 #### 18.2.1 Optional LanceDB search projection
 
