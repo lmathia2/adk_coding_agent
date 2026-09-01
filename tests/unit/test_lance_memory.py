@@ -29,14 +29,22 @@ def test_lance_projection_is_rebuildable_and_preserves_event_provenance(tmp_path
             observed_at=datetime(2026, 1, 1, 0, 0, index, tzinfo=UTC),
         )
     events = ledger.read("task")
+    calls = 0
+
+    def counted_vectorize(text: str) -> list[float]:
+        nonlocal calls
+        calls += 1
+        return _vectorize(text)
+
     search = LanceMemorySearch(
-        tmp_path / "lance", vectorizer=_vectorize, embedding_version="test-v1"
+        tmp_path / "lance", vectorizer=counted_vectorize, embedding_version="test-v1"
     )
 
     first = search.search(events, "authentication", limit=1)
     second = search.search(events, "authentication", limit=1)
 
     assert first == second == (events[1].event_id,)
+    assert calls == len(events) + 2  # Index once, then only embed each query.
     task_root = tmp_path / "lance" / hashlib.sha256(b"task").hexdigest()
     assert len([path for path in task_root.iterdir() if not path.name.startswith(".")]) == 1
 

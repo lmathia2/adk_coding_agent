@@ -57,10 +57,10 @@ class LanceMemorySearch:
             )
         return rows, dimension
 
-    def _projection_id(self, rows: Sequence[dict[str, Any]]) -> str:
+    def _projection_id(self, events: Sequence[LedgerEvent]) -> str:
         body = {
             "embedding_version": self.embedding_version,
-            "rows": rows,
+            "events": [event.model_dump(mode="json") for event in events],
         }
         return hashlib.sha256(canonical_json(body).encode()).hexdigest()
 
@@ -76,22 +76,24 @@ class LanceMemorySearch:
         task_ids = {event.task_id for event in events}
         if len(task_ids) != 1:
             raise ValueError("one Lance projection cannot mix tasks")
-        rows, dimension = self._rows(events)
-        query_vector = [float(value) for value in self.vectorizer(query)]
-        if len(query_vector) != dimension or not all(math.isfinite(value) for value in query_vector):
-            raise ValueError("query vector does not match the event-vector schema")
-        projection_id = self._projection_id(rows)
+        projection_id = self._projection_id(events)
         task_digest = hashlib.sha256(events[0].task_id.encode()).hexdigest()
         directory = self.root / task_digest / projection_id
         if not directory.exists():
+            rows, dimension = self._rows(events)
             self._build(directory, rows, dimension)
 
         table = lancedb.connect(directory).open_table("events")
+        query_vector = [float(value) for value in self.vectorizer(query)]
+        vector_type = table.schema.field("vector").type
+        dimension = int(vector_type.list_size)
+        if len(query_vector) != dimension or not all(math.isfinite(value) for value in query_vector):
+            raise ValueError("query vector does not match the event-vector schema")
         result = (
             table.search(query_type="hybrid")
             .vector(query_vector)
             .text(query)
-            .limit(min(limit * 4, len(rows)))
+            .limit(min(limit * 4, len(events)))
             .to_arrow()
         )
         ranked = sorted(
@@ -129,6 +131,8 @@ class LanceMemorySearch:
             table.create_index("text", config=FTS())
             with suppress(FileExistsError):
                 os.replace(temporary, destination)
+            # ponytail: immutable snapshots accumulate; add task-level GC when projection
+            # bytes exceed the configured retention budget.
         finally:
             if temporary.exists():
                 shutil.rmtree(temporary)

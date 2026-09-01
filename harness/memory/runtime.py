@@ -80,13 +80,22 @@ def _task_memory(events: list[LedgerEvent], request: ViewRequest) -> dict[str, A
         if score or not terms:
             ranked.append((score, event))
     ranked.sort(key=lambda item: (-item[0], -item[1].sequence))
-    return {
-        "query": request.query,
+    return _memory_payload([event for _, event in ranked[:32]], request.query)
+
+
+def _memory_payload(
+    events: list[LedgerEvent], query: str | None, retrieval_version: str | None = None
+) -> dict[str, Any]:
+    result = {
+        "query": query,
         "relevant": [
             {"seq": event.sequence, "kind": event.kind, "status": event.status, "payload": event.payload}
-            for _, event in ranked[:32]
+            for event in events
         ],
     }
+    if retrieval_version is not None:
+        result["retrieval_version"] = retrieval_version
+    return result
 
 
 def _dream(events: list[LedgerEvent], _: ViewRequest) -> dict[str, Any]:
@@ -135,19 +144,7 @@ class MemoryProgramRuntime:
                 for event_id in self.semantic_search.search(events, request.query)
                 if event_id in event_by_id
             ]
-            data = {
-                "query": request.query,
-                "retrieval_version": retrieval_version,
-                "relevant": [
-                    {
-                        "seq": event.sequence,
-                        "kind": event.kind,
-                        "status": event.status,
-                        "payload": event.payload,
-                    }
-                    for event in evidence_events
-                ],
-            }
+            data = _memory_payload(evidence_events, request.query, retrieval_version)
         else:
             data = program(events, request)
         encoded = canonical_json(data).encode()

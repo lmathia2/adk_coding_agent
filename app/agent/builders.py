@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import hashlib
 import json
@@ -29,6 +30,17 @@ from .streaming import PublicReplies
 LOGGER = logging.getLogger(__name__)
 
 ToolFunction = Callable[..., Awaitable[dict[str, Any]]]
+
+
+def _replay_policy(code: str) -> str:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return "safe"  # Failed cells are never restored.
+    uses_agent = any(
+        isinstance(node, ast.Name) and node.id == "agent" for node in ast.walk(tree)
+    )
+    return "never" if uses_agent else "safe"
 
 
 @dataclass(frozen=True, slots=True)
@@ -486,7 +498,7 @@ def build_coding_worker(
                     idempotency_key=f"repl-restore:{kernel_epoch}",
                 )
             restored_kernel_epoch = kernel_epoch
-        replay_policy = "never" if "agent." in code else "safe"
+        replay_policy = _replay_policy(code)
         cell_payload = {
             "notebook_id": notebook_id,
             "cell_id": cell_id,

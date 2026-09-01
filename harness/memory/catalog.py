@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -12,10 +11,7 @@ import duckdb
 from pydantic import BaseModel, ConfigDict
 
 ProgramState = Literal["candidate", "shadow", "active", "retired"]
-_FORBIDDEN = re.compile(
-    r"\b(attach|call|copy|create|delete|detach|drop|export|import|insert|install|load|pragma|replace|update)\b",
-    re.IGNORECASE,
-)
+_MAX_RESULT_ROWS = 10_000
 
 
 class MemoryProgram(BaseModel):
@@ -31,10 +27,14 @@ class MemoryProgram(BaseModel):
 
 def validate_relational_program(sql: str) -> str:
     normalized = " ".join(sql.strip().split())
-    if not normalized.casefold().startswith("select "):
+    if normalized.count(":task_id") != 1 or "?" in normalized:
+        raise ValueError("memory program must contain exactly one :task_id parameter")
+    try:
+        statements = duckdb.extract_statements(normalized.replace(":task_id", "?"))
+    except duckdb.Error as exc:
+        raise ValueError("memory program is not valid DuckDB SQL") from exc
+    if len(statements) != 1 or statements[0].type != duckdb.StatementType.SELECT:
         raise ValueError("memory program must be a SELECT")
-    if ";" in normalized or _FORBIDDEN.search(normalized):
-        raise ValueError("memory program contains a forbidden operation")
     if "ledger_events" not in normalized.casefold():
         raise ValueError("memory program must read ledger_events")
     return normalized
@@ -112,12 +112,34 @@ class ProgramCatalog:
             created_at=row[5],
         )
 
-    def execute(self, name: str, version: int, *, task_id: str) -> list[dict[str, object]]:
+    def execute(
+        self,
+        name: str,
+        version: int,
+        *,
+        task_id: str,
+        max_rows: int = 1_000,
+    ) -> list[dict[str, object]]:
         program = self.get(name, version)
         if program is None or program.state != "active":
             raise PermissionError("only active memory programs may affect retrieval")
+        if not 1 <= max_rows <= _MAX_RESULT_ROWS:
+            raise ValueError(f"max_rows must be between 1 and {_MAX_RESULT_ROWS}")
         sql = program.sql.replace(":task_id", "?")
-        with duckdb.connect(str(self.database), read_only=True) as connection:
-            cursor = connection.execute(sql, [task_id])
+        database = str(self.database).replace("'", "''")
+        with duckdb.connect() as connection:
+            connection.execute(f"ATTACH '{database}' AS source (READ_ONLY)")
+            connection.execute(
+                "CREATE TABLE ledger_events AS SELECT * FROM source.ledger_events WHERE task_id=?",
+                [task_id],
+            )
+            connection.execute("DETACH source")
+            connection.execute("SET enable_external_access=false")
+            # ponytail: active queries have no interruptible deadline; move execution
+            # to a bounded worker before live memory programs accept untrusted authors.
+            cursor = connection.execute(
+                f"SELECT * FROM ({sql}) AS memory_program LIMIT ?",
+                [task_id, max_rows],
+            )
             columns = [item[0] for item in cursor.description]
             return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]

@@ -1411,8 +1411,10 @@ fallback hot ledger if DuckDB fails those gates.
 LanceDB is a physical retrieval accelerator, not another historical authority. The
 optional `memory-search` extra materializes immutable, content-addressed snapshots from
 canonical event rows and caller-supplied vectors. Snapshot identity includes the event
-content, vector values, and embedding version. Hybrid results resolve to canonical
-event IDs, and deletion or corruption of a Lance directory loses no evidence.
+content and embedding version. Reusing a snapshot embeds only the query; changing the
+vectorizer, model, dimensions, or preprocessing requires a new version. Hybrid results
+resolve to canonical event IDs, and deletion or corruption of a Lance directory loses
+no evidence.
 Each projection is nested under the SHA-256 task identity so explicit task erasure can
 remove all derived search bytes without scanning or interpreting Lance metadata.
 

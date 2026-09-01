@@ -15,6 +15,8 @@ from .models import EffectStatus, EventStatus, LedgerEvent, canonical_json
 
 _LOCK_REGISTRY_GUARD = threading.Lock()
 _LOCKS: dict[Path, threading.RLock] = {}
+# ponytail: locks are process-local; use a multi-process database when more than one
+# server owns the same state root.
 
 
 class DuckDbLedgerStore:

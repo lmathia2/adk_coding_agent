@@ -100,7 +100,8 @@ files or memory.
 
 When installed through the optional `memory-search` extra, LanceDB provides immutable
 hybrid-search projections over ledger events. Projection identity includes the exact
-event rows, vectors, and embedding version; results return canonical event IDs for view
+event rows and embedding version; changing the vectorizer requires a new version. A
+warm projection embeds only the query, and results return canonical event IDs for view
 provenance. DuckDB remains the sole authority and all Lance data is disposable. LanceDB
 and its embedding implementation are imported only when this projection is configured,
 so the default harness pays no startup or dependency cost. Projections live beneath a

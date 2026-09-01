@@ -195,7 +195,7 @@ async def test_failed_cell_is_materialized_without_destroying_warm_state(tmp_pat
     python_tool = worker.python
 
     try:
-        await python_tool("value = 9")
+        await python_tool("value = 9\nmarker = 'agent.'")
         failed = await python_tool("1 / 0")
         restored = await python_tool("value")
     finally:
@@ -216,10 +216,10 @@ async def test_failed_cell_is_materialized_without_destroying_warm_state(tmp_pat
     )
     assert replacement.python is not None
     try:
-        after_restart = await replacement.python("value")
+        after_restart = await replacement.python("value, marker")
     finally:
         assert replacement.close is not None
         replacement.close()
 
-    assert after_restart["model_text"] == "9"
+    assert after_restart["model_text"] == "(9, 'agent.')"
     assert EventKind.REPL_STATE_RESTORED in [event.kind for event in events.read("task-2")]

@@ -34,12 +34,15 @@ historical feature checklist or book-rubric score.
   open/unknown-effect execution, time, query-relevant task memory, and dream/failure
   views. P0-P3 prompt manifests account for source view IDs and stable hashes. A
   restricted relational catalog enforces candidate -> shadow -> active -> retired
-  promotion; only active programs may serve retrieval. The optional `memory-search`
+  promotion; only active programs may serve retrieval. Execution copies only the
+  requested task into an isolated DuckDB connection, disables external access, and
+  caps returned rows. The optional `memory-search`
   extra adds immutable, content-addressed LanceDB projections for combined vector and
   keyword retrieval. They contain canonical event IDs, are rebuilt from DuckDB ledger
   evidence, and can serve `task.memory` without becoming a second authority or adding
-  Lance imports to the default startup path. The embedding implementation remains an
-  explicit injected, versioned dependency.
+  Lance imports to the default startup path. Cached projections embed only the query.
+  The embedding implementation remains an explicit injected, versioned dependency;
+  changing it requires a new version.
 - Registered MCP capabilities can be invoked from Python through the same bounded,
   traced broker. Unknown capabilities fail closed without expanding the ADK tool list.
 - Trusted directory skills and redacted interaction traces.
