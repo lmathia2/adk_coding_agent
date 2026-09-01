@@ -85,6 +85,28 @@ class PiWorkflowDependencies:
     approvals: ApprovalWaiter | None = None
     replies: PublicReplies | None = None
 
+
+@dataclass(slots=True)
+class _RunState:
+    request: TaskRequest
+    ledger: TaskLedger
+    task_id: str
+    session_id: str | None
+    history: str
+    compaction_summary: str
+    compaction_id: str | None
+    owner: str
+    max_iterations: int
+    initial_fingerprint: str
+    skill_runtime: SkillRuntimeContext
+
+
+@dataclass(slots=True)
+class _VerificationTransition:
+    ledger: TaskLedger
+    result: str | None = None
+
+
 def _session_id(ctx: Context) -> str | None:
     direct = getattr(ctx, "session_id", None)
     if direct:
@@ -208,9 +230,7 @@ def _prepare_compaction(
         break
 
     uncompacted = [
-        event
-        for event in events[boundary:]
-        if event.kind != EventKind.COMPACTION_CREATED
+        event for event in events[boundary:] if event.kind != EventKind.COMPACTION_CREATED
     ]
     retained_count = min(recent_event_limit, len(uncompacted))
     if retained_count:
@@ -232,11 +252,7 @@ def _ledger_patch(before: TaskLedger, after: TaskLedger) -> dict[str, Any]:
     previous = before.model_dump(mode="json")
     current = after.model_dump(mode="json")
     return {
-        "set_fields": {
-            key: value
-            for key, value in current.items()
-            if previous.get(key) != value
-        }
+        "set_fields": {key: value for key, value in current.items() if previous.get(key) != value}
     }
 
 
@@ -248,9 +264,7 @@ def _with_workspace_observations(
 ) -> TaskLedger:
     data = ledger.model_dump(mode="python")
     data["files_modified"] = modified
-    data["files_read"] = list(
-        dict.fromkeys([*data.get("files_read", []), *step.files_in_focus])
-    )
+    data["files_read"] = list(dict.fromkeys([*data.get("files_read", []), *step.files_in_focus]))
     observed = TaskLedger.model_validate(data)
     return register_action_batch(observed, action_fingerprints)
 
@@ -359,14 +373,11 @@ def _record_outcome(
             status=status,
             passed=passed,
             iterations=ledger.iteration,
-            compactions=sum(
-                1 for event in events if event.kind == EventKind.COMPACTION_CREATED
-            ),
+            compactions=sum(1 for event in events if event.kind == EventKind.COMPACTION_CREATED),
             replans=sum(
                 1
                 for event in events
-                if event.idempotency_key
-                and event.idempotency_key.startswith("replan:")
+                if event.idempotency_key and event.idempotency_key.startswith("replan:")
             ),
             user_interventions=sum(
                 1 for event in events if event.kind == EventKind.STEERING_RECEIVED
@@ -414,9 +425,7 @@ def _set_model_call_state(
     }
     if steering_owner is not None:
         state_delta["steering_owner"] = steering_owner
-        state_delta["steering_packet_message_ids"] = list(
-            steering_packet_message_ids
-        )
+        state_delta["steering_packet_message_ids"] = list(steering_packet_message_ids)
     ctx.state.update(state_delta)
 
 
@@ -484,7 +493,11 @@ async def _verify_task(
             if decision.status == "approved":
                 result = await asyncio.to_thread(executor, command)
             else:
-                result = result.model_copy(update={"stderr": f"Validation command not executed: approval {decision.status}."})
+                result = result.model_copy(
+                    update={
+                        "stderr": f"Validation command not executed: approval {decision.status}."
+                    }
+                )
         result = enforce_test_count(command, result).model_copy(
             update={"required": command.required, "strength": command.effective_strength}
         )
@@ -494,29 +507,29 @@ async def _verify_task(
     report = build_report(
         criteria=ledger.acceptance_criteria,
         results=command_results,
-        scope_violations=check_scope(plan.changed_paths, allowed_paths=plan.allowed_paths, forbidden_paths=plan.forbidden_paths),
+        scope_violations=check_scope(
+            plan.changed_paths,
+            allowed_paths=plan.allowed_paths,
+            forbidden_paths=plan.forbidden_paths,
+        ),
         criterion_evidence=evidence_map,
         required_strength=request.verification_level,
         changed_paths=plan.changed_paths,
     )
     return {
         "report": report.model_dump(mode="json"),
-        "commands": [
-            result.model_dump(mode="json") for result in command_results
-        ],
+        "commands": [result.model_dump(mode="json") for result in command_results],
         "changed_paths": modified,
     }
 
 
-async def _orchestrate_owned(
+def _initialize_run(
     deps: PiWorkflowDependencies,
     ctx: Context,
     node_input: str | dict[str, Any],
-    *,
-    verify_node: BaseNode,
-) -> AsyncGenerator[Event | str, None]:
-    started = time.monotonic()
-    reply_stream = deps.replies.for_invocation(ctx.get_invocation_context().invocation_id) if deps.replies else None
+) -> tuple[_RunState, bool, bool]:
+    """Restore durable task state and prepare the stable run-scoped inputs."""
+
     request = parse_task_request(node_input)
     session_id = _session_id(ctx)
     settings = deps.settings
@@ -526,46 +539,41 @@ async def _orchestrate_owned(
         max_tokens=deps.work_packet_section_tokens.get("CONVERSATION", 2_000),
     )
     task_id = settings.task_id_override or task_id_for(request, session_id)
-    if ctx.state.get("harness_task_id") != task_id:
-        # Keep ADK conversation history, not the previous turn's budgets, tool
-        # receipts, skill selection, or control decisions. Same-run resume keeps them.
-        ctx.state.update({
-            "harness_task_id": task_id,
-            "estimated_task_input_tokens": 0,
-            "tool_action_fingerprints": [],
-            "workflow_tool_action_sequence": 0,
-            "verification_required_task": None,
-            "skill_selection_initialized": False,
-            "skill_context_text": "",
-            "selected_skill_names": [],
-            "selected_skill_hashes": [],
-            "steering_packet_message_ids": [],
-        })
-        # Flush the parent's reset before child tools update these keys. Keeping
-        # pending parent deltas would mask/overwrite the child's new safety flags.
-        yield Event()
-    manifest = build_repository_manifest(settings.workspace)
+    state_reset = ctx.state.get("harness_task_id") != task_id
+    if state_reset:
+        ctx.state.update(
+            {
+                "harness_task_id": task_id,
+                "estimated_task_input_tokens": 0,
+                "tool_action_fingerprints": [],
+                "workflow_tool_action_sequence": 0,
+                "verification_required_task": None,
+                "skill_selection_initialized": False,
+                "skill_context_text": "",
+                "selected_skill_names": [],
+                "selected_skill_hashes": [],
+                "steering_packet_message_ids": [],
+            }
+        )
 
+    manifest = build_repository_manifest(settings.workspace)
     events = deps.event_store.read(task_id)
     if events:
         ledger = rebuild_ledger(events)
         if ledger.mode == "coding" and request.mode == "auto":
-            request = TaskRequest.model_validate({
-                **request.model_dump(mode="python"), "mode": "coding",
-                "acceptance_criteria": ledger.acceptance_criteria,
-            })
+            request = TaskRequest.model_validate(
+                {
+                    **request.model_dump(mode="python"),
+                    "mode": "coding",
+                    "acceptance_criteria": ledger.acceptance_criteria,
+                }
+            )
     else:
         ledger = create_initial_ledger(
             request,
             task_id=task_id,
-            base_revision=(
-                settings.base_revision_override
-                or manifest.base_revision
-                or "unknown"
-            ),
-            workspace_id=(
-                settings.workspace_id_override or settings.workspace.as_posix()
-            ),
+            base_revision=settings.base_revision_override or manifest.base_revision or "unknown",
+            workspace_id=settings.workspace_id_override or settings.workspace.as_posix(),
             branch_id=manifest.branch or "detached",
         )
         deps.event_store.append(
@@ -577,17 +585,15 @@ async def _orchestrate_owned(
 
     latest_checkpoint = deps.checkpoint_store.latest(task_id)
     current_fingerprint = _workspace_fingerprint(deps, task_id)
-    if (
-        latest_checkpoint is not None
-        and latest_checkpoint.git_tree_hash != current_fingerprint
-    ):
+    if latest_checkpoint is not None and latest_checkpoint.git_tree_hash != current_fingerprint:
         previous = ledger
-        data = ledger.model_dump(mode="python")
-        data["next_action"] = (
-            "Reconcile workspace changes made after the latest checkpoint before "
-            "continuing implementation"
-        )
-        ledger = TaskLedger.model_validate(data)
+        ledger = TaskLedger.model_validate({
+            **ledger.model_dump(mode="python"),
+            "next_action": (
+                "Reconcile workspace changes made after the latest checkpoint before "
+                "continuing implementation"
+            ),
+        })
         deps.event_store.append(
             task_id,
             EventKind.WORKSPACE_INITIALIZED,
@@ -607,12 +613,6 @@ async def _orchestrate_owned(
         )
 
     compaction_summary, compaction_id = _latest_compaction(deps, task_id)
-    owner = f"{settings.worker_id}:{session_id or task_id}"
-    max_iterations = min(
-        settings.max_iterations,
-        int(getattr(request, "max_iterations", None) or settings.max_iterations),
-    )
-
     if latest_checkpoint is None:
         _save_checkpoint(
             deps,
@@ -623,6 +623,7 @@ async def _orchestrate_owned(
         )
 
     skill_runtime = _skill_runtime_from_state(ctx)
+    skill_initialized = skill_runtime is None
     if skill_runtime is None:
         try:
             skill_runtime = build_skill_context(
@@ -635,30 +636,274 @@ async def _orchestrate_owned(
             deps.event_store.append(
                 task_id,
                 EventKind.ACTION_RECORDED,
-                {
-                    "kind": "skill_loading_failed",
-                    "error_type": type(error).__name__,
-                },
+                {"kind": "skill_loading_failed", "error_type": type(error).__name__},
                 idempotency_key=f"skill-loading-failed:{type(error).__name__}",
             )
         _set_skill_state(ctx, skill_runtime)
-        # Publish selected names before waiting for the worker. The public mapper
-        # excludes bodies and hashes; discovery alone is not evidence of selection.
-        yield Event()
+
     skill_event = {
         "kind": "skills_selected",
         "names": list(skill_runtime.selected_names),
         "hashes": list(skill_runtime.selected_hashes),
     }
-    skill_event_hash = hashlib.sha256(
-        json.dumps(skill_event, sort_keys=True).encode()
-    ).hexdigest()[:16]
+    skill_event_hash = hashlib.sha256(json.dumps(skill_event, sort_keys=True).encode()).hexdigest()[
+        :16
+    ]
     deps.event_store.append(
         task_id,
         EventKind.ACTION_RECORDED,
         skill_event,
         idempotency_key=f"skills-selected:{skill_event_hash}",
     )
+    max_iterations = min(
+        settings.max_iterations,
+        int(getattr(request, "max_iterations", None) or settings.max_iterations),
+    )
+    return (
+        _RunState(
+            request=request,
+            ledger=ledger,
+            task_id=task_id,
+            session_id=session_id,
+            history=history,
+            compaction_summary=compaction_summary,
+            compaction_id=compaction_id,
+            owner=f"{settings.worker_id}:{session_id or task_id}",
+            max_iterations=max_iterations,
+            initial_fingerprint=current_fingerprint,
+            skill_runtime=skill_runtime,
+        ),
+        state_reset,
+        skill_initialized,
+    )
+
+
+def _answer_result(
+    deps: PiWorkflowDependencies,
+    *,
+    ledger: TaskLedger,
+    step: AgentStep,
+    owner: str,
+    session_id: str | None,
+    compaction_id: str | None,
+    started: float,
+) -> tuple[TaskLedger, str]:
+    previous = ledger
+    ledger = TaskLedger.model_validate({
+        **ledger.model_dump(mode="python"),
+        "status": "answered",
+        "next_action": None,
+        "iteration": ledger.iteration + 1,
+    })
+    deps.event_store.append(
+        ledger.task_id,
+        EventKind.LEDGER_PATCHED,
+        _ledger_patch(previous, ledger),
+        idempotency_key=f"answer:{ledger.iteration}",
+    )
+    delivered = deps.steering_queue.leased_by(ledger.task_id, owner)
+    if delivered:
+        deps.steering_queue.ack([item.message_id for item in delivered], owner)
+    _save_checkpoint(
+        deps,
+        task_id=ledger.task_id,
+        ledger=ledger,
+        session_id=session_id,
+        compaction_id=compaction_id,
+    )
+    _record_outcome(
+        deps,
+        task_id=ledger.task_id,
+        ledger=ledger,
+        status="answered",
+        passed=False,
+        started=started,
+    )
+    return ledger, json.dumps({"status": "answered", "message": step.message})
+
+
+def _blocked_result(
+    deps: PiWorkflowDependencies,
+    *,
+    ledger: TaskLedger,
+    started: float,
+) -> str:
+    reason = ledger.blockers[-1] if ledger.blockers else "Human input required"
+    deps.event_store.append(
+        ledger.task_id,
+        EventKind.TASK_BLOCKED,
+        {"reason": reason},
+        idempotency_key=f"blocked:{ledger.iteration}",
+    )
+    _record_outcome(
+        deps,
+        task_id=ledger.task_id,
+        ledger=ledger,
+        status="blocked",
+        passed=False,
+        started=started,
+    )
+    return json.dumps(
+        {
+            "status": "blocked",
+            "task_id": ledger.task_id,
+            "questions": ledger.open_questions,
+            "blockers": ledger.blockers,
+            "metrics": deps.metrics_store.task_summary(ledger.task_id),
+        },
+        sort_keys=True,
+    )
+
+
+async def _verification_transition(
+    deps: PiWorkflowDependencies,
+    ctx: Context,
+    verify_node: BaseNode,
+    *,
+    request: TaskRequest,
+    ledger: TaskLedger,
+    step: AgentStep,
+    session_id: str | None,
+    compaction_id: str | None,
+    started: float,
+) -> _VerificationTransition:
+    verification = await ctx.run_node(
+        verify_node,
+        node_input={
+            "request": request.model_dump(mode="json"),
+            "ledger": ledger.model_dump(mode="json"),
+            "claims": [claim.model_dump(mode="json") for claim in step.completion_claims],
+        },
+    )
+    report = verification["report"]
+    deps.event_store.append(
+        ledger.task_id,
+        EventKind.VERIFICATION_COMPLETED,
+        verification,
+        idempotency_key=f"verify:{ledger.iteration}",
+    )
+    if not report["passed"]:
+        previous = ledger
+        ledger = TaskLedger.model_validate({
+            **ledger.model_dump(mode="python"),
+            "phase": "implement",
+            "status": "active",
+            "next_action": report.get("recommended_next_action"),
+        })
+        deps.event_store.append(
+            ledger.task_id,
+            EventKind.LEDGER_PATCHED,
+            _ledger_patch(previous, ledger),
+            idempotency_key=f"verification-failed:{ledger.iteration}",
+        )
+        _save_checkpoint(
+            deps,
+            task_id=ledger.task_id,
+            ledger=ledger,
+            session_id=session_id,
+            compaction_id=compaction_id,
+        )
+        return _VerificationTransition(ledger=ledger)
+
+    pending_steering = (
+        deps.steering_enabled
+        and deps.steering_at_work_batch_boundary
+        and deps.steering_queue.has_pending(ledger.task_id)
+    )
+    if pending_steering:
+        previous = ledger
+        ledger = resume_for_steering(ledger)
+        deps.event_store.append(
+            ledger.task_id,
+            EventKind.LEDGER_PATCHED,
+            _ledger_patch(previous, ledger),
+            idempotency_key=f"steering-completion-fence:{ledger.iteration}",
+        )
+        _save_checkpoint(
+            deps,
+            task_id=ledger.task_id,
+            ledger=ledger,
+            session_id=session_id,
+            compaction_id=compaction_id,
+        )
+        return _VerificationTransition(ledger=ledger)
+
+    deps.event_store.append(
+        ledger.task_id,
+        EventKind.TASK_FINISHED,
+        {"verification": report},
+        idempotency_key="task-finished",
+    )
+    ledger = TaskLedger.model_validate({
+        **ledger.model_dump(mode="python"),
+        "phase": "complete",
+        "status": "complete",
+    })
+    _save_checkpoint(
+        deps,
+        task_id=ledger.task_id,
+        ledger=ledger,
+        session_id=session_id,
+        compaction_id=compaction_id,
+    )
+    _record_outcome(
+        deps,
+        task_id=ledger.task_id,
+        ledger=ledger,
+        status="complete",
+        passed=True,
+        started=started,
+        tests_passed=int(report.get("tests_passed", 0)),
+        tests_failed=int(report.get("tests_failed", 0)),
+    )
+    return _VerificationTransition(
+        ledger=ledger,
+        result=json.dumps(
+            {
+                "status": "complete",
+                "message": step.message,
+                "task_id": ledger.task_id,
+                "changed_paths": verification["changed_paths"],
+                "verification": report,
+                "metrics": deps.metrics_store.task_summary(ledger.task_id),
+            },
+            sort_keys=True,
+        ),
+    )
+
+
+async def _orchestrate_owned(
+    deps: PiWorkflowDependencies,
+    ctx: Context,
+    node_input: str | dict[str, Any],
+    *,
+    verify_node: BaseNode,
+) -> AsyncGenerator[Event | str, None]:
+    started = time.monotonic()
+    reply_stream = (
+        deps.replies.for_invocation(ctx.get_invocation_context().invocation_id)
+        if deps.replies
+        else None
+    )
+    run, state_reset, skill_initialized = _initialize_run(deps, ctx, node_input)
+    request = run.request
+    ledger = run.ledger
+    task_id = run.task_id
+    session_id = run.session_id
+    history = run.history
+    compaction_summary = run.compaction_summary
+    compaction_id = run.compaction_id
+    owner = run.owner
+    max_iterations = run.max_iterations
+    current_fingerprint = run.initial_fingerprint
+    skill_runtime = run.skill_runtime
+    settings = deps.settings
+    # Flush parent state before child tools update it, and publish selected skill
+    # names before the worker starts. Public events exclude skill bodies and hashes.
+    if state_reset:
+        yield Event()
+    if skill_initialized:
+        yield Event()
 
     while ledger.iteration < max_iterations:
         leased = (
@@ -743,19 +988,24 @@ async def _orchestrate_owned(
             stable_prefix_hash=deps.static_prefix_hash,
             static_prefix_tokens=deps.static_prefix_tokens,
             steering_owner=owner,
-            steering_packet_message_ids=tuple(
-                message.message_id for message in leased
-            ),
+            steering_packet_message_ids=tuple(message.message_id for message in leased),
         )
+
         async def allow_reply(step: AgentStep, active_request: TaskRequest = request) -> bool:
             eligible = can_answer_directly(
-                active_request, step,
+                active_request,
+                step,
                 verification_required=ctx.state.get("verification_required_task") == task_id,
                 workspace_unchanged=True,
             )
-            return eligible and (
-                await asyncio.to_thread(_workspace_fingerprint, deps, task_id) == current_fingerprint
-            ) and not (deps.steering_enabled and deps.steering_queue.has_pending(task_id))
+            return (
+                eligible
+                and (
+                    await asyncio.to_thread(_workspace_fingerprint, deps, task_id)
+                    == current_fingerprint
+                )
+                and not (deps.steering_enabled and deps.steering_queue.has_pending(task_id))
+            )
 
         if reply_stream is not None:
             reply_stream.prepare(allow_reply)
@@ -786,57 +1036,52 @@ async def _orchestrate_owned(
             # Tool effects and explicit task obligations cannot be waived by a
             # model choosing a conversational status. Bind effects to this task.
             allowed = can_answer_directly(
-                request, step,
-                verification_required=(
-                    ctx.state.get("verification_required_task") == task_id
-                ),
-                workspace_unchanged=(
-                    _workspace_fingerprint(deps, task_id) == current_fingerprint
-                ),
+                request,
+                step,
+                verification_required=(ctx.state.get("verification_required_task") == task_id),
+                workspace_unchanged=(_workspace_fingerprint(deps, task_id) == current_fingerprint),
             )
             if not allowed:
                 if reply_stream is not None and reply_stream.started:
-                    raise ValueError("Workspace or verification obligations changed during a streamed reply")
+                    raise ValueError(
+                        "Workspace or verification obligations changed during a streamed reply"
+                    )
                 step = step.model_copy(update={"status": "verify"})
             elif deps.steering_enabled and deps.steering_queue.has_pending(task_id):
                 if reply_stream is not None and reply_stream.started:
                     yield message_event(step.message)
                 step = step.model_copy(update={"status": "continue", "message": ""})
             else:
-                previous = ledger
-                ledger = TaskLedger.model_validate({**ledger.model_dump(mode="python"),
-                    "status": "answered", "next_action": None,
-                    "iteration": ledger.iteration + 1,
-                })
-                deps.event_store.append(
-                    task_id, EventKind.LEDGER_PATCHED, _ledger_patch(previous, ledger),
-                    idempotency_key=f"answer:{ledger.iteration}",
+                ledger, result = _answer_result(
+                    deps,
+                    ledger=ledger,
+                    step=step,
+                    owner=owner,
+                    session_id=session_id,
+                    compaction_id=compaction_id,
+                    started=started,
                 )
-                delivered = deps.steering_queue.leased_by(task_id, owner)
-                if delivered:
-                    deps.steering_queue.ack([item.message_id for item in delivered], owner)
-                _save_checkpoint(
-                    deps, task_id=task_id, ledger=ledger,
-                    session_id=session_id, compaction_id=compaction_id,
-                )
-                _record_outcome(
-                    deps, task_id=task_id, ledger=ledger, status="answered",
-                    passed=False, started=started,
-                )
-                yield json.dumps({"status": "answered", "message": step.message})
+                yield result
                 return
 
         if step.status in {"verify", "done"} and request.mode == "auto":
-            request = TaskRequest.model_validate({
-                **request.model_dump(mode="python"), "mode": "coding",
-            })
+            request = TaskRequest.model_validate(
+                {
+                    **request.model_dump(mode="python"),
+                    "mode": "coding",
+                }
+            )
             before_promotion = ledger
-            ledger = TaskLedger.model_validate({
-                **ledger.model_dump(mode="python"), "mode": "coding",
-                "acceptance_criteria": request.acceptance_criteria,
-            })
+            ledger = TaskLedger.model_validate(
+                {
+                    **ledger.model_dump(mode="python"),
+                    "mode": "coding",
+                    "acceptance_criteria": request.acceptance_criteria,
+                }
+            )
             deps.event_store.append(
-                task_id, EventKind.LEDGER_PATCHED,
+                task_id,
+                EventKind.LEDGER_PATCHED,
                 _ledger_patch(before_promotion, ledger),
                 idempotency_key="coding-contract-established",
             )
@@ -893,49 +1138,22 @@ async def _orchestrate_owned(
             compaction_id=compaction_id,
         )
         yield Event(
-            actions=EventActions(state_delta={
-                "task_id": task_id,
-                "task_ledger": ledger.model_dump(mode="json"),
-                "task_route": route.value,
-                "checkpoint_id": checkpoint.checkpoint_id,
-                "workspace_fingerprint": checkpoint.git_tree_hash,
-                "stable_instruction_sha256": deps.static_prefix_hash,
-                "static_prefix_tokens_estimate": deps.static_prefix_tokens,
-                "dynamic_context_tokens_estimate": dynamic_tokens,
-            })
+            actions=EventActions(
+                state_delta={
+                    "task_id": task_id,
+                    "task_ledger": ledger.model_dump(mode="json"),
+                    "task_route": route.value,
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    "workspace_fingerprint": checkpoint.git_tree_hash,
+                    "stable_instruction_sha256": deps.static_prefix_hash,
+                    "static_prefix_tokens_estimate": deps.static_prefix_tokens,
+                    "dynamic_context_tokens_estimate": dynamic_tokens,
+                }
+            )
         )
 
         if route == HarnessRoute.BLOCKED:
-            deps.event_store.append(
-                task_id,
-                EventKind.TASK_BLOCKED,
-                {
-                    "reason": (
-                        ledger.blockers[-1]
-                        if ledger.blockers
-                        else "Human input required"
-                    )
-                },
-                idempotency_key=f"blocked:{ledger.iteration}",
-            )
-            _record_outcome(
-                deps,
-                task_id=task_id,
-                ledger=ledger,
-                status="blocked",
-                passed=False,
-                started=started,
-            )
-            yield json.dumps(
-                {
-                    "status": "blocked",
-                    "task_id": task_id,
-                    "questions": ledger.open_questions,
-                    "blockers": ledger.blockers,
-                    "metrics": deps.metrics_store.task_summary(task_id),
-                },
-                sort_keys=True,
-            )
+            yield _blocked_result(deps, ledger=ledger, started=started)
             return
 
         if route == HarnessRoute.REPLAN:
@@ -986,107 +1204,21 @@ async def _orchestrate_owned(
             continue
 
         if route == HarnessRoute.VERIFY:
-            verification = await ctx.run_node(
-                verify_node,
-                node_input={
-                    "request": request.model_dump(mode="json"),
-                    "ledger": ledger.model_dump(mode="json"),
-                    "claims": [
-                        claim.model_dump(mode="json")
-                        for claim in step.completion_claims
-                    ],
-                },
-            )
-            report = verification["report"]
-            deps.event_store.append(
-                task_id,
-                EventKind.VERIFICATION_COMPLETED,
-                verification,
-                idempotency_key=f"verify:{ledger.iteration}",
-            )
-            if report["passed"]:
-                if (
-                    deps.steering_enabled
-                    and deps.steering_at_work_batch_boundary
-                    and deps.steering_queue.has_pending(task_id)
-                ):
-                    previous = ledger
-                    ledger = resume_for_steering(ledger)
-                    deps.event_store.append(
-                        task_id,
-                        EventKind.LEDGER_PATCHED,
-                        _ledger_patch(previous, ledger),
-                        idempotency_key=(
-                            f"steering-completion-fence:{ledger.iteration}"
-                        ),
-                    )
-                    _save_checkpoint(
-                        deps,
-                        task_id=task_id,
-                        ledger=ledger,
-                        session_id=session_id,
-                        compaction_id=compaction_id,
-                    )
-                    continue
-                deps.event_store.append(
-                    task_id,
-                    EventKind.TASK_FINISHED,
-                    {"verification": report},
-                    idempotency_key="task-finished",
-                )
-                data = ledger.model_dump(mode="python")
-                data["phase"] = "complete"
-                data["status"] = "complete"
-                ledger = TaskLedger.model_validate(data)
-                _save_checkpoint(
-                    deps,
-                    task_id=task_id,
-                    ledger=ledger,
-                    session_id=session_id,
-                    compaction_id=compaction_id,
-                )
-                _record_outcome(
-                    deps,
-                    task_id=task_id,
-                    ledger=ledger,
-                    status="complete",
-                    passed=True,
-                    started=started,
-                    tests_passed=int(report.get("tests_passed", 0)),
-                    tests_failed=int(report.get("tests_failed", 0)),
-                )
-                yield json.dumps(
-                    {
-                        "status": "complete",
-                        "message": step.message,
-                        "task_id": task_id,
-                        "changed_paths": verification["changed_paths"],
-                        "verification": report,
-                        "metrics": deps.metrics_store.task_summary(task_id),
-                    },
-                    sort_keys=True,
-                )
-                return
-
-            data = ledger.model_dump(mode="python")
-            data["phase"] = "implement"
-            data["status"] = "active"
-            data["next_action"] = report.get("recommended_next_action")
-            previous = ledger
-            ledger = TaskLedger.model_validate(data)
-            deps.event_store.append(
-                task_id,
-                EventKind.LEDGER_PATCHED,
-                _ledger_patch(previous, ledger),
-                idempotency_key=f"verification-failed:{ledger.iteration}",
-            )
-            _save_checkpoint(
+            transition = await _verification_transition(
                 deps,
-                task_id=task_id,
+                ctx,
+                verify_node,
+                request=request,
                 ledger=ledger,
+                step=step,
                 session_id=session_id,
                 compaction_id=compaction_id,
+                started=started,
             )
+            ledger = transition.ledger
+            if transition.result is not None:
+                yield transition.result
+                return
 
     deps.event_store.append(
         task_id,
@@ -1131,7 +1263,10 @@ def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
         # JSON text by ``parse_task_request``.
         try:
             async for event in _orchestrate_owned(
-                deps, ctx, node_input, verify_node=verify_task,
+                deps,
+                ctx,
+                node_input,
+                verify_node=verify_task,
             ):
                 if isinstance(event, str):
                     for public_event in result_events(json.loads(event)):
