@@ -2,10 +2,9 @@
 
 from .compaction import CompactionPolicy, build_compaction_snapshot, safe_artifact_uri
 from .compiler import estimate_tokens, truncate_to_tokens
-from .prompt import STATIC_CODING_INSTRUCTION, build_static_prefix, prefix_hash
+from .prompt import build_static_prefix, prefix_hash
 
 __all__ = [
-    "STATIC_CODING_INSTRUCTION",
     "CompactionPolicy",
     "build_compaction_snapshot",
     "build_static_prefix",

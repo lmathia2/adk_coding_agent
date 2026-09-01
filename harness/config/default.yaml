@@ -24,19 +24,13 @@ harness:
           retry_statuses: [429, 500, 502, 503, 504]
     agents:
       coding_worker:
-        kind: llm
         model: coding
         prompt:
-          source: builtin
-          name: coding_worker_v1
-        tools: [read, bash, edit, write]
-        output_schema: agent_step
-        mode: multi_turn
+          path: prompts/coding-worker.md
     workflow:
       max_iterations: 40
 
     tools:
-      visible: [read, bash, edit, write]
       read_default_lines: 400
       bash_default_timeout_seconds: 120
       bash_max_timeout_seconds: 600
@@ -66,8 +60,6 @@ harness:
       allow_network: false
       allow_git_history_mutation: false
       allow_unknown_commands: false
-      destructive_commands: deny
-      publishing_commands: approval_required
       redact_environment_names: []
 
     sandbox:
@@ -104,7 +96,6 @@ harness:
 persistence:
   session_backend: sqlite
   artifact_backend: file
-  memory_backend: in_memory
 
 server:
   host: 127.0.0.1

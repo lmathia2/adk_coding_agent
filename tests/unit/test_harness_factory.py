@@ -304,7 +304,6 @@ def test_pi_factory_executes_file_prompt_and_agent_model_bindings(
         encoding="utf-8",
     )
     agents["coding_worker"]["prompt"] = {
-        "source": "file",
         "path": Path("prompts/worker.md"),
     }
     configured = parse_harness_composition(

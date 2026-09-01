@@ -76,21 +76,15 @@ class ModelConfig(FrozenModel):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("model base_url must be an absolute HTTP(S) URL")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise ValueError(
-                "model base_url cannot contain credentials, a query, or a fragment"
-            )
+            raise ValueError("model base_url cannot contain credentials, a query, or a fragment")
         return normalized
 
     @model_validator(mode="after")
     def validate_provider_options(self) -> ModelConfig:
         if self.provider == "google_adk" and (
-            self.base_url is not None
-            or self.api_key is not None
-            or self.client_version is not None
+            self.base_url is not None or self.api_key is not None or self.client_version is not None
         ):
-            raise ValueError(
-                "google_adk models cannot define base_url, api_key, or client_version"
-            )
+            raise ValueError("google_adk models cannot define base_url, api_key, or client_version")
         elif self.provider == "openai_codex" and (
             self.base_url is not None or self.api_key is not None
         ):
@@ -104,30 +98,12 @@ class ModelConfig(FrozenModel):
 
 
 class PromptConfig(FrozenModel):
-    source: Literal["builtin", "file"] = "builtin"
-    name: str | None = Field(default=None, max_length=128)
-    path: Path | None = None
-
-    @model_validator(mode="after")
-    def validate_source(self) -> PromptConfig:
-        if self.source == "builtin" and not self.name:
-            raise ValueError("builtin prompts require a name")
-        if self.source == "file" and self.path is None:
-            raise ValueError("file prompts require a path")
-        if self.source == "builtin" and self.path is not None:
-            raise ValueError("builtin prompts cannot define a path")
-        if self.source == "file" and self.name is not None:
-            raise ValueError("file prompts cannot define a builtin name")
-        return self
+    path: Path = Path("prompts/coding-worker.md")
 
 
 class AgentConfig(FrozenModel):
-    kind: Literal["llm"] = "llm"
     model: str = Field(min_length=1, max_length=64)
-    prompt: PromptConfig = PromptConfig(name="coding_worker_v1")
-    tools: tuple[Literal["read", "bash", "edit", "write"], ...] = FOUR_CODING_TOOLS
-    output_schema: Literal["agent_step"] = "agent_step"
-    mode: Literal["multi_turn"] = "multi_turn"
+    prompt: PromptConfig = PromptConfig()
 
 
 class WorkflowConfig(FrozenModel):
@@ -153,7 +129,6 @@ class SearchConfig(FrozenModel):
 
 
 class ToolSurfaceConfig(FrozenModel):
-    visible: tuple[Literal["read", "bash", "edit", "write"], ...] = FOUR_CODING_TOOLS
     read_default_lines: int = Field(default=400, ge=1, le=400)
     bash_default_timeout_seconds: int = Field(default=120, ge=1, le=3_600)
     bash_max_timeout_seconds: int = Field(default=600, ge=1, le=3_600)
@@ -162,8 +137,6 @@ class ToolSurfaceConfig(FrozenModel):
 
     @model_validator(mode="after")
     def validate_surface(self) -> ToolSurfaceConfig:
-        if self.visible != FOUR_CODING_TOOLS:
-            raise ValueError("coding tool surface must be exactly read, bash, edit, write")
         if self.bash_default_timeout_seconds > self.bash_max_timeout_seconds:
             raise ValueError("default bash timeout cannot exceed its maximum")
         return self
@@ -186,9 +159,7 @@ class ContextConfig(FrozenModel):
     @model_validator(mode="after")
     def validate_work_packet_budget(self) -> ContextConfig:
         if self.max_task_input_tokens < self.work_packet_tokens:
-            raise ValueError(
-                "max_task_input_tokens cannot be smaller than work_packet_tokens"
-            )
+            raise ValueError("max_task_input_tokens cannot be smaller than work_packet_tokens")
         return self
 
 
@@ -197,8 +168,6 @@ class SafetyConfig(FrozenModel):
     allow_network: bool = False
     allow_git_history_mutation: bool = False
     allow_unknown_commands: bool = False
-    destructive_commands: Literal["deny"] = "deny"
-    publishing_commands: Literal["approval_required"] = "approval_required"
     redact_environment_names: tuple[str, ...] = ()
 
 
@@ -215,7 +184,6 @@ class DockerSandboxConfig(FrozenModel):
     cpus: float = Field(default=2, gt=0, le=128)
     memory: str = Field(default="4g", pattern=r"^[1-9][0-9]*[kKmMgG]$")
     pids_limit: int = Field(default=256, ge=1, le=32_768)
-    network_disabled: Literal[True] = True
 
 
 SandboxConfig = Annotated[
@@ -297,13 +265,9 @@ class PiCodingConfig(FrozenModel):
                 raise ValueError(f"agent {name!r} references unknown model {agent.model!r}")
         if set(self.agents) != {"coding_worker"}:
             raise ValueError("pi_coding_v1 accepts only coding_worker")
-        if self.agents["coding_worker"].tools != FOUR_CODING_TOOLS:
-            raise ValueError("coding_worker requires exactly read, bash, edit, write")
         referenced_models = {agent.model for agent in self.agents.values()}
         if set(self.models) != referenced_models:
-            raise ValueError(
-                "pi_coding_v1 model entries must be referenced by a configured agent"
-            )
+            raise ValueError("pi_coding_v1 model entries must be referenced by a configured agent")
         return self
 
 
@@ -325,9 +289,7 @@ class HarnessSelectionConfig(FrozenModel):
     @classmethod
     def require_registry_validated_config(cls, value: object) -> object:
         if not isinstance(value, BaseModel):
-            raise ValueError(
-                "harness config must be validated through parse_harness_composition"
-            )
+            raise ValueError("harness config must be validated through parse_harness_composition")
         return value
 
     @model_validator(mode="after")
@@ -340,7 +302,6 @@ class HarnessSelectionConfig(FrozenModel):
 class PersistenceConfig(FrozenModel):
     session_backend: Literal["in_memory", "sqlite"] = "in_memory"
     artifact_backend: Literal["in_memory", "file"] = "in_memory"
-    memory_backend: Literal["in_memory"] = "in_memory"
 
 
 class ServerConfig(FrozenModel):
@@ -362,8 +323,7 @@ class ServerConfig(FrozenModel):
     def validate_liveness_deadlines(self) -> ServerConfig:
         if self.total_timeout_seconds < self.first_event_timeout_seconds:
             raise ValueError(
-                "server total_timeout_seconds cannot be shorter than "
-                "first_event_timeout_seconds"
+                "server total_timeout_seconds cannot be shorter than first_event_timeout_seconds"
             )
         return self
 
@@ -412,13 +372,9 @@ class HarnessComposition(FrozenModel):
         agents = config.get("agents", {}) if isinstance(config, dict) else {}
         for agent in agents.values():
             prompt = agent["prompt"]
-            if prompt["source"] != "file":
-                continue
             portable_path = Path(prompt["path"])
             if portable_path.is_absolute():
-                raise ValueError(
-                    "file prompt paths must be relative to the configuration root"
-                )
+                raise ValueError("file prompt paths must be relative to the configuration root")
             root = configuration_root.expanduser().resolve()
             resolved = (root / portable_path).resolve(strict=True)
             try:

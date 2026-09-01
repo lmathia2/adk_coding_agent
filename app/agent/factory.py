@@ -27,6 +27,7 @@ from harness.ai import AdkModelProviderRegistry, default_adk_model_provider_regi
 from harness.approvals import ApprovalStore
 from harness.approvals.waiting import ApprovalWaiter
 from harness.config import (
+    DEFAULT_COMPOSITION_PATH,
     FOUR_CODING_TOOLS,
     HarnessComposition,
     ModelConfig,
@@ -190,8 +191,8 @@ class PiCodingHarnessFactory:
         settings = settings_from_composition(composition, bindings)
         items = [ResourceItem(kind="tool", name=name) for name in FOUR_CODING_TOOLS]
         prompt = config.agents["coding_worker"].prompt
-        path = (bindings.configuration_root or settings.workspace) / prompt.path if prompt.path else None
-        items.append(ResourceItem(kind="prompt", name=prompt.name or "coding_worker", path=str(path.resolve()) if path else None))
+        path = (bindings.configuration_root or DEFAULT_COMPOSITION_PATH.parent) / prompt.path
+        items.append(ResourceItem(kind="prompt", name=prompt.path.stem, path=str(path.resolve())))
         warnings = []
         if settings.project_trusted:
             items.extend(ResourceItem(kind="instruction", name=path.name, path=str(path))

@@ -39,7 +39,7 @@ ledger / verify / checkpoint     read · bash · edit · write
   Python harness implementation.
 
 The Pi implementation's loop is Python code, not a configurable graph interpreter.
-YAML tunes its model, prompt, budgets, skills, tools, safety, tracing, persistence,
+YAML references a versioned worker prompt and tunes its model, budgets, skills, tool limits, safety allowances, tracing, persistence,
 steering, and iteration limits. Change topology by registering another factory.
 
 ## Minimal coding loop

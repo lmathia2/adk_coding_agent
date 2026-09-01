@@ -42,7 +42,7 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert isinstance(config, PiCodingConfig)
 
     assert composition.schema_version == 1
-    assert config.tools.visible == FOUR_CODING_TOOLS
+    assert FOUR_CODING_TOOLS == ("read", "bash", "edit", "write")
     assert composition.server.protocol == "ag_ui_websocket_v1"
     assert composition.server.first_event_timeout_seconds == 120
     assert composition.server.idle_timeout_seconds == 180
@@ -100,7 +100,6 @@ def test_loader_preserves_portable_relative_resource_paths(tmp_path: Path) -> No
     payload = _composition_payload()
     config = payload["harness"]["config"]
     config["agents"]["coding_worker"]["prompt"] = {
-        "source": "file",
         "path": "prompts/coding.md",
     }
     config["skills"] = {"additional_roots": ["skills"]}
@@ -121,7 +120,6 @@ def test_loader_preserves_portable_relative_resource_paths(tmp_path: Path) -> No
 def test_resolved_behavior_hash_tracks_file_prompt_content(tmp_path: Path) -> None:
     payload = _composition_payload()
     payload["harness"]["config"]["agents"]["coding_worker"]["prompt"] = {
-        "source": "file",
         "path": "prompts/coding.md",
     }
     prompt = tmp_path / "prompts" / "coding.md"
@@ -187,7 +185,6 @@ def test_pi_config_rejects_unused_model_entries() -> None:
 def test_resolved_file_prompt_rejects_symlink_escape(tmp_path: Path) -> None:
     payload = _composition_payload()
     payload["harness"]["config"]["agents"]["coding_worker"]["prompt"] = {
-        "source": "file",
         "path": "prompts/worker.md",
     }
     root = tmp_path / "configuration"
@@ -203,19 +200,11 @@ def test_resolved_file_prompt_rejects_symlink_escape(tmp_path: Path) -> None:
         composition.resolved_behavior_sha256(root)
 
 
-@pytest.mark.parametrize(
-    "visible",
-    [
-        ["read", "bash", "edit"],
-        ["bash", "read", "edit", "write"],
-        ["read", "bash", "edit", "write", "read"],
-    ],
-)
-def test_tool_surface_cannot_be_broadened_or_reordered(visible: list[str]) -> None:
+def test_tool_surface_is_a_code_invariant_not_configuration() -> None:
     payload = _composition_payload()
-    payload["harness"]["config"]["tools"] = {"visible": visible}
+    payload["harness"]["config"]["tools"] = {"visible": ["read"]}
 
-    with pytest.raises(ValidationError, match="exactly read, bash, edit, write"):
+    with pytest.raises(ValidationError, match="visible"):
         parse_harness_composition(payload)
 
 
@@ -252,16 +241,15 @@ def test_search_default_page_size_cannot_exceed_maximum() -> None:
         parse_harness_composition(payload)
 
 
-def test_missing_file_prompt_path_is_a_validation_error(tmp_path: Path) -> None:
+def test_removed_builtin_prompt_selector_is_rejected() -> None:
     payload = _composition_payload()
     payload["harness"]["config"]["agents"]["coding_worker"]["prompt"] = {
-        "source": "file"
+        "source": "builtin",
+        "name": "coding_worker_v1",
     }
-    config_path = tmp_path / "harness.yaml"
-    config_path.write_text(yaml.safe_dump(payload), encoding="utf-8")
 
-    with pytest.raises(ValidationError, match="file prompts require a path"):
-        load_harness_composition(config_path)
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        parse_harness_composition(payload)
 
 
 def test_duplicate_yaml_keys_are_rejected(tmp_path: Path) -> None:

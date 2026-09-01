@@ -10,7 +10,6 @@ from harness.config import load_harness_composition
 from harness.config.models import PersistenceConfig
 from harness.persistence.adk_services import (
     ArtifactBackend,
-    MemoryBackend,
     PersistenceSettings,
     SessionBackend,
     build_artifact_service,
@@ -25,7 +24,6 @@ def test_bundled_composition_selects_local_durable_backends() -> None:
 
     assert persistence.session_backend == "sqlite"
     assert persistence.artifact_backend == "file"
-    assert persistence.memory_backend == "in_memory"
 
 
 @pytest.mark.parametrize(
@@ -50,7 +48,6 @@ def test_local_durable_settings_are_scoped_to_resolved_state_root(tmp_path: Path
     assert settings.sqlite_path == (tmp_path / "state" / "adk" / "sessions.db").resolve()
     assert settings.artifact_backend == ArtifactBackend.FILE
     assert settings.artifact_root == (tmp_path / "state" / "adk" / "artifacts").resolve()
-    assert settings.memory_backend == MemoryBackend.IN_MEMORY
 
 
 def test_composition_resolves_local_paths(tmp_path: Path) -> None:

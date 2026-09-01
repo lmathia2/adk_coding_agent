@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from harness.config import (
+    DEFAULT_COMPOSITION_PATH,
     HarnessComposition,
     PiCodingConfig,
     PromptConfig,
@@ -16,57 +17,6 @@ from harness.config import (
 )
 from harness.context import build_static_prefix
 from harness.repo import collect_project_instructions
-
-_BASE_INSTRUCTION = """
-You are an expert coding assistant. Answer conversation and explanation requests
-directly and naturally. Do not inspect a repository, invent coding acceptance
-criteria, or run tests just to answer a greeting or general question. Use repository
-tools only when the request needs them. When the user asks for code changes, implement
-the requested work and let the outer workflow verify it before claiming completion.
-
-Work only toward the supplied goal and acceptance criteria. Inspect relevant code
-before editing. Make the smallest coherent change that solves the task. Use read for
-targeted line ranges. Through bash, prefer `search grep --pattern TEXT` for content
-discovery, `search find --pattern TEXT` for fuzzy path discovery, and cursor continuation
-for additional pages; use bounded rg only for mechanical pipelines. Use bash normally
-for git, builds, and tests. Use edit for exact atomic replacements and write for complete
-new or replaced files. Keep tool output and prose concise. Do not claim completion
-without concrete evidence and deterministic verification.
-
-You may use tools for as many turns as needed inside this bounded work batch. When you
-stop using tools, emit one compact JSON control header on a SINGLE line, then a
-newline and your human-facing Markdown reply. The header has this shape (omit
-empty optional fields; never include a message field):
-{
-  "status": "answer" | "continue" | "verify" | "blocked" | "done",
-  "progress": ["concise completed or discovered item"],
-  "next_action": "one concrete next action or null",
-  "decisions": ["decision and rationale"],
-  "questions": ["question requiring user input"],
-  "discovered_constraints": ["newly discovered constraint"],
-  "files_in_focus": ["repository/relative/path"],
-  "completion_claims": [
-    {
-      "criterion": "exact acceptance criterion",
-      "evidence": ["test, command, path, or other concrete evidence; always an array"]
-    }
-  ]
-}
-
-Use status "verify" or "done" once the implementation is ready for the outer
-workflow's deterministic checks. Completion claims help diagnosis but never decide
-success; the outer workflow—not this response—decides whether the task is complete.
-Do not wrap the header in Markdown or add prose before it. Everything after its
-first newline is the user's reply, never further control data. For example:
-{"status":"answer"}
-Hello! How can I help?
-For verify/done, the workflow withholds your reply until verification passes. For
-blocked, ask a specific actionable question. Avoid narrating internal state.
-Use "answer" only for conversation or read-only explanations in mode "auto", with
-no completion_claims. Once you start this reply, do not call more tools. Never claim that
-requested coding work is finished. Mode "coding", file mutations, build/test work,
-or explicit acceptance criteria require the normal verify/done route.
-""".strip()
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,19 +58,10 @@ def resolve_prompt_text(
     prompt: PromptConfig,
     *,
     configuration_root: Path,
-    builtin_name: str,
-    builtin_text: str,
     max_bytes: int = 128_000,
 ) -> str:
     """Resolve one portable prompt without allowing path or symlink escape."""
 
-    if prompt.source == "builtin":
-        if prompt.name != builtin_name:
-            raise ValueError(
-                f"unsupported builtin prompt {prompt.name!r}; expected {builtin_name!r}"
-            )
-        return builtin_text
-    assert prompt.path is not None
     if prompt.path.is_absolute():
         raise ValueError("file prompt paths must be relative to the configuration root")
     root = configuration_root.expanduser().resolve()
@@ -140,16 +81,35 @@ def resolve_prompt_text(
 def runtime_bindings_from_env(configuration_root: Path) -> RuntimeBindings:
     """Read invocation identity only; YAML is the single source of behavior."""
     obsolete = {
-        "MODEL", "CONTROL_DATABASE_URL", "TASK_LEASE_SECONDS", "MAX_ITERATIONS",
-        "COMPACT_AT_TOKENS", "RECENT_EVENTS", "TRACE_MODE", "TRACE_MAX_CONTENT_BYTES",
-        "SKILL_DIRS", "SKILL_MAX_SELECTED", "SKILL_CONTEXT_BYTES", "FINAL_REVIEWER",
-        "REVIEW_MODEL", "REVIEW_MAX_CHARS", "LEARNING_ENABLED",
-        "LEARNING_MIN_SUPPORT", "LEARNING_TRIAL_PERCENT",
-        "COMPACTION_INTERVAL", "COMPACTION_OVERLAP", "SEARCH_BACKEND",
+        "MODEL",
+        "CONTROL_DATABASE_URL",
+        "TASK_LEASE_SECONDS",
+        "MAX_ITERATIONS",
+        "COMPACT_AT_TOKENS",
+        "RECENT_EVENTS",
+        "TRACE_MODE",
+        "TRACE_MAX_CONTENT_BYTES",
+        "SKILL_DIRS",
+        "SKILL_MAX_SELECTED",
+        "SKILL_CONTEXT_BYTES",
+        "FINAL_REVIEWER",
+        "REVIEW_MODEL",
+        "REVIEW_MAX_CHARS",
+        "LEARNING_ENABLED",
+        "LEARNING_MIN_SUPPORT",
+        "LEARNING_TRIAL_PERCENT",
+        "COMPACTION_INTERVAL",
+        "COMPACTION_OVERLAP",
+        "SEARCH_BACKEND",
     }
-    configured = sorted(f"ADK_CODING_{name}" for name in obsolete if f"ADK_CODING_{name}" in os.environ)
+    configured = sorted(
+        f"ADK_CODING_{name}" for name in obsolete if f"ADK_CODING_{name}" in os.environ
+    )
     if configured:
-        raise ValueError("Move removed behavior environment settings to ADK_CODING_CONFIG YAML: " + ", ".join(configured))
+        raise ValueError(
+            "Move removed behavior environment settings to ADK_CODING_CONFIG YAML: "
+            + ", ".join(configured)
+        )
     workspace = Path(os.getenv("ADK_CODING_WORKSPACE", os.getcwd())).expanduser().resolve()
     source = os.getenv("ADK_CODING_SOURCE_REPOSITORY")
     return RuntimeBindings(
@@ -161,15 +121,20 @@ def runtime_bindings_from_env(configuration_root: Path) -> RuntimeBindings:
         base_revision=os.getenv("ADK_CODING_BASE_REVISION"),
         workspace_id=os.getenv("ADK_CODING_WORKSPACE_ID"),
         worker_id=os.getenv("ADK_CODING_WORKER_ID"),
-        project_trusted=os.getenv("ADK_CODING_TRUST_PROJECT", "0").lower() in {"1", "true", "yes", "on"},
+        project_trusted=os.getenv("ADK_CODING_TRUST_PROJECT", "0").lower()
+        in {"1", "true", "yes", "on"},
     )
 
 
 def load_settings() -> HarnessSettings:
     from harness.config import DEFAULT_COMPOSITION_PATH, load_harness_composition
 
-    path = Path(os.getenv("ADK_CODING_CONFIG", str(DEFAULT_COMPOSITION_PATH))).expanduser().resolve()
-    return settings_from_composition(load_harness_composition(path), runtime_bindings_from_env(path.parent))
+    path = (
+        Path(os.getenv("ADK_CODING_CONFIG", str(DEFAULT_COMPOSITION_PATH))).expanduser().resolve()
+    )
+    return settings_from_composition(
+        load_harness_composition(path), runtime_bindings_from_env(path.parent)
+    )
 
 
 def settings_from_composition(
@@ -183,13 +148,13 @@ def settings_from_composition(
         raise TypeError("pi_coding_v1 requires PiCodingConfig")
     workspace = bindings.workspace.expanduser().resolve()
     state_root = bindings.state_root.expanduser().resolve()
-    configuration_root = (bindings.configuration_root or workspace).expanduser().resolve()
+    configuration_root = (
+        (bindings.configuration_root or DEFAULT_COMPOSITION_PATH.parent).expanduser().resolve()
+    )
     worker_config = config.agents["coding_worker"]
     instruction = resolve_prompt_text(
         worker_config.prompt,
         configuration_root=configuration_root,
-        builtin_name="coding_worker_v1",
-        builtin_text=_BASE_INSTRUCTION,
     )
     project_instructions = (
         collect_project_instructions(workspace) if bindings.project_trusted else ""

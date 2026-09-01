@@ -3,7 +3,6 @@
 from .adk_services import (
     AdkServiceBundle,
     ArtifactBackend,
-    MemoryBackend,
     PersistenceSettings,
     SessionBackend,
     build_artifact_service,
@@ -17,7 +16,6 @@ from .adk_services import (
 __all__ = [
     "AdkServiceBundle",
     "ArtifactBackend",
-    "MemoryBackend",
     "PersistenceSettings",
     "SessionBackend",
     "build_artifact_service",

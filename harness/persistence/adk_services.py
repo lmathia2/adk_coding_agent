@@ -2,6 +2,7 @@
 
 No signature guessing, cloud fallbacks, or parallel environment configuration.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,17 +25,12 @@ class ArtifactBackend(StrEnum):
     FILE = "file"
 
 
-class MemoryBackend(StrEnum):
-    IN_MEMORY = "in_memory"
-
-
 class PersistenceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     session_backend: SessionBackend = SessionBackend.IN_MEMORY
     sqlite_path: Path | None = None
     artifact_backend: ArtifactBackend = ArtifactBackend.IN_MEMORY
     artifact_root: Path | None = None
-    memory_backend: MemoryBackend = MemoryBackend.IN_MEMORY
 
     @model_validator(mode="after")
     def validate_paths(self) -> PersistenceSettings:
@@ -88,7 +84,9 @@ def build_service_bundle(settings: PersistenceSettings) -> AdkServiceBundle:
 
 
 def settings_from_composition(
-    config: PersistenceConfig, *, state_root: Path,
+    config: PersistenceConfig,
+    *,
+    state_root: Path,
 ) -> PersistenceSettings:
     root = state_root.expanduser().resolve() / "adk"
     return PersistenceSettings(
