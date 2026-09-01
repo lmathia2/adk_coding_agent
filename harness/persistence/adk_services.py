@@ -14,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from harness.config.models import PersistenceConfig
 
+from .observed_session import ObservedSessionService, SessionSink
+
 
 class SessionBackend(StrEnum):
     IN_MEMORY = "in_memory"
@@ -75,9 +77,16 @@ def build_memory_service(settings: PersistenceSettings) -> Any:
     return InMemoryMemoryService()
 
 
-def build_service_bundle(settings: PersistenceSettings) -> AdkServiceBundle:
+def build_service_bundle(
+    settings: PersistenceSettings,
+    *,
+    session_sink: SessionSink | None = None,
+) -> AdkServiceBundle:
+    session_service = build_session_service(settings)
+    if session_sink is not None:
+        session_service = ObservedSessionService(session_service, session_sink)
     return AdkServiceBundle(
-        session_service=build_session_service(settings),
+        session_service=session_service,
         artifact_service=build_artifact_service(settings),
         memory_service=build_memory_service(settings),
     )

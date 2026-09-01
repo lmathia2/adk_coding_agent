@@ -23,8 +23,10 @@ from harness.config import (
     load_harness_composition,
 )
 from harness.ledger import DuckDbLedgerStore
-from harness.ledger.importers import import_public_event, import_run
+from harness.ledger.importers import import_public_event, import_run, import_session_record
 from harness.persistence import build_service_bundle, settings_from_composition
+from harness.safety import SecretRedactor
+from harness.tools.adk_adapter import discover_known_secrets
 
 from .registry import RunEventBroker, SqliteRunEventStore
 from .runtime import AdkRunExecutionFactory, RunCoordinator, RunLivenessPolicy
@@ -180,13 +182,22 @@ def build_server_assembly(
         source_repository=resolved_workspace,
         project_trusted=trust_project,
     )
+    canonical_ledger = DuckDbLedgerStore(resolved_state_root / "ledger.duckdb")
+    session_redactor = SecretRedactor(
+        known_secrets=discover_known_secrets(), redact_high_entropy_values=True
+    )
     services = build_service_bundle(
         settings_from_composition(
             composition.persistence,
             state_root=resolved_state_root,
-        )
+        ),
+        session_sink=lambda session_id, kind, payload: import_session_record(
+            canonical_ledger,
+            session_id,
+            kind,
+            session_redactor.redact(payload),
+        ),
     )
-    canonical_ledger = DuckDbLedgerStore(resolved_state_root / "ledger.duckdb")
     coordinator = RunCoordinator(
         provider_controls=LocalProviderControls(resolved_state_root),
         store=SqliteRunEventStore(

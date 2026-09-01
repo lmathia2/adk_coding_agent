@@ -8,11 +8,14 @@ from pydantic import ValidationError
 
 from harness.config import load_harness_composition
 from harness.config.models import PersistenceConfig
+from harness.ledger import DuckDbLedgerStore
+from harness.ledger.importers import import_session_record
 from harness.persistence.adk_services import (
     ArtifactBackend,
     PersistenceSettings,
     SessionBackend,
     build_artifact_service,
+    build_service_bundle,
     build_session_service,
     local_durable_settings,
     settings_from_composition,
@@ -102,3 +105,28 @@ async def test_local_adk_services_survive_reconstruction(tmp_path: Path) -> None
     assert session.state["phase"] == "coding"
     assert artifact is not None
     assert artifact.text == "durable"
+
+
+@pytest.mark.asyncio
+async def test_session_lifecycle_is_captured_in_canonical_ledger(tmp_path: Path) -> None:
+    ledger = DuckDbLedgerStore(tmp_path / "ledger.duckdb")
+    services = build_service_bundle(
+        PersistenceSettings(),
+        session_sink=lambda session_id, kind, payload: import_session_record(
+            ledger, session_id, kind, payload
+        ),
+    )
+    await services.session_service.create_session(
+        app_name="coding_harness",
+        user_id="user",
+        session_id="session",
+    )
+    await services.session_service.delete_session(
+        app_name="coding_harness",
+        user_id="user",
+        session_id="session",
+    )
+    assert [event.kind for event in ledger.read("session")] == [
+        "adk.session.created",
+        "adk.session.deleted",
+    ]

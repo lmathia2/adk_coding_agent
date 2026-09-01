@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 from typing import Any
 
@@ -13,7 +14,7 @@ from harness.state.steering import SteeringMessage
 from harness.telemetry.metrics import ModelUsageSample, TaskOutcomeSample, ToolUsageSample
 from harness.tracing.store import TraceSpan
 
-from .models import EventStatus, LedgerEvent
+from .models import EventStatus, LedgerEvent, canonical_json
 from .store import DuckDbLedgerStore
 
 
@@ -198,5 +199,28 @@ def import_public_event(
         correlation_id=envelope.invocation_id,
         payload=envelope.model_dump(mode="json"),
         idempotency_key=f"public:{envelope.run_id}:{envelope.sequence}",
+        recorded_at=timestamp,
+    )
+
+
+def import_session_record(
+    store: DuckDbLedgerStore,
+    session_id: str,
+    kind: str,
+    payload: dict[str, Any],
+) -> LedgerEvent:
+    event_payload = payload.get("event")
+    event_id = event_payload.get("id") if isinstance(event_payload, dict) else None
+    source_id = str(event_id or hashlib.sha256(canonical_json(payload).encode()).hexdigest())
+    timestamp = datetime.now().astimezone()
+    return store.append(
+        task_id=session_id,
+        source="adk_session",
+        source_id=f"{kind}:{source_id}",
+        kind=f"adk.{kind}",
+        status="completed" if kind != "session.deleted" else "blocked",
+        observed_at=timestamp,
+        payload=payload,
+        idempotency_key=f"adk-session:{session_id}:{kind}:{source_id}",
         recorded_at=timestamp,
     )

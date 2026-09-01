@@ -12,10 +12,12 @@ from .adk_services import (
     local_durable_settings,
     settings_from_composition,
 )
+from .observed_session import ObservedSessionService
 
 __all__ = [
     "AdkServiceBundle",
     "ArtifactBackend",
+    "ObservedSessionService",
     "PersistenceSettings",
     "SessionBackend",
     "build_artifact_service",
