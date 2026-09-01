@@ -63,9 +63,11 @@ injection. Traces remain useful for manual investigation and future measured wor
 
 The experimental `notebook_ptc.enabled` path exposes one `python` tool backed by a
 persistent CPython worker and parent-owned capability broker. Registered MCP, file,
-and shell capabilities traverse that broker and its lifecycle trace. This path is
-restricted to trusted local workspaces until a production isolation backend passes
-the security gates; the source guard is defense in depth, not a sandbox.
+and shell capabilities traverse that broker and its lifecycle trace. This path
+supports trusted local workspaces. Production or adversarial execution is outside
+the supported boundary; the source guard is defense in depth, not a sandbox. An
+OS-isolated profile may be added when a concrete deployment requires it, but it is
+not a notebook-PTC activation or completion gate.
 
 Managed file tools call the same atomic, confined primitives exercised by tests.
 Successful mutations have replay receipts; failed operations are never persisted

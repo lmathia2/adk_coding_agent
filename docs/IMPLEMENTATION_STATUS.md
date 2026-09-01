@@ -109,11 +109,13 @@ not a model-quality benchmark.
 
 Remaining limitations include the host-local trust boundary, single-process state
 ownership, experimental ADK APIs, and the still-complex server run controller.
-Notebook-native PTC currently supports only trusted local workspaces. Its source guard
+Notebook-native PTC supports trusted local workspaces. Its source guard
 blocks direct imports, file/process/network primitives, dunder traversal, and common
-introspection bypasses, but it is not a production security sandbox. Operational-store
-cutover, live prompt/view adoption, DuckLake archival, production isolation, and the
-measured four-tool-versus-PTC ablation remain gated work. DuckDB smoke measurements on
+introspection bypasses, but it is not a security sandbox. Production or adversarial
+execution is outside the supported boundary; OS isolation is an optional deployment
+profile to add only when a concrete deployment requires it. Operational-store cutover,
+live prompt/view adoption, DuckLake archival, and the measured four-tool-versus-PTC
+ablation remain gated work. DuckDB smoke measurements on
 this host (250 events) were 11.35 ms mean append and 6.05 ms p95 50-event tail read;
 that scale does not justify a DuckLake tier.
 DuckDB can nevertheless seal an explicit task watermark to an atomic Zstd Parquet

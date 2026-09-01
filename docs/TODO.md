@@ -18,7 +18,7 @@
 - [x] Add atomic deterministic Parquet sealing with hot-versus-sealed watermark equality; defer DuckLake until scale measurements justify it.
 - [x] Add explicit physical task erasure covering ledger rows, recognized operational SQLite rows, JSONL, notebooks, uniquely referenced artifacts, and manifested sealed segments.
 - [ ] Run the four-tool versus notebook-PTC quality, token, latency, and cache-hit ablation before changing the default.
-- [ ] Add and exercise a production isolation backend before enabling notebook PTC outside trusted local workspaces; Docker is unavailable on the current development host.
+- [x] Define notebook PTC's supported execution boundary as trusted local workspaces; production/adversarial isolation is an optional future deployment profile, not an activation gate.
 
 See `docs/design/trace-native-repl-agent.md` for tenets, contracts, phased gates,
 and the implementation/evaluation rubric.

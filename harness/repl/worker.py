@@ -2,8 +2,8 @@
 
 The child owns only the Python namespace. All intended workspace effects cross the
 pipe and are performed by the parent-owned broker. The source guard is deliberately
-defense-in-depth, not a security sandbox; production isolation still belongs outside
-this process.
+defense-in-depth, not a security sandbox. The supported boundary is a trusted local
+workspace; OS isolation is an optional outer deployment concern.
 """
 
 from __future__ import annotations

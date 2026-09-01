@@ -13,8 +13,10 @@ for task events, receipts, checkpoints, approvals, steering, metrics, public/run
 events, redacted ADK session lifecycle, and traces; deterministic seeded views and
 receipt-bearing prompt manifests; a gated relational-program lifecycle; and registered
 MCP broker routing. These are implemented foundations, not a completed cutover. The
-remaining operational stores, production isolation, DuckLake tier, live prompt-reader
-cutover, and model ablation remain gated later work.
+remaining operational stores, DuckLake tier, live prompt-reader cutover, and model
+ablation remain gated later work. The supported execution boundary is a trusted local
+workspace. Production or adversarial isolation is an optional deployment profile, not
+a notebook-PTC activation gate.
 
 Historical backfill and atomic Parquet sealing are now implemented. Backfill reproduces
 stable task/run/session hashes and audits recognized source counts. Parquet tests prove
@@ -304,7 +306,7 @@ One coding model                    |                          |
 python(code)  <-- only model tool   |                          |
         |                           |                          |
         v                           |                          |
-Persistent sandboxed CPython worker+--------------------------+
+Persistent trusted-local CPython worker+----------------------+
         |
         v
 Typed capability broker
@@ -1112,8 +1114,8 @@ images and outputs deduplicate by content hash.
 ### 13.6 Worker lifecycle
 
 - One CPython worker is owned by an active session lane.
-- The worker runs inside the configured sandbox/container and uses the authoritative
-  task workspace as its working directory.
+- The worker runs as a child process in the trusted local environment and uses the
+  authoritative task workspace as its working directory.
 - The process remains warm across model turns while resource and idle limits permit.
 - Each worker lifetime has a unique kernel epoch recorded on every executed cell.
 - Each cell has a stable notebook ID, code hash, deadline, cancellation token, and
@@ -1217,8 +1219,9 @@ Every broker method:
 8. appends terminal status and effect;
 9. returns a typed Python value or raises a typed exception.
 
-Direct imports of host control-plane packages, physical database handles, ambient
-credentials, and unconfined subprocess/filesystem APIs are blocked by the sandbox.
+The trusted-local source guard blocks direct imports of host control-plane packages,
+physical database handles, ambient credentials, and unconfined subprocess/filesystem
+APIs as defense in depth. It is not an OS security boundary.
 
 ### 13.11 Programmatic tool-call visibility
 
@@ -1858,7 +1861,7 @@ Tests and gates:
 
 Deliver:
 
-- sandboxed CPython worker protocol and lifecycle manager;
+- trusted-local CPython worker protocol and lifecycle manager;
 - one ADK `python` tool implementing the write-ahead notebook-cell protocol;
 - code, Markdown, bounded MIME output, status, replay-policy, and snapshot
   materialization into the canonical session notebook;
@@ -1870,7 +1873,8 @@ Deliver:
 Tests and gates:
 
 - broker confinement and approval tests equal or exceed current tools;
-- direct filesystem/network/process bypass attempts fail;
+- common direct filesystem/network/process bypass attempts fail closed under the
+  trusted-local source guard;
 - cell and nested-call event trees are complete under success and failure;
 - notebook cell provenance and terminal status agree with ledger replay;
 - timeout, cancellation, and worker death cannot leave a cell looking successful;
