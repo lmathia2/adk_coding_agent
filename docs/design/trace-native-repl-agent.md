@@ -8,8 +8,12 @@ Current implementation: the supported default remains the four-tool architecture
 described in `docs/architecture.md`. A disabled-by-default local-only Phase 0 now
 provides the persistent CPython worker, one-tool broker path, append-only lifecycle
 events, deterministic notebook materialization, rich-output artifacts, and safe-cell
-state restoration. The canonical ledger, memory-program views, production isolation,
-and ablation remain gated later phases.
+state restoration. The branch also contains a DuckDB canonical-ledger shadow writer
+for task events, receipts, checkpoints, and traces; deterministic seeded views and
+receipt-bearing prompt manifests; a gated relational-program lifecycle; and registered
+MCP broker routing. These are implemented foundations, not a completed cutover. The
+remaining operational stores, production isolation, DuckLake tier, live prompt-reader
+cutover, and model ablation remain gated later work.
 
 ## 1. Executive decision
 

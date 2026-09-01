@@ -54,3 +54,12 @@ execution paths.
 The simplification report records source/complexity reductions and deterministic
 verification only. A new live multi-task run is still required before publishing
 a new model-quality or latency claim.
+
+## Notebook PTC promotion gate
+
+The notebook-native branch includes deterministic ledger, view, broker, restart,
+timeout, rich-output, and prompt-manifest tests. These validate contracts, not model
+quality. Before changing the default, run the same model, reasoning setting, workspace
+revisions, verification commands, and task suite in four-tool and one-REPL modes and
+record pass rate, cost per passed task, uncached input, cache-read ratio, model/tool
+calls, and wall time. No provider-backed paired run has been recorded yet.

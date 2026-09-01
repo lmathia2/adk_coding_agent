@@ -14,7 +14,8 @@ HarnessFactory ← strict YAML behavior + explicit runtime identity
   │
 ADK App → bounded coding loop → one worker
   │                             │
-ledger / verify / checkpoint     read · bash · edit · write
+ledger / verify / checkpoint     read · bash · edit · write (default)
+                                python → guarded broker (experimental)
 ```
 
 - `harness/agent` defines the factory, assembly, control, and provider-neutral
@@ -60,6 +61,12 @@ injection. Traces remain useful for manual investigation and future measured wor
 
 ## Execution boundary
 
+The experimental `notebook_ptc.enabled` path exposes one `python` tool backed by a
+persistent CPython worker and parent-owned capability broker. Registered MCP, file,
+and shell capabilities traverse that broker and its lifecycle trace. This path is
+restricted to trusted local workspaces until a production isolation backend passes
+the security gates; the source guard is defense in depth, not a sandbox.
+
 Managed file tools call the same atomic, confined primitives exercised by tests.
 Successful mutations have replay receipts; failed operations are never persisted
 as successful receipts. Shell output is redacted and bounded.
@@ -81,9 +88,10 @@ entire Python harness or its host-side file/search primitives. See
 
 ## State and interaction
 
-Harness task events are local JSONL; checkpoints, receipts, approvals, steering,
-metrics, and the public run registry use local SQLite. ADK sessions use SQLite or
-memory; artifacts use local files or memory; the memory service is in-memory only.
+The canonical DuckDB ledger shadow-captures task events, receipts, checkpoints, and
+ADK traces. JSONL and SQLite remain operational projections during the measured
+migration; approvals, steering, metrics, public/run events, and ADK sessions have not
+cut over. Artifacts use local files or memory.
 PostgreSQL, GCS, Vertex, and distributed-worker leases are not supported.
 
 Steering is durably queued and consumed at safe model/tool/work-batch boundaries.

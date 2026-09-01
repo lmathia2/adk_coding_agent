@@ -18,6 +18,17 @@ historical feature checklist or book-rubric score.
   deterministically materializes a durable nbformat transcript. Completed safe cells
   restore Python state after a worker restart; failures, timeouts, blocked calls, and
   unknown effects remain explicit in the event history.
+- A canonical DuckDB ledger now shadow-captures task events, tool-receipt transitions,
+  checkpoints, and ADK trace spans with source-namespaced idempotency, observed and
+  recorded timestamps, temporal reads, deterministic hashes, and gap-free task order.
+  Existing JSONL/SQLite stores remain operational projections during migration.
+- Versioned deterministic memory programs provide model history, task progress,
+  open/unknown-effect execution, time, query-relevant task memory, and dream/failure
+  views. P0-P3 prompt manifests account for source view IDs and stable hashes. A
+  restricted relational catalog enforces candidate -> shadow -> active -> retired
+  promotion; only active programs may serve retrieval.
+- Registered MCP capabilities can be invoked from Python through the same bounded,
+  traced broker. Unknown capabilities fail closed without expanding the ADK tool list.
 - Trusted directory skills and redacted interaction traces.
 - Atomic confined file mutations, replay receipts, command approvals, and
   local/Docker command execution.
@@ -92,6 +103,10 @@ not a model-quality benchmark.
 
 Remaining limitations include the host-local trust boundary, single-process state
 ownership, experimental ADK APIs, and the still-complex server run controller.
-Notebook-native PTC currently supports only the local sandbox; it is not a security
-sandbox. The canonical cross-session DuckDB/DuckLake ledger, computed memory views,
-cache-aware compaction, and measured four-tool-versus-PTC ablation remain later phases.
+Notebook-native PTC currently supports only trusted local workspaces. Its source guard
+blocks direct imports, file/process/network primitives, dunder traversal, and common
+introspection bypasses, but it is not a production security sandbox. Operational-store
+cutover, live prompt/view adoption, DuckLake archival, production isolation, and the
+measured four-tool-versus-PTC ablation remain gated work. DuckDB smoke measurements on
+this host (250 events) were 11.35 ms mean append and 6.05 ms p95 50-event tail read;
+that scale does not justify a DuckLake tier.

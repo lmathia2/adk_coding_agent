@@ -8,10 +8,13 @@
 - [x] Route nested file and shell capabilities through existing policy, approval, receipt, and redaction paths.
 - [x] Record submitted/completed/failed/timed-out cells and requested/completed/failed/blocked capabilities.
 - [x] Externalize oversized rich MIME outputs as content-addressed artifacts.
-- [ ] Replace fragmented historical stores with the canonical DuckDB/DuckLake ledger after schema and migration benchmarks.
-- [ ] Implement cache-aware prefix, progress, task-memory, and dream-mode views as versioned memory programs.
+- [x] Add the canonical DuckDB event schema, idempotent writer, temporal reads, deterministic importers, and shadow capture for task events, receipts, checkpoints, and traces.
+- [ ] Finish migration of approvals, steering, metrics, public/run events, and ADK sessions; prove projection equality before removing operational stores.
+- [x] Implement deterministic history, progress, open-execution, time, task-memory, and dream-mode views plus receipt-bearing P0-P3 prompt manifests.
+- [ ] Cut ledger views into live prompt/compaction readers after byte, cache, and correctness ablations pass.
+- [x] Add candidate, shadow, active, retired lifecycle enforcement for restricted relational memory programs.
 - [ ] Run the four-tool versus notebook-PTC quality, token, latency, and cache-hit ablation before changing the default.
-- [ ] Add a production isolation backend before enabling notebook PTC outside trusted local workspaces.
+- [ ] Add and exercise a production isolation backend before enabling notebook PTC outside trusted local workspaces; Docker is unavailable on the current development host.
 
 See `docs/design/trace-native-repl-agent.md` for tenets, contracts, phased gates,
 and the implementation/evaluation rubric.
