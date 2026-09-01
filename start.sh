@@ -19,6 +19,7 @@ EOF
 }
 die() { printf 'error: %s\n' "$1" >&2; exit "${2:-1}"; }
 require_command() { command -v "$1" >/dev/null 2>&1 || die "required command is not on PATH: $1"; }
+project_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 
 mode=${1:-}
 case "$mode" in
@@ -79,7 +80,13 @@ if [ "$mode" != tui ]; then
     '  Environment set: none (workspace and state root are passed as server flags)'
 fi
 [ "$mode" != server ] || start_server "$@"
-require_command adk-agent-tui
+if command -v adk-agent-tui >/dev/null 2>&1; then
+  tui_command=adk-agent-tui
+elif [ -x "$project_root/clients/terminal/adk-agent-tui" ]; then
+  tui_command=$project_root/clients/terminal/adk-agent-tui
+else
+  die 'Pi-style terminal is not installed; run ./install.sh or npm run build --prefix clients/terminal'
+fi
 if [ "$mode" = run ]; then
   server_log=$state_root/server/foreground.log
   printf '%s\n' "  Server log: $server_log" \
@@ -116,6 +123,6 @@ ADK_CODING_AGENT_TOKEN=$token
 ADK_CODING_AGENT_STATE_ROOT=$state_root
 export ADK_CODING_AGENT_TOKEN ADK_CODING_AGENT_STATE_ROOT
 if [ "$mode" = tui ]; then
-  exec adk-agent-tui --server "$server_url" --state-root "$state_root" "$@"
+  exec "$tui_command" --server "$server_url" --state-root "$state_root" "$@"
 fi
-adk-agent-tui --server "$server_url" --state-root "$state_root" "$@"
+"$tui_command" --server "$server_url" --state-root "$state_root" "$@"

@@ -3,18 +3,18 @@ set -eu
 
 usage() {
   cat <<'EOF'
-Install ADK Coding Agent and the Bubble Tea TUI from this checkout.
+Install ADK Coding Agent and its Pi-style terminal from this checkout.
 
 Usage: ./install.sh [options]
   --bin-dir DIR  Command links (default: ~/.local/bin)
   --dev          Include tests, lint, and type-check tools
   --minimal      Python CLI only; skip the TUI
-  --tui          Build the TUI (default; requires Go 1.24+)
+  --tui          Build the terminal (default; requires Node.js 22.19+)
   --plan         Print the installation plan without making changes
   -h, --help     Show help
 
-macOS: missing uv, Git, and Go are installed with Homebrew.
-Other platforms: install uv, Git, and Go 1.24+ first.
+macOS: missing uv, Git, and Node.js are installed with Homebrew.
+Other platforms: install uv, Git, and Node.js 22.19+ first.
 Each install recreates only this checkout's .venv. No workspace is selected.
 EOF
 }
@@ -47,7 +47,7 @@ if [ "$print_plan" -eq 1 ]; then
   printf '%s\n' 'Installation plan:' \
     "  Python environment: $venv_path" \
     '  Environment policy: remove and recreate on every installation' \
-    "  Bubble Tea TUI: $include_tui" "  Development tools: $include_dev" \
+    "  Pi-style terminal: $include_tui" "  Development tools: $include_dev" \
     "  Command directory: $bin_dir" "  Runtime launcher: $bin_dir/adk-agent-start" \
     '  Launch workspace: selected at runtime'
   exit 0
@@ -64,10 +64,11 @@ require_command() {
 require_command uv
 require_command git
 if [ "$include_tui" -eq 1 ]; then
-  require_command go
-  go_version=$(go env GOVERSION)
-  if ! printf '%s\n' "$go_version" | awk -F. '{sub(/^go/, "", $1); exit !($1 > 1 || ($1 == 1 && $2 >= 24))}'; then
-    die "Go 1.24+ is required; found $go_version. Upgrade Go (brew upgrade go on macOS)."
+  require_command node
+  require_command npm
+  node_version=$(node -p 'process.versions.node')
+  if ! printf '%s\n' "$node_version" | awk -F. '{exit !($1 > 22 || ($1 == 22 && $2 >= 19))}'; then
+    die "Node.js 22.19+ is required; found $node_version. Upgrade Node.js (brew upgrade node on macOS)."
   fi
 fi
 
@@ -101,13 +102,16 @@ if [ "$include_dev" -eq 1 ]; then
   done
 fi
 if [ "$include_tui" -eq 1 ]; then
-  printf '%s\n' 'Building Bubble Tea TUI'
-  (cd "$project_root/clients/tui" && go build -trimpath -o "$venv_path/bin/adk-agent-tui" .)
+  printf '%s\n' 'Installing locked terminal dependencies and building the Pi-style TUI'
+  npm ci --ignore-scripts --prefix "$project_root/clients/terminal"
+  npm run build --prefix "$project_root/clients/terminal"
+  [ -x "$project_root/clients/terminal/adk-agent-tui" ] || die 'missing terminal launcher'
 fi
 
 for name in $commands; do
   source=$venv_path/bin/$name
   [ "$name" != adk-agent-start ] || source=$project_root/start.sh
+  [ "$name" != adk-agent-tui ] || source=$project_root/clients/terminal/adk-agent-tui
   temporary_link=$bin_dir/$name.tmp.$$
   trap 'rm -f "$temporary_link"' EXIT
   ln -s "$source" "$temporary_link"

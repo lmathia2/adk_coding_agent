@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
+entrypoint=$root/clients/terminal/dist/src/main.js
+[ -f "$entrypoint" ] || {
+  printf 'error: Pi-style terminal is not built; run npm run build --prefix %s/clients/terminal\n' "$root" >&2
+  exit 1
+}
+exec node "$entrypoint" "$@"

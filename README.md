@@ -1,6 +1,6 @@
 # ADK Coding Agent
 
-A small, configurable Google ADK coding harness with a Bubble Tea terminal client.
+A small, configurable Google ADK coding harness with a Pi-style terminal client.
 One coding worker uses four tools: `read`, `bash`, `edit`, and `write`.
 The server owns task state, steering, approval requests, and deterministic verification.
 
@@ -28,9 +28,9 @@ cd "$HOME/src/adk_coding_agent"
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The installer detects macOS, installs missing uv/Git/Go through Homebrew, creates
+The installer detects macOS, installs missing uv/Git/Node.js through Homebrew, creates
 Python 3.11+ in this checkout's `.venv`, syncs the locked dependencies, and builds
-the Bubble Tea TUI **by default**. It links `adk-coding-agent`, `adk-agent-tui`, and
+the Pi-toolkit terminal **by default**. It links `adk-coding-agent`, `adk-agent-tui`, and
 `adk-agent-start` into the specified command directory. You do not need to activate
 the virtual environment, install Pi or Magnitude, or pass a workspace to installation.
 Indexed search comes from the pinned `fff-search` dependency; no separate rg/fd
@@ -45,9 +45,9 @@ Add `export PATH="$HOME/.local/bin:$PATH"` to your shell startup file (`~/.zshrc
 for zsh, or the appropriate bash profile) to make the commands available in future
 terminals. The startup examples below also set PATH explicitly.
 
-Go 1.24+ is required. If an older Homebrew Go is already installed, run
-`brew upgrade go` and rerun the installer; existing outdated Go is not auto-upgraded.
-On Linux, install uv, Git, and Go 1.24+ before running the same script. The first
+Node.js 22.19+ is required. If an older Homebrew Node.js is already installed, run
+`brew upgrade node` and rerun the installer; existing outdated Node.js is not auto-upgraded.
+On Linux, install uv, Git, and Node.js 22.19+ before running the same script. The first
 installation needs internet access for dependencies.
 
 Optional installer flags (choose only what you need):
@@ -111,10 +111,9 @@ In the TUI:
 1. Enter `/login` if needed and follow the displayed browser/device-code instructions.
 2. Enter `/auth` to check authentication.
 3. Enter `/model` to choose a model from your account's catalog.
-4. **Restart the server after changing the model.** In one-terminal mode, `/quit`
-   and rerun the launch command. In two-terminal mode, stop/restart Terminal 1 and
-   use `/reconnect` in the TUI (or restart Terminal 2).
-5. Enter your coding request, or use `/start YOUR_REQUEST`. The TUI reports the
+4. Press Enter to select for the next turn; Ctrl+S also saves the server default.
+   The active turn keeps its frozen model and does not need a server restart.
+5. Enter your coding request. The TUI reports the
    configured coding model; merely starting the server is not a model-response test.
 
 Use `/help` for commands. Guidance entered during execution is delivered at the next
@@ -224,7 +223,7 @@ default; `verification_level: syntax` is an explicit weaker contract.
 .venv/bin/pytest tests/unit tests/integration
 .venv/bin/ruff check app harness tests
 .venv/bin/pyright --pythonpath .venv/bin/python app harness
-(cd clients/tui && go test ./...)
+npm test --prefix clients/terminal
 ```
 
 Deterministic tests use fake model streams and temporary repositories. They do not
