@@ -49,7 +49,7 @@ runs the coding worker, and reduces its typed result. Deterministic routes conti
 compact, replan, verify, block, or finish. Model prose cannot mark a task verified.
 
 The static instruction excludes volatile task/session data. Dynamic packets hold the
-ledger, repository map, selected skills, recent events, compaction snapshot, and
+ledger, repository manifest, selected skills, recent events, compaction snapshot, and
 steering. Serialization and prefix hashes are deterministic. Even tiny context
 budgets are hard bounds.
 
@@ -65,7 +65,8 @@ Successful mutations have replay receipts; failed operations are never persisted
 as successful receipts. Shell output is redacted and bounded.
 
 FFF provides grouped, cursor-paginated search through reserved `bash` commands,
-not another model-visible tool. Structural indexing builds bounded repository maps.
+not another model-visible tool. The repository manifest supplies only compact build and
+verification metadata.
 No LSP/Moderne planning-only bridge remains.
 
 Local and Docker command adapters use the authoritative host/mounted workspace.

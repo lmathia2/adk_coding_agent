@@ -119,7 +119,12 @@ def test_registered_harness_owns_strict_config_and_swaps_behind_same_protocol(
     )
 
     assert isinstance(factory, HarnessFactory)
-    assert registry.resources(composition, RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state")) is None
+    assert (
+        registry.resources(
+            composition, RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state")
+        )
+        is None
+    )
     assert isinstance(composition.harness.config, _FakeHarnessConfig)
     assert assembly.descriptor.implementation == "fake_adk_v1"
     assert assembly.app.name == "swappable_harness"
@@ -128,7 +133,7 @@ def test_registered_harness_owns_strict_config_and_swaps_behind_same_protocol(
     assert assembly.build_info.model_providers == {}
     assert composition.server.protocol == "ag_ui_websocket_v1"
     assert ServerHello(harness=assembly.descriptor).protocol_version == PROTOCOL_VERSION
-    assert composition.resolved_behavior_sha256(tmp_path) == composition.behavior_sha256
+    assert composition.behavior_sha256
 
 
 def test_registered_harness_config_rejects_unknown_fields() -> None:
@@ -237,7 +242,8 @@ def test_default_pi_factory_builds_from_composition_without_credentials(
 
 
 def test_verification_shares_yaml_sandbox_and_task_scoped_approvals(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.agent import factory
     from harness.sandbox import DockerSandbox
@@ -264,9 +270,13 @@ def test_verification_shares_yaml_sandbox_and_task_scoped_approvals(
     payload = load_harness_composition().model_dump(mode="json")
     payload["harness"]["config"]["sandbox"] = {"kind": "docker", "image": "test:local"}
     state = tmp_path / "state"
-    build_harness(parse_harness_composition(payload), RuntimeBindings(
-        workspace=tmp_path, state_root=state,
-    ))
+    build_harness(
+        parse_harness_composition(payload),
+        RuntimeBindings(
+            workspace=tmp_path,
+            state_root=state,
+        ),
+    )
     first = captured["deps"].validation_executor("task-one")
     second = captured["deps"].validation_executor("task-two")
     assert first.sandbox is second.sandbox is captured["sandbox"]
@@ -275,20 +285,22 @@ def test_verification_shares_yaml_sandbox_and_task_scoped_approvals(
     first.policy.approved_fingerprints.add("task-one-only")
     assert not second.policy.approved_fingerprints
     assert not captured["policy"].approved_fingerprints
-    result = second(ValidationCommand(category="custom", command="curl https://example.com", source="task"))
+    result = second(
+        ValidationCommand(category="custom", command="curl https://example.com", source="task")
+    )
     assert result.status == "blocked"
     assert second.approvals.list(task_id="task-two")[0].request_id == result.approval_request_id
     assert (state / "approvals.db").is_file()
     assert not (tmp_path / "wrong-state").exists()
 
 
-def test_pi_factory_executes_file_prompt_and_agent_model_bindings(
+def test_pi_factory_executes_prompt_and_agent_model_bindings(
     tmp_path: Path,
 ) -> None:
     registry = default_harness_registry()
-    payload = load_harness_composition(
-        config_models=registry.config_models()
-    ).model_dump(mode="python")
+    payload = load_harness_composition(config_models=registry.config_models()).model_dump(
+        mode="python"
+    )
     config = cast(dict[str, Any], cast(dict[str, Any], payload["harness"])["config"])
     models = cast(dict[str, Any], config["models"])
     agents = cast(dict[str, Any], config["agents"])
@@ -296,15 +308,8 @@ def test_pi_factory_executes_file_prompt_and_agent_model_bindings(
         "primary": models["coding"],
     }
     agents["coding_worker"]["model"] = "primary"
-    prompt_root = tmp_path / "configuration"
-    prompt = prompt_root / "prompts" / "worker.md"
-    prompt.parent.mkdir(parents=True)
-    prompt.write_text(
-        "Return the required AgentStep JSON and keep changes extremely small.",
-        encoding="utf-8",
-    )
     agents["coding_worker"]["prompt"] = {
-        "path": Path("prompts/worker.md"),
+        "instruction": "Return the required AgentStep JSON and keep changes extremely small.",
     }
     configured = parse_harness_composition(
         payload,
@@ -318,7 +323,6 @@ def test_pi_factory_executes_file_prompt_and_agent_model_bindings(
         RuntimeBindings(
             workspace=workspace,
             state_root=tmp_path / "state",
-            configuration_root=prompt_root,
         ),
     )
 

@@ -191,7 +191,7 @@ Python extensions without changing the server protocol or TUI.
 
 YAML configures executable settings; loop topology belongs to the harness
 implementation. Unknown/removed options fail validation.
-File prompts are relative to the configuration directory and cannot escape it.
+The worker prompt lives in the YAML behavior bundle, so copied configurations stay portable.
 Volatile state stays out of the stable instruction prefix.
 
 Skills are read from trusted directories, selected deterministically, and disclosed

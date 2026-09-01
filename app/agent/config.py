@@ -12,7 +12,6 @@ from harness.config import (
     DEFAULT_COMPOSITION_PATH,
     HarnessComposition,
     PiCodingConfig,
-    PromptConfig,
     RuntimeBindings,
 )
 from harness.context import build_static_prefix
@@ -53,29 +52,6 @@ def _state_root(workspace: Path) -> Path:
         root = Path.home() / ".cache" / "adk-coding-agent" / digest
     return root
 
-
-def resolve_prompt_text(
-    prompt: PromptConfig,
-    *,
-    configuration_root: Path,
-    max_bytes: int = 128_000,
-) -> str:
-    """Resolve one portable prompt without allowing path or symlink escape."""
-
-    if prompt.path.is_absolute():
-        raise ValueError("file prompt paths must be relative to the configuration root")
-    root = configuration_root.expanduser().resolve()
-    resolved = (root / prompt.path).resolve(strict=True)
-    try:
-        resolved.relative_to(root)
-    except ValueError as error:
-        raise ValueError("file prompt escapes the configuration root") from error
-    if not resolved.is_file():
-        raise ValueError("file prompt must resolve to a regular file")
-    content = resolved.read_bytes()
-    if len(content) > max_bytes:
-        raise ValueError(f"file prompt exceeds {max_bytes} bytes")
-    return content.decode("utf-8").strip()
 
 
 def runtime_bindings_from_env(configuration_root: Path) -> RuntimeBindings:
@@ -152,10 +128,7 @@ def settings_from_composition(
         (bindings.configuration_root or DEFAULT_COMPOSITION_PATH.parent).expanduser().resolve()
     )
     worker_config = config.agents["coding_worker"]
-    instruction = resolve_prompt_text(
-        worker_config.prompt,
-        configuration_root=configuration_root,
-    )
+    instruction = worker_config.prompt.instruction.strip()
     project_instructions = (
         collect_project_instructions(workspace) if bindings.project_trusted else ""
     )

@@ -5,13 +5,13 @@ historical feature checklist or book-rubric score.
 
 ## Retained and verified
 
-- Versioned file-backed worker prompt with content-sensitive behavior hashes; fixed
+- Versioned YAML worker prompt with content-sensitive behavior hashes; fixed
   agent schema, tool surface, safety outcomes, Docker network isolation, and memory
   implementation remain code-owned invariants rather than decorative YAML.
 - Strict YAML behavior, explicit workspace/state/trust identity, closed harness
   and ADK model-provider registries.
 - One ADK coding worker with four tools; bounded context, stable prefix hashes,
-  structural repository maps, and native FFF discovery.
+  compact repository manifests, and native FFF discovery.
 - Trusted directory skills and redacted interaction traces.
 - Atomic confined file mutations, replay receipts, command approvals, and
   local/Docker command execution.

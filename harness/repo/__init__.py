@@ -1,4 +1,4 @@
-"""Repository discovery and lightweight structural indexing."""
+"""Repository discovery and bounded lexical search."""
 
 from .discovery import (
     BuildCommand,

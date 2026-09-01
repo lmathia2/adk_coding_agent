@@ -19,7 +19,7 @@ from harness.config import (
 def _composition_payload() -> dict[str, Any]:
     harness_config = {
         "models": {"coding": {"provider": "google_adk", "name": "coding-model"}},
-        "agents": {"coding_worker": {"model": "coding"}},
+        "agents": {"coding_worker": {"model": "coding", "prompt": {"instruction": "test worker"}}},
         "workflow": {"max_iterations": 40},
     }
     return {
@@ -96,12 +96,9 @@ def test_canonical_composition_hash_is_stable_across_mapping_order() -> None:
     assert first.composition_sha256 == second.composition_sha256
 
 
-def test_loader_preserves_portable_relative_resource_paths(tmp_path: Path) -> None:
+def test_loader_preserves_portable_resource_paths(tmp_path: Path) -> None:
     payload = _composition_payload()
     config = payload["harness"]["config"]
-    config["agents"]["coding_worker"]["prompt"] = {
-        "path": "prompts/coding.md",
-    }
     config["skills"] = {"additional_roots": ["skills"]}
     config_path = tmp_path / "config" / "harness.yaml"
     config_path.parent.mkdir()
@@ -110,27 +107,17 @@ def test_loader_preserves_portable_relative_resource_paths(tmp_path: Path) -> No
     composition = load_harness_composition(config_path)
     config = composition.harness.config
     assert isinstance(config, PiCodingConfig)
-
-    prompt_path = config.agents["coding_worker"].prompt.path
-    assert prompt_path == Path("prompts/coding.md")
+    assert config.agents["coding_worker"].prompt.instruction == "test worker"
     assert config.skills.additional_roots == (Path("skills"),)
     assert str(tmp_path) not in composition.canonical_json()
 
 
-def test_resolved_behavior_hash_tracks_file_prompt_content(tmp_path: Path) -> None:
+def test_behavior_hash_tracks_prompt_content() -> None:
     payload = _composition_payload()
-    payload["harness"]["config"]["agents"]["coding_worker"]["prompt"] = {
-        "path": "prompts/coding.md",
-    }
-    prompt = tmp_path / "prompts" / "coding.md"
-    prompt.parent.mkdir()
-    prompt.write_text("first instruction", encoding="utf-8")
     composition = parse_harness_composition(payload)
+    payload["harness"]["config"]["agents"]["coding_worker"]["prompt"]["instruction"] = "changed"
 
-    first = composition.resolved_behavior_sha256(tmp_path)
-    prompt.write_text("second instruction", encoding="utf-8")
-
-    assert composition.resolved_behavior_sha256(tmp_path) != first
+    assert parse_harness_composition(payload).behavior_sha256 != composition.behavior_sha256
 
 
 def test_behavior_hash_excludes_deployment_configuration() -> None:
@@ -181,23 +168,6 @@ def test_pi_config_rejects_unused_model_entries() -> None:
     with pytest.raises(ValidationError, match="must be referenced"):
         parse_harness_composition(payload)
 
-
-def test_resolved_file_prompt_rejects_symlink_escape(tmp_path: Path) -> None:
-    payload = _composition_payload()
-    payload["harness"]["config"]["agents"]["coding_worker"]["prompt"] = {
-        "path": "prompts/worker.md",
-    }
-    root = tmp_path / "configuration"
-    root.mkdir()
-    outside = tmp_path / "outside.md"
-    outside.write_text("untrusted prompt", encoding="utf-8")
-    prompts = root / "prompts"
-    prompts.mkdir()
-    (prompts / "worker.md").symlink_to(outside)
-    composition = parse_harness_composition(payload)
-
-    with pytest.raises(ValueError, match="escapes the configuration root"):
-        composition.resolved_behavior_sha256(root)
 
 
 def test_tool_surface_is_a_code_invariant_not_configuration() -> None:

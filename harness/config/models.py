@@ -98,12 +98,12 @@ class ModelConfig(FrozenModel):
 
 
 class PromptConfig(FrozenModel):
-    path: Path = Path("prompts/coding-worker.md")
+    instruction: str = Field(min_length=1, max_length=128_000)
 
 
 class AgentConfig(FrozenModel):
     model: str = Field(min_length=1, max_length=64)
-    prompt: PromptConfig = PromptConfig()
+    prompt: PromptConfig
 
 
 class WorkflowConfig(FrozenModel):
@@ -355,36 +355,6 @@ class HarnessComposition(FrozenModel):
 
         harness = self.harness.model_dump(mode="json")
         harness["required_capabilities"] = sorted(harness["required_capabilities"])
-        payload = json.dumps(
-            {"app": self.app.model_dump(mode="json"), "harness": harness},
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(payload.encode()).hexdigest()
-
-    def resolved_behavior_sha256(self, configuration_root: Path) -> str:
-        """Include file-prompt contents without hashing machine-specific absolute paths."""
-
-        harness = self.harness.model_dump(mode="json")
-        harness["required_capabilities"] = sorted(harness["required_capabilities"])
-        config = harness.get("config")
-        agents = config.get("agents", {}) if isinstance(config, dict) else {}
-        for agent in agents.values():
-            prompt = agent["prompt"]
-            portable_path = Path(prompt["path"])
-            if portable_path.is_absolute():
-                raise ValueError("file prompt paths must be relative to the configuration root")
-            root = configuration_root.expanduser().resolve()
-            resolved = (root / portable_path).resolve(strict=True)
-            try:
-                resolved.relative_to(root)
-            except ValueError as error:
-                raise ValueError("file prompt escapes the configuration root") from error
-            content = resolved.read_bytes()
-            if len(content) > 128_000:
-                raise ValueError("file prompt exceeds 128000 bytes")
-            prompt["sha256"] = hashlib.sha256(content).hexdigest()
         payload = json.dumps(
             {"app": self.app.model_dump(mode="json"), "harness": harness},
             ensure_ascii=False,

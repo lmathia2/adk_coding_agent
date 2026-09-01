@@ -27,7 +27,6 @@ from harness.ai import AdkModelProviderRegistry, default_adk_model_provider_regi
 from harness.approvals import ApprovalStore
 from harness.approvals.waiting import ApprovalWaiter
 from harness.config import (
-    DEFAULT_COMPOSITION_PATH,
     FOUR_CODING_TOOLS,
     HarnessComposition,
     ModelConfig,
@@ -183,36 +182,62 @@ class PiCodingHarnessFactory:
         if unknown_providers:
             raise ValueError(f"unregistered model providers: {unknown_providers}")
 
-    def resources(self, composition: HarnessComposition, bindings: RuntimeBindings) -> HarnessResources:
+    def resources(
+        self, composition: HarnessComposition, bindings: RuntimeBindings
+    ) -> HarnessResources:
         """Use the execution loaders, without building a model, tools or state stores."""
         config = composition.harness.config
         if not isinstance(config, PiCodingConfig):
             raise TypeError("pi_coding_v1 requires PiCodingConfig")
         settings = settings_from_composition(composition, bindings)
         items = [ResourceItem(kind="tool", name=name) for name in FOUR_CODING_TOOLS]
-        prompt = config.agents["coding_worker"].prompt
-        path = (bindings.configuration_root or DEFAULT_COMPOSITION_PATH.parent) / prompt.path
-        items.append(ResourceItem(kind="prompt", name=prompt.path.stem, path=str(path.resolve())))
+        items.append(ResourceItem(kind="prompt", name="coding-worker"))
         warnings = []
         if settings.project_trusted:
-            items.extend(ResourceItem(kind="instruction", name=path.name, path=str(path))
-                         for path in discover_instruction_files(settings.workspace))
+            items.extend(
+                ResourceItem(kind="instruction", name=path.name, path=str(path))
+                for path in discover_instruction_files(settings.workspace)
+            )
         else:
-            warnings.append("Project instructions and project skills are disabled until the server is launched with --trust-project.")
+            warnings.append(
+                "Project instructions and project skills are disabled until the server is launched with --trust-project."
+            )
         enabled = settings.skill_context_bytes > 0
         for root in settings.skill_roots:
-            items.append(ResourceItem(kind="skill_root", name=root.name, path=str(root),
-                status="missing" if not root.exists() else "available" if enabled else "disabled"))
+            items.append(
+                ResourceItem(
+                    kind="skill_root",
+                    name=root.name,
+                    path=str(root),
+                    status="missing"
+                    if not root.exists()
+                    else "available"
+                    if enabled
+                    else "disabled",
+                )
+            )
         if enabled:
             try:
                 registry = build_skill_registry(settings)
-                items.extend(ResourceItem(kind="skill", name=skill.name, path=str(skill.manifest_path),
-                    description=skill.description[:256], status="available" if settings.skill_max_selected > 0 else "disabled") for skill in registry.skills)
+                items.extend(
+                    ResourceItem(
+                        kind="skill",
+                        name=skill.name,
+                        path=str(skill.manifest_path),
+                        description=skill.description[:256],
+                        status="available" if settings.skill_max_selected > 0 else "disabled",
+                    )
+                    for skill in registry.skills
+                )
             except Exception:
-                warnings.append("Skill validation failed; the runtime will omit skill context. Check the configured SKILL.md files and roots.")
+                warnings.append(
+                    "Skill validation failed; the runtime will omit skill context. Check the configured SKILL.md files and roots."
+                )
         else:
             warnings.append("Skill context is disabled by the configured byte budget.")
-        return HarnessResources(items=tuple(items[:128]), warnings=tuple(warnings), truncated=len(items) > 128)
+        return HarnessResources(
+            items=tuple(items[:128]), warnings=tuple(warnings), truncated=len(items) > 128
+        )
 
     @staticmethod
     def _known_secrets(config: PiCodingConfig) -> list[str]:
@@ -275,8 +300,12 @@ class PiCodingHarnessFactory:
         approvals = None
         if bindings.interactive_approvals:
             approvals = ApprovalWaiter(
-                ApprovalStore(settings.state_root / "approvals.db"), settings.task_id_override or "",
-                timeout=min(composition.server.approval_wait_timeout_seconds, composition.server.idle_timeout_seconds / 2),
+                ApprovalStore(settings.state_root / "approvals.db"),
+                settings.task_id_override or "",
+                timeout=min(
+                    composition.server.approval_wait_timeout_seconds,
+                    composition.server.idle_timeout_seconds / 2,
+                ),
             )
         replies = PublicReplies(SecretRedactor(known_secrets=known_secrets))
         worker = build_coding_worker(

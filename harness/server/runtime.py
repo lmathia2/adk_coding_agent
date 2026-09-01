@@ -335,11 +335,8 @@ class AdkRunExecutionFactory:
 
     @property
     def run_metadata(self) -> Mapping[str, str]:
-        configuration_root = self.bindings.configuration_root or self.bindings.workspace
         return {
-            "coding.behavior_sha256": self.composition.resolved_behavior_sha256(
-                configuration_root.expanduser().resolve()
-            ),
+            "coding.behavior_sha256": self.composition.behavior_sha256,
             "coding.composition_sha256": self.composition.composition_sha256,
             "coding.harness_api_version": str(self.descriptor.api_version),
             "coding.harness_implementation": self.descriptor.implementation,

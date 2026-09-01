@@ -123,8 +123,7 @@ class ModelControls:
     def run_metadata(self, user_id: str, thread_id: str) -> dict[str, str]:
         choice = self.current(user_id, thread_id)
         composition = self.composition(choice)
-        root = self.factory.bindings.configuration_root or self.factory.bindings.workspace
-        return {MODEL_METADATA: choice.model_dump_json(), "coding.behavior_sha256": composition.resolved_behavior_sha256(root),
+        return {MODEL_METADATA: choice.model_dump_json(), "coding.behavior_sha256": composition.behavior_sha256,
                 "coding.composition_sha256": composition.composition_sha256}
 
     def _discover(self) -> Sequence[CatalogModel]:

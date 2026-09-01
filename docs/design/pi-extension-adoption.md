@@ -32,11 +32,11 @@ source of truth.
 
 ## Repository intelligence
 
-The in-process structural index remains the default because it is local, incremental,
-portable, and cheap enough to refresh after edits. It is a navigation aid and never a
-license to inject repository contents wholesale.
+FFF is the repository discovery path: grouped lexical grep and fuzzy filename search
+without injecting a repository-wide map. The compact manifest retains only build and
+verification metadata.
 
-FFF complements that structural map with fast lexical grep and fuzzy filename search.
+FFF provides that discovery with fast lexical grep and fuzzy filename search.
 The pinned Python binding is installed by the project lockfile, so cloning developers
 do not install a Pi extension, npm package, or separate search binary. A reserved
 `search grep|find|health` grammar is routed inside the managed `bash` adapter. It is
@@ -89,12 +89,12 @@ existing atomic tool adapters. Until then, a fifth model-facing tool is not just
 
 ## Rollout order
 
-1. Use FFF lexical discovery, the local structural index, and structured compaction on every task.
+1. Use FFF lexical discovery, the compact manifest, and structured compaction on every task.
 2. Run the routing-skill ablation on the fixed real-repository suite when model
    credentials are available.
 3. Enable a semantic provider only for repositories whose scale or language tooling
    justifies its operational cost.
-4. Compare the semantic provider against the structural baseline using the same
+4. Compare the semantic provider against the FFF baseline using the same
    outcome, context, cost, and latency metrics.
 5. Consider a sandboxed programmatic meta-tool only after the routing-skill results
    show a remaining, measurable gap.
