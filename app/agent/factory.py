@@ -34,6 +34,7 @@ from harness.config import (
     RuntimeBindings,
 )
 from harness.context import prefix_hash
+from harness.ledger import DuckDbLedgerStore, LedgerBackedEventStore
 from harness.repo import discover_instruction_files
 from harness.safety import ApprovalPolicy, SecretRedactor
 from harness.sandbox import create_configured_command_sandbox
@@ -311,7 +312,10 @@ class PiCodingHarnessFactory:
                 ),
             )
         replies = PublicReplies(SecretRedactor(known_secrets=known_secrets))
-        event_store = JsonlEventStore(settings.state_root / "events")
+        event_store = LedgerBackedEventStore(
+            JsonlEventStore(settings.state_root / "events"),
+            DuckDbLedgerStore(settings.state_root / "ledger.duckdb"),
+        )
         worker = build_coding_worker(
             settings,
             coding_model,
