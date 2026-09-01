@@ -57,3 +57,21 @@ test("stopped runs show missing tool results without claiming the tool is still 
     assert.doesNotMatch(rendered, /running…/);
   }
 });
+
+test("history restore preserves the currently negotiated harness identity", () => {
+  const live = new SessionState();
+  live.view.harness = "Alternate server harness";
+  live.view.connected = true;
+  live.view.workspace = "/current/workspace";
+  const history = new SessionState();
+  history.view.harness = "waiting for server";
+  history.view.workspace = "/stale/workspace";
+  history.view.entries.push({kind: "assistant", id: "reply", text: "restored"});
+
+  live.restore(history);
+
+  assert.equal(live.view.harness, "Alternate server harness");
+  assert.equal(live.view.workspace, "/current/workspace");
+  assert.equal(live.view.connected, true);
+  assert.equal(live.view.entries[0].kind, "assistant");
+});

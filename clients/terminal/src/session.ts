@@ -22,7 +22,11 @@ export class SessionState {
   begin(): void { this.runId = ""; this.cursor = 0; this.view.status = "starting"; this.view.notice = ""; this.view.selectedSkills = []; this.view.approvals = []; }
   restore(history: SessionState): void {
     this.threadId = history.threadId; this.runId = history.runId; this.cursor = history.cursor;
-    Object.assign(this.view, history.view, {workspace: this.view.workspace, connected: this.view.connected});
+    Object.assign(this.view, history.view, {
+      workspace: this.view.workspace,
+      connected: this.view.connected,
+      harness: this.view.harness,
+    });
   }
   newConversation(): void {
     if (this.active) throw new Error("Cancel active work before starting a new conversation");
