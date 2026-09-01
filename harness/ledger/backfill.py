@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -37,13 +38,15 @@ class BackfillAudit(BaseModel):
 
     imported_records: dict[str, int]
     ledger_sources: dict[str, int]
+    expected_events: int
+    mismatched_event_ids: tuple[str, ...]
     matched: bool
 
 
 def audit_backfill(state_root: Path, ledger: DuckDbLedgerStore) -> BackfillAudit:
     imported = backfill_state_root(state_root, ledger)
     sources = ledger.source_counts()
-    expected = {
+    expected_sources = {
         "harness_event": imported["harness_events"],
         "trace_span": imported["trace_spans"],
         "tool_receipt": imported["tool_receipts"],
@@ -55,11 +58,33 @@ def audit_backfill(state_root: Path, ledger: DuckDbLedgerStore) -> BackfillAudit
         "public_event": imported["public_events"],
         "adk_session": imported["adk_sessions"] + imported["adk_events"],
     }
-    actual = {source: sources.get(source, 0) for source in expected}
+    actual = {source: sources.get(source, 0) for source in expected_sources}
+    with tempfile.TemporaryDirectory() as directory:
+        expected_store = DuckDbLedgerStore(Path(directory) / "expected.duckdb")
+        backfill_state_root(state_root, expected_store)
+        expected_events = {
+            event.event_id: event
+            for task_id in expected_store.task_ids()
+            for event in expected_store.read(task_id)
+        }
+    actual_events = {
+        event.event_id: event
+        for task_id in ledger.task_ids()
+        for event in ledger.read(task_id)
+    }
+    mismatched = tuple(
+        sorted(
+            event_id
+            for event_id, event in expected_events.items()
+            if actual_events.get(event_id) != event
+        )
+    )
     return BackfillAudit(
         imported_records=imported,
         ledger_sources=actual,
-        matched=actual == expected,
+        expected_events=len(expected_events),
+        mismatched_event_ids=mismatched,
+        matched=actual == expected_sources and not mismatched,
     )
 
 

@@ -88,4 +88,7 @@ async def test_backfill_is_repeatable_and_reconstructs_recognized_stores(
     assert left.content_hash(run.run_id) == right.content_hash(run.run_id)
     assert left.content_hash("session") == right.content_hash("session")
     assert backfill_state_root(state, left) == first_counts
-    assert audit_backfill(state, left).matched
+    audit = audit_backfill(state, left)
+    assert audit.matched
+    assert audit.mismatched_event_ids == ()
+    assert audit.expected_events == sum(first_counts.values())
