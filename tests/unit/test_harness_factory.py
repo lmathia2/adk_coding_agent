@@ -128,6 +128,7 @@ def test_registered_harness_owns_strict_config_and_swaps_behind_same_protocol(
     assert assembly.build_info.model_providers == {}
     assert composition.server.protocol == "ag_ui_websocket_v1"
     assert ServerHello(harness=assembly.descriptor).protocol_version == PROTOCOL_VERSION
+    assert composition.resolved_behavior_sha256(tmp_path) == composition.behavior_sha256
 
 
 def test_registered_harness_config_rejects_unknown_fields() -> None:

@@ -409,7 +409,8 @@ class HarnessComposition(FrozenModel):
 
         harness = self.harness.model_dump(mode="json")
         harness["required_capabilities"] = sorted(harness["required_capabilities"])
-        agents = harness["config"]["agents"]
+        config = harness.get("config")
+        agents = config.get("agents", {}) if isinstance(config, dict) else {}
         for agent in agents.values():
             prompt = agent["prompt"]
             if prompt["source"] != "file":

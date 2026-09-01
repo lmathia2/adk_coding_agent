@@ -9,16 +9,25 @@ from typing import Any
 
 import pytest
 from google.adk import Runner
+from google.adk.agents import LlmAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.apps import App
 from google.adk.models import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from pydantic import PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from app.agent.factory import default_harness_registry
+from harness.agent import (
+    AdkHarnessAssembly,
+    HarnessBuildInfo,
+    HarnessDescriptor,
+    HarnessRegistry,
+    RuntimeCapability,
+)
 from harness.ai import ClosedAdkModelProviderRegistry
-from harness.config import RuntimeBindings, load_harness_composition
+from harness.config import RuntimeBindings, load_harness_composition, parse_harness_composition
 from harness.server.adk_mapper import AdkAgUiNormalizer
 from harness.server.protocol import AgUiEventType
 
@@ -47,6 +56,28 @@ class Provider:
 
     def build_model(self, config, *, secrets, bindings=None):
         return self.model[config.name] if isinstance(self.model, dict) else self.model
+
+
+class AlternateConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    agent_name: str
+
+
+class AlternateHarnessFactory:
+    descriptor = HarnessDescriptor(implementation="alternate_fixture_v1", display_name="Alternate fixture harness",
+        capabilities=frozenset({RuntimeCapability.STREAMING}))
+    config_model = AlternateConfig
+
+    def __init__(self, model: BaseLlm) -> None:
+        self.model = model
+
+    def build(self, composition, bindings) -> AdkHarnessAssembly:
+        del bindings
+        config = composition.harness.config
+        assert isinstance(config, AlternateConfig)
+        return AdkHarnessAssembly(descriptor=self.descriptor,
+            app=App(name=composition.app.name, root_agent=LlmAgent(name=config.agent_name, model=self.model)),
+            build_info=HarnessBuildInfo(behavior_sha256=composition.behavior_sha256, models={"root": self.model.model}))
 
 
 def reply(status: str, message: str) -> list[types.Part]:
@@ -306,7 +337,7 @@ async def test_two_turns_keep_adk_history_but_reset_task_budgets_and_skills(tmp_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fixture", ["adk-client", "model-client", "approval-client", "stream-client"])
+@pytest.mark.parametrize("fixture", ["adk-client", "model-client", "approval-client", "stream-client", "harness-client"])
 async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture: str, monkeypatch) -> None:
     import asyncio
     import os
@@ -341,6 +372,9 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
         model = StreamingModel(model="fixture")
         model._chunks = ['{"status":"answer"}\nHello ', '**streaming** reader.\n']
         model._released = asyncio.Event()
+    elif fixture == "harness-client":
+        model._gate = None
+        model._responses = [[types.Part(text="Alternate harness reply.")]]
     models = {"alpha": model}
     commands: list[str] = []
     if fixture == "approval-client":
@@ -363,13 +397,21 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
         for name in ("beta", "gamma"):
             models[name] = ScriptedModel(model=name)
             models[name]._responses = [reply("answer", f"{name} fixture reply")]
-    registry = default_harness_registry(model_providers=ClosedAdkModelProviderRegistry((Provider(models),)))
-    composition = load_harness_composition(config_models=registry.config_models())
-    config = composition.harness.config
-    config = config.model_copy(update={"models": {
-        name: value.model_copy(update={"provider": "scripted", "name": "alpha"}) for name, value in config.models.items()
-    }})
-    composition = composition.model_copy(update={"harness": composition.harness.model_copy(update={"config": config})})
+    if fixture == "harness-client":
+        registry = HarnessRegistry()
+        registry.register(AlternateHarnessFactory(model))
+        composition = parse_harness_composition({"schema_version": 1, "app": {"name": "alternate_fixture"},
+            "harness": {"implementation": "alternate_fixture_v1", "api_version": 1,
+                "required_capabilities": ["streaming"], "config": {"agent_name": "alternate_root"}},
+            "server": {"protocol": "ag_ui_websocket_v1"}}, config_models=registry.config_models())
+    else:
+        registry = default_harness_registry(model_providers=ClosedAdkModelProviderRegistry((Provider(models),)))
+        composition = load_harness_composition(config_models=registry.config_models())
+        config = composition.harness.config
+        config = config.model_copy(update={"models": {
+            name: value.model_copy(update={"provider": "scripted", "name": "alpha"}) for name, value in config.models.items()
+        }})
+        composition = composition.model_copy(update={"harness": composition.harness.model_copy(update={"config": config})})
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "README.md").write_text("Bridge fixture.\n")
@@ -385,8 +427,9 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
     coordinator = RunCoordinator(store=SqliteRunEventStore(state_root / "runs.db"), broker=RunEventBroker(),
         execution_factory=AdkRunExecutionFactory(composition=composition,
             bindings=RuntimeBindings(workspace=workspace, state_root=state_root, project_trusted=fixture == "model-client"), registry=registry, services=services))
-    assert coordinator.models is not None
-    coordinator.models._catalog = lambda: tuple(CatalogModel(choice=ModelChoice(provider="scripted", name=name), display_name=name) for name in models)
+    if fixture != "harness-client":
+        assert coordinator.models is not None
+        coordinator.models._catalog = lambda: tuple(CatalogModel(choice=ModelChoice(provider="scripted", name=name), display_name=name) for name in models)
     token = "synthetic-test-token-" + "x" * 32
     app = create_websocket_app(coordinator, authenticator=LocalBearerAuthenticator(token),
         settings=WebSocketServerSettings(path="/v1/agent"))
@@ -438,6 +481,9 @@ async def test_pi_terminal_client_over_real_websocket_and_adk(tmp_path, fixture:
             assert json.loads(stdout) == {"approved": True, "denied": True, "cancelled": True, "resumed": True, "verified": True}
             assert commands == ["printf fixture-approved", "git diff --check", "printf fixture-verification"]
             assert model._calls == 6
+        elif fixture == "harness-client":
+            assert json.loads(stdout) == {"harness": "Alternate fixture harness", "reply": "Alternate harness reply."}
+            assert model._calls == 1
         else:
             assert json.loads(stdout) == {"turns": 3, "entries": 7, "status": "answered"}
             assert model._calls == 4
