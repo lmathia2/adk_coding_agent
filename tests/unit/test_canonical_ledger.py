@@ -7,8 +7,16 @@ import pytest
 
 from harness.approvals import ApprovalStore
 from harness.ledger import DuckDbLedgerStore
-from harness.ledger.importers import import_approval, import_harness_event, import_steering
+from harness.ledger.importers import (
+    import_approval,
+    import_harness_event,
+    import_public_event,
+    import_run,
+    import_steering,
+)
 from harness.ledger.shadow import LedgerBackedEventStore
+from harness.server import AgUiEvent, AgUiEventType
+from harness.server.registry import SqliteRunEventStore
 from harness.state import JsonlEventStore, SteeringQueue
 from harness.state.events import HarnessEvent
 
@@ -147,4 +155,36 @@ def test_approval_and_steering_transitions_are_replayable_evidence(tmp_path: Pat
         "steering.queued",
         "steering.leased",
         "steering.acked",
+    ]
+
+
+def test_run_and_public_event_projections_are_captured(tmp_path: Path) -> None:
+    ledger = DuckDbLedgerStore(tmp_path / "ledger.duckdb")
+    runs = SqliteRunEventStore(
+        tmp_path / "runs.db",
+        run_sink=lambda item: import_run(ledger, item),
+        event_sink=lambda item: import_public_event(ledger, item),
+    )
+    run, _ = runs.create_run(
+        request_id="request",
+        idempotency_key="start",
+        thread_id="thread",
+        user_id="user",
+        input="hello",
+    )
+    runs.update_status(run.run_id, "running")
+    runs.append_event(
+        run.run_id,
+        AgUiEvent(
+            type=AgUiEventType.CUSTOM,
+            run_id=run.run_id,
+            name="coding.test",
+            value={"ok": True},
+        ),
+        source_key="event",
+    )
+    assert [event.kind for event in ledger.read(run.run_id)] == [
+        "run.queued",
+        "run.running",
+        "public.CUSTOM",
     ]

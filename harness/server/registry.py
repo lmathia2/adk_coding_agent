@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 import sqlite3
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -70,8 +70,16 @@ class ReplayPage(BaseModel):
 class SqliteRunEventStore:
     """Transactional run metadata and replayable normalized protocol events."""
 
-    def __init__(self, database: Path) -> None:
+    def __init__(
+        self,
+        database: Path,
+        *,
+        run_sink: Callable[[RunRecord], object] | None = None,
+        event_sink: Callable[[ServerEnvelope], object] | None = None,
+    ) -> None:
         self.database = database.expanduser().resolve()
+        self._run_sink = run_sink
+        self._event_sink = event_sink
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -262,6 +270,8 @@ class SqliteRunEventStore:
             connection.execute("COMMIT")
         created = self.get_run(run_id)
         assert created is not None
+        if self._run_sink is not None:
+            self._run_sink(created)
         return created, True
 
     def get_run(self, run_id: str) -> RunRecord | None:
@@ -344,6 +354,8 @@ class SqliteRunEventStore:
             connection.execute("COMMIT")
         updated = self._run_from_row(updated_row)
         assert updated is not None
+        if self._run_sink is not None:
+            self._run_sink(updated)
         return updated
 
     def append_event(
@@ -517,6 +529,9 @@ class SqliteRunEventStore:
                 outcomes.append(EventAppendResult(envelope=envelope, created=True))
                 next_sequence += 1
             connection.execute("COMMIT")
+        if self._event_sink is not None:
+            for outcome in outcomes:
+                self._event_sink(outcome.envelope)
         return tuple(outcomes)
 
     def replay(
@@ -580,6 +595,8 @@ class SqliteRunEventStore:
                     connection.execute("ROLLBACK")
                     raise ValueError("terminal run replay conflicts with durable state")
                 connection.execute("COMMIT")
+                if self._event_sink is not None:
+                    self._event_sink(existing)
                 return EventAppendResult(envelope=existing, created=False)
             if previous != expected_status:
                 connection.execute("ROLLBACK")
@@ -626,6 +643,12 @@ class SqliteRunEventStore:
                 connection.execute("ROLLBACK")
                 raise ValueError("run status compare-and-set conflict")
             connection.execute("COMMIT")
+        terminal_run = self.get_run(run_id)
+        assert terminal_run is not None
+        if self._run_sink is not None:
+            self._run_sink(terminal_run)
+        if self._event_sink is not None:
+            self._event_sink(envelope)
         return EventAppendResult(envelope=envelope, created=True)
 
     def replay_page(

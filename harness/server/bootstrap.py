@@ -22,6 +22,8 @@ from harness.config import (
     RuntimeBindings,
     load_harness_composition,
 )
+from harness.ledger import DuckDbLedgerStore
+from harness.ledger.importers import import_public_event, import_run
 from harness.persistence import build_service_bundle, settings_from_composition
 
 from .registry import RunEventBroker, SqliteRunEventStore
@@ -184,9 +186,14 @@ def build_server_assembly(
             state_root=resolved_state_root,
         )
     )
+    canonical_ledger = DuckDbLedgerStore(resolved_state_root / "ledger.duckdb")
     coordinator = RunCoordinator(
         provider_controls=LocalProviderControls(resolved_state_root),
-        store=SqliteRunEventStore(resolved_state_root / "server" / "runs.db"),
+        store=SqliteRunEventStore(
+            resolved_state_root / "server" / "runs.db",
+            run_sink=lambda run: import_run(canonical_ledger, run),
+            event_sink=lambda event: import_public_event(canonical_ledger, event),
+        ),
         broker=RunEventBroker(
             queue_capacity=composition.server.outbound_queue_size,
         ),

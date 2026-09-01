@@ -13,14 +13,18 @@ import duckdb
 
 from .models import EffectStatus, EventStatus, LedgerEvent, canonical_json
 
+_LOCK_REGISTRY_GUARD = threading.Lock()
+_LOCKS: dict[Path, threading.RLock] = {}
+
 
 class DuckDbLedgerStore:
     """One-process writer with idempotent append and deterministic task ordering."""
 
     def __init__(self, database: Path) -> None:
-        self.database = database
-        database.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.RLock()
+        self.database = database.resolve()
+        self.database.parent.mkdir(parents=True, exist_ok=True)
+        with _LOCK_REGISTRY_GUARD:
+            self._lock = _LOCKS.setdefault(self.database, threading.RLock())
         with self._connect() as connection:
             connection.execute(
                 """

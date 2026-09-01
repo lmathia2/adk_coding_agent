@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from harness.approvals import ApprovalRequest
 from harness.models.checkpoint import Checkpoint
@@ -158,4 +159,44 @@ def import_metric(
         payload=sample.model_dump(mode="json"),
         idempotency_key=f"metric:{source_id}",
         recorded_at=observed_at,
+    )
+
+
+def import_run(store: DuckDbLedgerStore, run: Any) -> LedgerEvent:
+    statuses: dict[str, EventStatus] = {
+        "queued": "requested",
+        "running": "started",
+        "completed": "completed",
+        "cancelled": "blocked",
+        "failed": "failed",
+    }
+    timestamp = _time(run.updated_at)
+    return store.append(
+        task_id=run.run_id,
+        source="run_registry",
+        source_id=f"{run.run_id}:{run.status}",
+        kind=f"run.{run.status}",
+        status=statuses[run.status],
+        observed_at=timestamp,
+        correlation_id=run.invocation_id,
+        payload=run.model_dump(mode="json"),
+        idempotency_key=f"run:{run.run_id}:{run.status}",
+        recorded_at=timestamp,
+    )
+
+
+def import_public_event(
+    store: DuckDbLedgerStore, envelope: Any
+) -> LedgerEvent:
+    timestamp = datetime.now().astimezone()
+    return store.append(
+        task_id=envelope.run_id,
+        source="public_event",
+        source_id=f"{envelope.run_id}:{envelope.sequence}",
+        kind=f"public.{envelope.event.type}",
+        observed_at=timestamp,
+        correlation_id=envelope.invocation_id,
+        payload=envelope.model_dump(mode="json"),
+        idempotency_key=f"public:{envelope.run_id}:{envelope.sequence}",
+        recorded_at=timestamp,
     )
