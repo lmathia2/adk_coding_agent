@@ -58,6 +58,23 @@ Remaining live comparisons, verification refinement, measured latency, alternate
 harness delivery and installer migration are still required; this is not a full
 parity or performance claim.
 
+### Refined live results
+
+After the verifier correction, the isolated ADK terminal completed these additional
+`gpt-5.6-luna`/low turns. Durations are from durable server timestamps, not terminal
+polling; they are single observations and therefore not a performance benchmark.
+
+| Prompt class | Outcome | Tools / verification | Wall time |
+| --- | --- | --- | ---: |
+| `hello.py` plus five unittest cases | `completed` | worker tests + independent five-test run | 16.35 s |
+| specified Unicode RLE codec | `completed` | four unittest methods, 200 seeded round trips, independent verifier | 51.93 s |
+| three-bullet verifier explanation | `answered` | no tools; first public text at 2.05 s | 2.77 s |
+
+An independent RLE oracle then passed five valid and fifteen invalid vectors. The
+stock Pi and ADK terminal had already completed the identical `hello.py` prompt with
+five passing tests; only the corrected ADK run adds independent completion gating.
+No cost/speed superiority is claimed from these runs.
+
 ## Prototype evidence
 
 `npm test --prefix clients/terminal` passes four focused tests using the actual Pi
