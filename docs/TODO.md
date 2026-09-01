@@ -11,7 +11,7 @@
 - [x] Add the canonical DuckDB event schema, idempotent writer, temporal reads, deterministic importers, and shadow capture for task events, receipts, checkpoints, and traces.
 - [x] Shadow-capture approvals, steering, metrics, public/run events, and redacted ADK session lifecycle alongside task events, receipts, checkpoints, and traces.
 - [x] Add idempotent historical backfill for recognized JSONL, SQLite, and ADK session stores with deterministic hashes and source-count equality auditing.
-- [ ] Prove semantic equality for each live ledger-derived reader before removing or bypassing its operational source.
+- [x] Prove byte-level semantic equality for the live task-event reader, then serve task state, recent context, and compaction from canonical ledger events with idempotent compatibility-store read repair.
 - [x] Implement deterministic history, progress, open-execution, time, task-memory, and dream-mode views plus receipt-bearing P0-P3 prompt manifests.
 - [ ] Cut ledger views into live prompt/compaction readers after byte, cache, and correctness ablations pass.
 - [x] Add candidate, shadow, active, retired lifecycle enforcement for restricted relational memory programs.

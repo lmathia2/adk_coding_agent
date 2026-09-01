@@ -90,11 +90,13 @@ entire Python harness or its host-side file/search primitives. See
 
 ## State and interaction
 
-The canonical DuckDB ledger shadow-captures task events, receipts, checkpoints,
+The canonical DuckDB ledger captures task events, receipts, checkpoints,
 approvals, steering, metrics, public/run events, redacted ADK session lifecycle, and
-ADK traces. JSONL and SQLite remain operational projections during measured migration;
-historical backfill and projection-equality gates have not cut readers over. Artifacts
-use local files or memory.
+ADK traces. Task-state replay, recent context, and compaction now read the canonical
+task-event projection after byte-level equality tests; the JSONL compatibility store is
+still dual-written and idempotently read-repaired for pre-migration tasks. Other SQLite
+stores remain operational projections during measured migration. Artifacts use local
+files or memory.
 
 `ledger-backfill` idempotently imports recognized legacy stores and reports source-count
 equality. Explicit task watermarks can be sealed atomically to deterministic Parquet;

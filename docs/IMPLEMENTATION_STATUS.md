@@ -26,8 +26,10 @@ historical feature checklist or book-rubric score.
   remain operational projections. An idempotent `ledger-backfill` command imports all
   recognized local stores and audits source counts; deterministic fixtures reproduce
   identical task, run, and session hashes across fresh ledgers. The audit now compares
-  every expected canonical event byte-for-byte, not only counts. Reader-specific view
-  equality is still required before cutover.
+  every expected canonical event byte-for-byte, not only counts. The live task-event
+  reader now proves byte-equal reconstruction and serves task replay, recent context,
+  and compaction from canonical ledger events; JSONL remains a dual-written,
+  idempotently read-repaired compatibility projection.
 - Versioned deterministic memory programs provide model history, task progress,
   open/unknown-effect execution, time, query-relevant task memory, and dream/failure
   views. P0-P3 prompt manifests account for source view IDs and stable hashes. A

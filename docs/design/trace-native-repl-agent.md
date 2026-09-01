@@ -21,7 +21,10 @@ a notebook-PTC activation gate.
 Historical backfill and atomic Parquet sealing are now implemented. Backfill reproduces
 stable task/run/session hashes and audits recognized source counts. Parquet tests prove
 hot/sealed equality at an explicit watermark. These do not satisfy semantic reader
-cutover or the scale gate for adding DuckLake. A separate explicit erasure path now
+cutover for non-task operational projections or the scale gate for adding DuckLake.
+The live task-event reader does reconstruct byte-equal harness events from the ledger,
+with idempotent JSONL read repair, so task replay, recent context, and compaction share
+that canonical source. A separate explicit erasure path now
 physically removes exact task rows and recognized operational records, JSONL, notebooks,
 unshared artifacts, and manifested segments; automated retention policy remains an
 operator decision rather than an implicit runtime behavior.

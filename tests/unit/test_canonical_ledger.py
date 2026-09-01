@@ -105,6 +105,31 @@ def test_compatibility_store_shadow_appends_without_changing_reducer_sequence(
     ]
 
 
+def test_compatibility_reader_repairs_and_serves_byte_equal_ledger_events(
+    tmp_path: Path,
+) -> None:
+    operational = JsonlEventStore(tmp_path / "events")
+    expected = [
+        operational.append("task", "one", {"value": 1}),
+        operational.append("task", "two", {"value": 2}, idempotency_key="two"),
+    ]
+    ledger = DuckDbLedgerStore(tmp_path / "ledger.duckdb")
+    ledger.append(
+        task_id="task",
+        source="metric",
+        source_id="unrelated",
+        kind="metric.model",
+    )
+    store = LedgerBackedEventStore(operational, ledger)
+
+    actual = store.read("task")
+
+    assert [event.model_dump_json() for event in actual] == [
+        event.model_dump_json() for event in expected
+    ]
+    assert store.read("task", after_sequence=1) == actual[1:]
+
+
 def test_source_namespaces_prevent_cross_store_idempotency_collisions(tmp_path: Path) -> None:
     ledger = DuckDbLedgerStore(tmp_path / "ledger.duckdb")
     event = HarnessEvent(
