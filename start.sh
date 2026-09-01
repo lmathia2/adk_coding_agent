@@ -6,7 +6,7 @@ usage() {
 Start the ADK Coding Agent with shared local state (Codex subscription provider).
 
 Usage:
-  adk-agent-start server [--workspace DIR] [--state-root DIR] [--model ID] [--trust-project] [-- SERVER_ARGS...]
+  adk-agent-start server [--workspace DIR] [--state-root DIR] [--model ID] [--notebook-ptc] [--trust-project] [-- SERVER_ARGS...]
   adk-agent-start tui [--state-root DIR] [--server URL] [-- TUI_ARGS...]
   adk-agent-start run [--workspace DIR] [--state-root DIR] [--model ID] [--trust-project] [-- TUI_ARGS...]
 
@@ -44,6 +44,7 @@ state_root=${ADK_CODING_AGENT_STATE_ROOT:-${HOME}/.local/state/adk-coding-agent}
 server_url=${ADK_CODING_AGENT_SERVER_URL:-ws://127.0.0.1:8765/v1/agent}
 model=
 trust_project=0
+notebook_ptc=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --state-root|--workspace|--server|--model|--provider)
@@ -57,6 +58,7 @@ while [ "$#" -gt 0 ]; do
       esac
       shift 2 ;;
     --trust-project) [ "$mode" != tui ] || die '--trust-project is selected by the server' 2; trust_project=1; shift ;;
+    --notebook-ptc) [ "$mode" != tui ] || die '--notebook-ptc is selected by the server' 2; notebook_ptc=1; shift ;;
     --) shift; break ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown launcher option: $1 (use -- before forwarded options)" 2 ;;
@@ -81,11 +83,13 @@ printf '%s\n' 'ADK Coding Agent launch configuration:' \
 start_server() {
   [ -z "$model" ] || set -- --model "$model" "$@"
   [ "$trust_project" -eq 0 ] || set -- --trust-project "$@"
+  [ "$notebook_ptc" -eq 0 ] || set -- --notebook-ptc "$@"
   exec adk-coding-agent serve-codex --workspace "$workspace" --state-root "$state_root" "$@"
 }
 if [ "$mode" != tui ]; then
   printf '%s\n' "  Workspace: $workspace" '  Model provider: codex' \
     "  Model: ${model:-saved/provider default}" \
+    "  Notebook PTC: $notebook_ptc" \
     "  Project instructions/skills trusted: $trust_project" \
     '  Environment set: none (workspace and state root are passed as server flags)'
 fi

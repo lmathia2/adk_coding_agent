@@ -265,6 +265,7 @@ def write_codex_config(
     selection: CodexSelection,
     template_path: Path = DEFAULT_COMPOSITION_PATH,
     use_saved_model_default: bool = True,
+    notebook_ptc: bool = False,
 ) -> Path:
     payload = yaml.safe_load(template_path.read_text(encoding="utf-8"))
     payload.setdefault("server", {})["use_saved_model_default"] = use_saved_model_default
@@ -285,6 +286,7 @@ def write_codex_config(
     )
     if selection.client_version:
         coding["client_version"] = selection.client_version
+    payload["harness"]["config"]["notebook_ptc"]["enabled"] = notebook_ptc
     parse_harness_composition(payload)
     rendered = yaml.safe_dump(payload, sort_keys=False)
     destination = destination.expanduser().resolve()
@@ -312,6 +314,7 @@ def prepare_codex_config(
     model: str | None = None,
     reasoning: str | None = None,
     client_version: str | None = None,
+    notebook_ptc: bool = False,
 ) -> tuple[Path, CodexSelection]:
     saved = load_codex_selection(state_root)
     selection = CodexSelection(
@@ -321,7 +324,8 @@ def prepare_codex_config(
     )
     return (
         write_codex_config(state_root / "server" / "openai-codex.yaml", selection=selection,
-                           use_saved_model_default=not any((model, reasoning, client_version))),
+                           use_saved_model_default=not any((model, reasoning, client_version)),
+                           notebook_ptc=notebook_ptc),
         selection,
     )
 

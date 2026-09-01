@@ -224,6 +224,11 @@ def _parser() -> argparse.ArgumentParser:
     codex_serve.add_argument("--client-version")
     codex_serve.add_argument("--production", action="store_true")
     codex_serve.add_argument("--trust-project", action="store_true")
+    codex_serve.add_argument(
+        "--notebook-ptc",
+        action="store_true",
+        help="Expose the local-only persistent Python tool instead of four coding tools",
+    )
     codex_serve.add_argument("--print-config", action="store_true")
 
     codex = subparsers.add_parser(
@@ -353,6 +358,7 @@ def _serve_codex(args: argparse.Namespace) -> int:
         model=args.model,
         reasoning=args.reasoning,
         client_version=args.client_version,
+        notebook_ptc=args.notebook_ptc,
     )
     print(
         "ChatGPT subscription coding model:\n"

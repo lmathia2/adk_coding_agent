@@ -155,3 +155,14 @@ def test_selection_and_generated_yaml_are_private_valid_and_deterministic(tmp_pa
         "client_version": "0.147.0",
     }
     parse_harness_composition(payload)
+
+
+def test_generated_codex_config_can_enable_notebook_ptc(tmp_path: Path) -> None:
+    config = write_codex_config(
+        tmp_path / "server/codex.yaml",
+        selection=CodexSelection(model="gpt-test", reasoning="low", client_version=None),
+        notebook_ptc=True,
+    )
+
+    payload = yaml.safe_load(config.read_text(encoding="utf-8"))
+    assert payload["harness"]["config"]["notebook_ptc"]["enabled"] is True

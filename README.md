@@ -8,6 +8,17 @@ The server owns task state, steering, approval requests, and deterministic verif
 
 ## 1. Install
 
+For the notebook-PTC branch, the short path is:
+
+```bash
+./install-ptc.sh
+./start-ptc.sh /absolute/path/to/repository
+```
+
+The helper uses isolated state at `~/.local/state/adk-coding-agent-ptc`; enter
+`/login` in the terminal if needed. Set `ADK_CODING_AGENT_PTC_STATE_ROOT` to override
+that location. The commands below remain the general-purpose installation path.
+
 On macOS, install [Homebrew](https://brew.sh) and make sure `brew` is on your PATH.
 Git is needed to clone the repository; if it is missing, run `brew install git` first.
 
