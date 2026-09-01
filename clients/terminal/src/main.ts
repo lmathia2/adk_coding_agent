@@ -14,7 +14,23 @@ import { ApprovalPresenter } from "./approvals.js";
 const {values} = parseArgs({options: {
   server: {type: "string", default: "ws://127.0.0.1:8765/v1/agent"},
   "state-root": {type: "string", default: join(homedir(), ".local/state/adk-coding-agent")},
+  help: {type: "boolean", short: "h", default: false},
 }});
+if (values.help) {
+  process.stdout.write(`Pi-style terminal for the ADK coding harness.
+
+Usage:
+  adk-agent-tui [--server URL] [--state-root DIR]
+
+Options:
+  --server URL      Harness WebSocket (default: ws://127.0.0.1:8765/v1/agent)
+  --state-root DIR  Read the local server token from DIR/server/auth-token
+  -h, --help        Show this help
+
+Inside the terminal, use /help for interactive commands and keyboard shortcuts.
+`);
+  process.exit(0);
+}
 try {
   const token = process.env.ADK_CODING_AGENT_TOKEN || readFileSync(join(values["state-root"], "server/auth-token"), "utf8").trim();
   const session = new RemoteSession({url: values.server, token});
