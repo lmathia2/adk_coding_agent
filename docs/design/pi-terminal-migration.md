@@ -54,9 +54,9 @@ server-side; isolated run state did not replace the user's running server.
   including animation lifecycle and Unicode/narrow-width checks. The rebuilt
   client was inspected in a real PTY at 80 columns.
 
-Remaining live comparisons, verification refinement, measured latency, alternate
-harness delivery and installer migration are still required; this is not a full
-parity or performance claim.
+The sections below record how those initial gaps were closed. Parity here means the
+agreed conversation/coding interaction set and protocol boundary; it does not mean
+that this project embeds every Pi command, extension, theme or session feature.
 
 ### Refined live results
 
@@ -97,6 +97,34 @@ replaced the negotiated harness label with `waiting for server`. The client now
 preserves the live server harness across restore, with a deterministic regression
 test. No model/tool action was duplicated by either restore.
 
+An additional live turn was interrupted with Escape after three read calls. Its
+durable record contains one run ending `cancelled`, three successful non-replayed
+reads, no writes, and no requested output files. The activity indicator stopped and
+the terminal remained usable. Entering a prompt before `server.hello` is also safe:
+the terminal retains one idempotent local start request and sends it after negotiation
+instead of clearing the editor and reporting that input was not sent.
+
+## Final delivery gate
+
+The migration was rechecked from a clean installer-created environment. The macOS
+installer removed and recreated the isolated `.venv`, synchronized the locked Python
+dependencies, installed the pinned Node dependencies, built the terminal, and created
+working `adk-agent-start` and `adk-agent-tui` launchers in a temporary command directory.
+Both launchers provide standalone help without requiring a token or running server.
+
+The final deterministic gate contains 521 Python unit/integration cases and 46 Node
+terminal cases. All pass. Ruff, Pyright over `app`/`harness`, Python compilation and
+`git diff --check` are clean. The tracked Go client is absent, production code has no
+Magnitude references, and every Pi-terminal delivery item in `docs/TODO.md` is checked.
+
+The live acceptance set covers short non-coding replies without tools; `hello.py`,
+Unicode RLE, JSON Pointer and slugification coding tasks with independent tests;
+default-Deny approval; exit/resume/replay; and active cancellation. The scripted
+cross-language set additionally covers multi-turn queues, model selection, auth,
+resources/skills, approvals, streaming reconnect, startup queuing and an alternate
+registered harness. This proves the scoped interaction contract, not benchmark
+superiority or every feature of the upstream Pi application.
+
 ## Prototype evidence
 
 `npm test --prefix clients/terminal` passes four focused tests using the actual Pi
@@ -128,8 +156,8 @@ All shell calls conservatively require verification: command classification alon
 is not proof that a shell expression has no side effects.
 
 The full Python unit/integration suite, Ruff, Pyright and compilation pass, as do
-the four terminal prototype tests. These are deterministic contract checks; fresh
-live-model quality/latency comparisons remain required before migration completion.
+the terminal contracts. Live Codex turns above add conversational, coding, approval,
+resume and cancellation evidence; their single-run timings are not benchmarks.
 
 ## Conversation continuity
 
@@ -158,9 +186,15 @@ The cross-language integration gate builds the terminal and runs its real Node
 client against Uvicorn, the production WebSocket coordinator and ADK Runner with
 a scripted model. Two turns retain conversation context; a real read tool is shown
 as a compact card. Rendering at 40/80/120 columns remains bounded and excludes
-workflow diagnostics. This is stronger than separate fake-socket tests but is not
-live-model quality or end-to-end visual parity evidence. Model/auth selectors,
-durable follow-ups and launcher migration are still pending.
+workflow diagnostics. This is stronger than separate fake-socket tests. Live PTY
+runs and the focused sections below cover model/auth selectors, durable follow-ups
+and the launcher.
+
+The same cross-language gate registers an alternate strict harness factory whose
+configuration has no Pi `agents` shape. It runs one ordinary ADK agent through the
+production server and unchanged terminal, which displays `Alternate fixture harness`
+and its reply. This exposed and fixed a behavior-hash assumption that previously
+prevented non-Pi factories from reaching the Runner.
 
 ## Durable follow-ups
 
@@ -180,8 +214,8 @@ The cross-language test now exercises three real ADK turns, with two follow-ups
 queued while the first model response is gated. The terminal follows each successor
 run, not merely the newest run, so fast completions cannot skip transcript entries.
 Unit tests cover queue ordering, retries, cancellation, blocked/error results,
-restart persistence, ownership and redacted previews. Session/model/login selectors,
-full historical transcript loading and live visual/model comparisons remain pending.
+restart persistence, ownership and redacted previews. Later gates cover the
+session/model/login selectors, full transcript loading and live visual/model checks.
 
 ## Recovery refinements
 
@@ -227,8 +261,8 @@ do not prevent inspecting status or removing the invalid cache.
 Ten focused tests exercise a real credential store and synthetic HTTP transport,
 including success, cancellation before token exchange, shutdown, logout retry,
 ownership, secret-safe failures and an authenticated production-server socket that
-still answers ping during login. The full Python unit/integration suite passes
-460 tests. This does not constitute fresh live-provider authentication evidence.
+still answers ping during login. This synthetic transport evidence does not constitute
+fresh live-provider authentication evidence.
 
 ## Terminal login experience
 
@@ -244,13 +278,13 @@ be reattached via `/login`. The terminal never reads or writes provider credenti
 Closing the terminal requests cancellation of its active login dialog before closing
 the socket, but only an acknowledged cancellation is reported as confirmed.
 
-Twenty terminal tests pass. A cross-language test drives the actual Pi dialogs and
+A cross-language test drives the actual Pi dialogs and
 remote session against the production authenticated Python server, with only the
 provider HTTP transport mocked. It verifies login, cancellation, logout, preserved
 drafts, width bounds and zero auth messages in the conversation transcript. The
 rendering-only demo's `/login` was exercised in a real PTY through selector, code
-display, Escape and clean exit. Model/session selectors and installation migration
-remain outstanding; these tests are not a live-account sign-in or full-parity claim.
+display, Escape and clean exit. Model/session selectors and installation are covered
+below; these tests are not a live-account sign-in claim.
 
 ## Model selection
 
@@ -281,13 +315,13 @@ Unconfirmed selections are never automatically replayed; reopen `/model` to reco
 the current and saved choices. Escape during an in-flight save discloses the same
 uncertainty instead of claiming that a server mutation was cancelled.
 
-Verification: 468 Python unit/integration tests and 24 terminal tests, plus Ruff,
-Pyright, compilation and diff checks. The cross-language fixture drives the actual
+The cross-language fixture drives the actual
 Pi picker → authenticated WebSocket → real ADK Runner: alpha stays active, a queued
 turn uses beta with prior conversation context, and a new conversation uses saved
 gamma. Reconnect reconciles the conversation model without replaying selection.
 Width checks cover 20/40/80/120 columns. A rendering-only PTY also exercised `/model`,
-filtering, Ctrl+S, Escape and clean exit. No fresh live-provider quality/latency claim.
+filtering, Ctrl+S, Escape and clean exit. Live runs above confirm the selected Codex
+model responds; catalog presence alone is not treated as availability proof.
 
 ## Historical transcript contract
 
@@ -320,8 +354,8 @@ The production-server/ADK bridge drives the real resume picker and history dialo
 then reopens the conversation from a second client. Model invocation counts stay
 unchanged. Deterministic terminal tests additionally cover active-run catch-up,
 cancelled delayed loads, chronological replay, malformed cursors, earlier-page
-navigation and widths of 20/40/80/120 columns. Installation migration and fresh
-live-provider visual/quality comparisons remain outstanding.
+navigation and widths of 20/40/80/120 columns. Live exit/resume and reinstall evidence
+are recorded in this document.
 
 ## Resource discovery and selection
 
@@ -344,8 +378,8 @@ The production WebSocket/ADK fixture checks resource paths, sends a skill reques
 observes selection while the model is gated, and verifies the body reached the
 worker but not the terminal. Tests also cover trust, configured roots, disabled
 budgets, invalid manifests, bounded discovery, responsive ping, safe errors,
-dialog dismissal and terminal widths. Live-model/visual comparisons and installation
-migration still remain; this is not a claim of full Pi parity.
+dialog dismissal and terminal widths. Live model and installation checks are recorded
+above; parity remains scoped to the agreed interaction set.
 
 ## Interactive approvals
 
@@ -380,8 +414,7 @@ decisions, wrong owner/binding/fingerprint, responsive sockets and verification,
 secret-safe failures, draft restoration and width bounds. This remains scripted-model
 evidence, not live-provider quality or complete visual-parity evidence.
 
-Validation at this milestone: 490 Python unit/integration tests and 39 terminal
-tests pass, with Ruff, Pyright, compilation and diff checks clean.
+The final validation gate supersedes the counts recorded at this milestone.
 
 ## Public Markdown streaming
 
@@ -418,12 +451,10 @@ presenter model call, simulated typing or sleep is used by the implementation.
 
 Connection setup also now retries only requests that existed before the greeting;
 new model/resource discovery requests are sent once, avoiding intermittent busy
-errors. Fresh live-provider quality/latency, full PTY visual comparisons, quiet
-activity polish, installer migration and Go-client removal remain delivery gates.
+errors. The live comparison, quiet Pi loader, installer migration and legacy-client
+removal are recorded above.
 
-Validation at this milestone: 516 Python unit/integration tests and 40 terminal
-tests pass, with Ruff, Pyright, compilation and diff checks clean. The existing
-Go client's race tests also pass (cached). Streaming state is released on normal
+Streaming state is released on normal
 exit, failure and cancellation; concurrent invocations have separate authorization
 and buffers. These are deterministic contract results, not live-model benchmarks.
 

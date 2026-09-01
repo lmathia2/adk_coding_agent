@@ -71,9 +71,10 @@ successfully integrated. Old source and historical reports remain available in G
 
 ## Validation
 
-See [the measured cleanup report](simplification.md) for test results and exact
-source/complexity measurements. Tests exercise fake model streams and real local
-state/tools; this change does not claim fresh live-provider or model-quality results.
+See [the measured cleanup report](simplification.md) for exact source/complexity
+measurements and [the Pi terminal migration record](design/pi-terminal-migration.md)
+for deterministic and live-provider evidence. The live sample is an acceptance set,
+not a model-quality benchmark.
 
 Remaining limitations include the host-local trust boundary, single-process state
 ownership, experimental ADK APIs, and the still-complex server run controller.
