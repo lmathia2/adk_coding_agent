@@ -1,12 +1,15 @@
-schema_version: 1
+# Standard profile: notebook-native PTC with the dependency-free canonical JSONL ledger.
+# Safe optimizer-owned fields are discoverable with `adk-coding-agent tuning-export`.
+# Safety, authority, topology, verification, persistence, and redaction stay fixed.
+schema_version: 1  # Composition schema, not an experiment parameter.
 
 app:
-  name: pi_inspired_adk_coding_agent
+  name: pi_inspired_adk_coding_agent  # Stable ADK application identity.
 
 harness:
-  implementation: pi_coding_v1
+  implementation: pi_coding_v1  # Closed factory key; topology is code-owned.
   api_version: 1
-  required_capabilities:
+  required_capabilities:  # Client/runtime compatibility contract.
     - streaming
     - steering
     - tool_events
@@ -15,21 +18,21 @@ harness:
   config:
     models:
       coding:
-        provider: google_adk
-        name: gemini-3.7-flash
-        retry:
+        provider: google_adk  # Built-in provider registry key.
+        name: gemini-3.7-flash  # Tunable model identity.
+        retry:  # Transport reliability, not model reasoning behavior.
           attempts: 3
           exponential_base: 2
           initial_delay_seconds: 1
           retry_statuses: [429, 500, 502, 503, 504]
     agents:
       coding_worker:
-        model: coding
-        generation:
+        model: coding  # References the sole model entry above.
+        generation:  # Null preserves provider defaults; all three fields are tunable.
           temperature: null
           top_p: null
           max_output_tokens: null
-        instruction: |
+        instruction: |  # Primary learnable, cache-stable behavior prompt.
             You are an expert coding assistant. Answer conversation and explanation requests directly.
             Use repository tools only when the request needs them. For code changes, inspect relevant
             code, make the smallest coherent change, and let the outer workflow verify it.
@@ -44,13 +47,13 @@ harness:
             evidence array. Use answer only for read-only conversation. Code changes must use
             verify or done; the outer workflow decides whether verification succeeds.
     workflow:
-      max_iterations: 40
+      max_iterations: 40  # Maximum model work batches per task.
       progress:
-        replan_after_no_progress: 2
-        block_after_no_progress: 4
-        action_history_limit: 40
+        replan_after_no_progress: 2  # Repeated stagnant batches before replanning.
+        block_after_no_progress: 4  # Must exceed the replan threshold.
+        action_history_limit: 40  # Fingerprints retained for repeat detection.
 
-    tools:
+    tools:  # Nested PTC capabilities reuse these limits and the normal effect broker.
       read_default_lines: 400
       bash_default_timeout_seconds: 120
       bash_max_timeout_seconds: 600
@@ -62,20 +65,20 @@ harness:
         max_page_size: 50
 
     notebook_ptc:
-      enabled: false
-      default_timeout_seconds: 120
+      enabled: true  # Replace four top-level tools with one persistent python tool.
+      default_timeout_seconds: 120  # Default cell execution timeout.
       max_timeout_seconds: 600
-      max_output_bytes: 16000
+      max_output_bytes: 16000  # Inline cell output; oversized MIME becomes artifacts.
 
     memory:
-      enabled: false
-      ledger: jsonl
-      retrieval: lexical
+      enabled: true  # Shadow-capture the canonical trace alongside operational stores.
+      ledger: jsonl  # Dependency-free append-only canonical backend.
+      retrieval: lexical  # Live Lance prompt retrieval remains disabled.
 
     context:
-      compact_at_tokens: 80000
-      work_packet_tokens: 20000
-      max_task_input_tokens: 200000
+      compact_at_tokens: 80000  # Coding-aware compaction trigger.
+      work_packet_tokens: 20000  # Total dynamic suffix budget per model call.
+      max_task_input_tokens: 200000  # Cumulative task input budget.
       recent_event_limit: 12
       project_instruction_bytes: 16000
       skill_context_bytes: 24000
@@ -87,14 +90,14 @@ harness:
       conversation_tokens: 2000
       steering_tokens: 1000
 
-    safety:
+    safety:  # Applies equally to direct tools, nested PTC calls, and verification.
       allow_dependency_install: false
       allow_network: false
       allow_git_history_mutation: false
       allow_unknown_commands: false
       redact_environment_names: []
 
-    sandbox:
+    sandbox:  # PTC currently supports only the trusted-local adapter.
       kind: local
       memory_bytes: 4294967296
       max_processes: 256
@@ -118,7 +121,7 @@ harness:
       resumable: true
 
     tracing:
-      mode: metadata
+      mode: metadata  # Canonical ledger and SQLite traces remain redacted/metadata-only.
       max_content_bytes: 8192
 
     skills:

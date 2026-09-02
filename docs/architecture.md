@@ -40,8 +40,10 @@ ledger / verify / checkpoint     read · bash · edit · write (default)
   Python harness implementation.
 
 The Pi implementation's loop is Python code, not a configurable graph interpreter.
-YAML references a versioned worker prompt and tunes its model, budgets, skills, tool limits, safety allowances, tracing, persistence,
-steering, and iteration limits. Change topology by registering another factory.
+YAML references a versioned worker prompt and tunes its model/generation settings,
+progress thresholds, budgets, skills, tool limits, safety allowances, tracing,
+persistence, steering, and iteration limits. A deterministic export exposes only the
+safe optimization subset; change topology by registering another factory.
 
 ## Minimal coding loop
 

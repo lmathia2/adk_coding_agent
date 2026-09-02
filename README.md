@@ -238,6 +238,18 @@ implementation. Unknown/removed options fail validation.
 The worker prompt lives in the YAML behavior bundle, so copied configurations stay portable.
 Volatile state stays out of the stable instruction prefix.
 
+Export the current safe optimization surface as deterministic JSON:
+
+```bash
+adk-coding-agent tuning-export --config /absolute/path/to/harness.yaml > tuning.json
+```
+
+The export pins the baseline behavior hash, current values, parameter domains,
+outcome/cost/cache diagnostics, and the redacted trace-export command. Only listed
+paths are optimizer-owned; tool names/topology, safety, verification, persistence,
+server identity, and trace redaction remain fixed invariants. Candidate values are
+still applied through the strict harness YAML, so invalid combinations fail closed.
+
 The default remains backward compatible with the four-tool harness and its existing
 stores:
 
@@ -249,6 +261,17 @@ memory:
   ledger: jsonl
   retrieval: lexical
 ```
+
+Complete annotated standard configurations are available for the supported profiles:
+
+- [`four-tool.yaml`](harness/config/profiles/four-tool.yaml): four-tool worker with
+  the existing operational stores.
+- [`notebook-ptc-jsonl.yaml`](harness/config/profiles/notebook-ptc-jsonl.yaml): PTC
+  plus the dependency-free canonical JSONL ledger.
+- [`notebook-ptc-duckdb.yaml`](harness/config/profiles/notebook-ptc-duckdb.yaml): PTC
+  plus the optional analytical DuckDB ledger (`memory-duckdb` extra required).
+
+Pass any profile directly to `serve --config` or `tuning-export --config`.
 
 For notebook PTC with a canonical dependency-free ledger:
 

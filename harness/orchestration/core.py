@@ -91,6 +91,8 @@ def decide_route(
     *,
     should_compact: bool = False,
     pending_steering: bool = False,
+    replan_after_no_progress: int = 2,
+    block_after_no_progress: int = 4,
 ) -> HarnessRoute:
     if pending_steering:
         return HarnessRoute.CONTINUE
@@ -98,7 +100,11 @@ def decide_route(
         return HarnessRoute.BLOCKED
     if step.status in {"verify", "done"}:
         return HarnessRoute.VERIFY
-    progress_route = route_for_progress(ledger)
+    progress_route = route_for_progress(
+        ledger,
+        replan_threshold=replan_after_no_progress,
+        human_threshold=block_after_no_progress,
+    )
     if progress_route == ProgressRoute.NEEDS_INPUT:
         return HarnessRoute.BLOCKED
     if progress_route == ProgressRoute.REPLAN:

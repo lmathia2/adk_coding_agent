@@ -142,11 +142,16 @@ def settings_from_composition(
     project_instructions = (
         collect_project_instructions(workspace) if bindings.project_trusted else ""
     )
-    if len(project_instructions) > 16_000:
-        project_instructions = (
-            project_instructions[:16_000]
-            + "\n[project instructions truncated; read the source files when needed]"
+    project_instruction_bytes = config.context.project_instruction_bytes
+    encoded_project_instructions = project_instructions.encode("utf-8")
+    if len(encoded_project_instructions) > project_instruction_bytes:
+        project_instructions = encoded_project_instructions[:project_instruction_bytes].decode(
+            "utf-8", errors="ignore"
         )
+        if project_instruction_bytes:
+            project_instructions += (
+                "\n[project instructions truncated; read the source files when needed]"
+            )
     if project_instructions:
         instruction += "\n\nStable project instructions:\n" + project_instructions
 

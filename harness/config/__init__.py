@@ -9,6 +9,7 @@ from .loader import (
 from .models import (
     FOUR_CODING_TOOLS,
     AgentConfig,
+    GenerationConfig,
     HarnessCapability,
     HarnessComposition,
     HarnessSelectionConfig,
@@ -17,6 +18,7 @@ from .models import (
     NotebookPtcConfig,
     PersistenceConfig,
     PiCodingConfig,
+    ProgressConfig,
     RuntimeBindings,
     SandboxConfig,
     SecretRef,
@@ -24,12 +26,14 @@ from .models import (
     ToolSurfaceConfig,
     WorkflowConfig,
 )
+from .tuning import TuningObjective, TuningParameter, TuningSpec, tuning_spec
 
 __all__ = [
     "DEFAULT_COMPOSITION_PATH",
     "DEFAULT_HARNESS_CONFIG_MODELS",
     "FOUR_CODING_TOOLS",
     "AgentConfig",
+    "GenerationConfig",
     "HarnessCapability",
     "HarnessComposition",
     "HarnessSelectionConfig",
@@ -38,12 +42,17 @@ __all__ = [
     "NotebookPtcConfig",
     "PersistenceConfig",
     "PiCodingConfig",
+    "ProgressConfig",
     "RuntimeBindings",
     "SandboxConfig",
     "SecretRef",
     "ServerConfig",
     "ToolSurfaceConfig",
+    "TuningObjective",
+    "TuningParameter",
+    "TuningSpec",
     "WorkflowConfig",
     "load_harness_composition",
     "parse_harness_composition",
+    "tuning_spec",
 ]

@@ -97,15 +97,37 @@ class ModelConfig(FrozenModel):
         return self
 
 
+class GenerationConfig(FrozenModel):
+    """Provider-neutral sampling controls passed through Google ADK."""
+
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    top_p: float | None = Field(default=None, ge=0, le=1)
+    max_output_tokens: int | None = Field(default=None, ge=256, le=131_072)
+
+
 class AgentConfig(FrozenModel):
     model: str = Field(min_length=1, max_length=64)
     instruction: str = Field(min_length=1, max_length=128_000)
+    generation: GenerationConfig = GenerationConfig()
+
+
+class ProgressConfig(FrozenModel):
+    replan_after_no_progress: int = Field(default=2, ge=1, le=100)
+    block_after_no_progress: int = Field(default=4, ge=2, le=100)
+    action_history_limit: int = Field(default=40, ge=1, le=1_000)
+
+    @model_validator(mode="after")
+    def validate_thresholds(self) -> ProgressConfig:
+        if self.block_after_no_progress <= self.replan_after_no_progress:
+            raise ValueError("block threshold must exceed replan threshold")
+        return self
 
 
 class WorkflowConfig(FrozenModel):
     """Only executable loop settings; topology belongs to the harness factory."""
 
     max_iterations: int = Field(default=40, ge=1, le=1_000)
+    progress: ProgressConfig = ProgressConfig()
 
 
 class ToolOutputConfig(FrozenModel):
@@ -170,6 +192,7 @@ class ContextConfig(FrozenModel):
     work_packet_tokens: int = Field(default=20_000, ge=2_000, le=256_000)
     max_task_input_tokens: int = Field(default=200_000, ge=8_000, le=20_000_000)
     recent_event_limit: int = Field(default=12, ge=1, le=100)
+    project_instruction_bytes: int = Field(default=16_000, ge=0, le=1_000_000)
     skill_context_bytes: int = Field(default=24_000, ge=0, le=1_000_000)
     max_selected_skills: int = Field(default=3, ge=0, le=20)
     ledger_tokens: int = Field(default=2_000, ge=200, le=16_000)
@@ -409,12 +432,14 @@ class RuntimeBindings(FrozenModel):
 __all__ = [
     "FOUR_CODING_TOOLS",
     "AgentConfig",
+    "GenerationConfig",
     "HarnessCapability",
     "HarnessComposition",
     "HarnessSelectionConfig",
     "ModelConfig",
     "NotebookPtcConfig",
     "PiCodingConfig",
+    "ProgressConfig",
     "RuntimeBindings",
     "SandboxConfig",
     "SecretRef",

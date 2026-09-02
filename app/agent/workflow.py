@@ -79,6 +79,9 @@ class PiWorkflowDependencies:
     work_packet_tokens: int
     max_task_input_tokens: int
     work_packet_section_tokens: dict[str, int]
+    progress_history_limit: int
+    progress_replan_threshold: int
+    progress_human_threshold: int
     steering_batch_limit: int
     steering_enabled: bool
     steering_at_work_batch_boundary: bool
@@ -261,12 +264,13 @@ def _with_workspace_observations(
     step: AgentStep,
     modified: list[str],
     action_fingerprints: list[str],
+    history_limit: int = 40,
 ) -> TaskLedger:
     data = ledger.model_dump(mode="python")
     data["files_modified"] = modified
     data["files_read"] = list(dict.fromkeys([*data.get("files_read", []), *step.files_in_focus]))
     observed = TaskLedger.model_validate(data)
-    return register_action_batch(observed, action_fingerprints)
+    return register_action_batch(observed, action_fingerprints, history_limit=history_limit)
 
 
 def _consume_tool_action_fingerprints(ctx: Context) -> list[str]:
@@ -1094,6 +1098,7 @@ async def _orchestrate_owned(
             step,
             changed_paths(settings.workspace, ledger.base_revision),
             action_fingerprints,
+            deps.progress_history_limit,
         )
         deps.event_store.append(
             task_id,
@@ -1127,6 +1132,8 @@ async def _orchestrate_owned(
             step,
             should_compact=should_compact,
             pending_steering=pending_steering,
+            replan_after_no_progress=deps.progress_replan_threshold,
+            block_after_no_progress=deps.progress_human_threshold,
         )
         if step.message and route in {HarnessRoute.CONTINUE, HarnessRoute.COMPACT}:
             yield message_event(step.message)

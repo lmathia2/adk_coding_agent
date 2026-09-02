@@ -50,6 +50,10 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert composition.server.first_event_retries == 1
     assert config.context.work_packet_tokens == 20_000
     assert config.context.max_task_input_tokens == 200_000
+    assert config.context.project_instruction_bytes == 16_000
+    assert config.workflow.progress.replan_after_no_progress == 2
+    assert config.workflow.progress.block_after_no_progress == 4
+    assert config.agents["coding_worker"].generation.temperature is None
     assert config.notebook_ptc.enabled is False
     assert config.notebook_ptc.default_timeout_seconds == 120
     assert config.notebook_ptc.max_timeout_seconds == 600
@@ -59,6 +63,34 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert config.memory.retrieval == "lexical"
     assert "tui" not in type(composition.server).model_fields
     assert config.models["coding"].provider == "google_adk"
+
+
+@pytest.mark.parametrize(
+    ("filename", "ptc_enabled", "memory_enabled", "ledger"),
+    [
+        ("four-tool.yaml", False, False, "jsonl"),
+        ("notebook-ptc-jsonl.yaml", True, True, "jsonl"),
+        ("notebook-ptc-duckdb.yaml", True, True, "duckdb"),
+    ],
+)
+def test_annotated_standard_profiles_are_complete_and_strict(
+    filename: str,
+    ptc_enabled: bool,
+    memory_enabled: bool,
+    ledger: str,
+) -> None:
+    path = Path(__file__).parents[2] / "harness" / "config" / "profiles" / filename
+    composition = load_harness_composition(path)
+    config = composition.harness.config
+
+    assert isinstance(config, PiCodingConfig)
+    assert config.notebook_ptc.enabled is ptc_enabled
+    assert config.memory.enabled is memory_enabled
+    assert config.memory.ledger == ledger
+    annotations = path.read_text(encoding="utf-8")
+    assert "Primary learnable" in annotations
+    assert "optimizer-owned" in annotations
+    assert "verification" in annotations
 
 
 @pytest.mark.parametrize("removed_field", ["inbound_queue_size", "heartbeat_seconds"])
@@ -90,6 +122,28 @@ def test_task_input_budget_cannot_be_smaller_than_one_work_packet() -> None:
 
     with pytest.raises(ValidationError, match="max_task_input_tokens"):
         parse_harness_composition(payload)
+
+
+def test_progress_block_threshold_must_exceed_replan_threshold() -> None:
+    payload = _composition_payload()
+    payload["harness"]["config"]["workflow"]["progress"] = {
+        "replan_after_no_progress": 4,
+        "block_after_no_progress": 4,
+    }
+
+    with pytest.raises(ValidationError, match="block threshold"):
+        parse_harness_composition(payload)
+
+
+def test_generation_settings_change_behavior_hash() -> None:
+    payload = _composition_payload()
+    baseline = parse_harness_composition(payload)
+    payload["harness"]["config"]["agents"]["coding_worker"]["generation"] = {
+        "temperature": 0.2,
+        "max_output_tokens": 8_192,
+    }
+
+    assert parse_harness_composition(payload).behavior_sha256 != baseline.behavior_sha256
 
 
 def test_canonical_composition_hash_is_stable_across_mapping_order() -> None:

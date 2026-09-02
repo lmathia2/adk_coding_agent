@@ -1,5 +1,12 @@
 # Implementation TODO
 
+## Optimization-facing behavior configuration
+
+- [x] Externalize model generation, stagnation routing, and stable project-context
+  budgets; export the safe prompt/model/context/tool/cache surface with behavior-hash,
+  outcome-metric, and redacted-trace contracts for external optimization loops; ship
+  fully annotated four-tool, PTC+JSONL, and PTC+DuckDB standard configurations.
+
 ## Trace-native notebook PTC
 
 - [x] Add a disabled-by-default, local-only notebook PTC configuration gate.

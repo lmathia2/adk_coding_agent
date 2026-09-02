@@ -237,6 +237,26 @@ def test_trace_export(tmp_path: Path, capsys) -> None:
     assert exported["task_id"] == "task-1"
 
 
+def test_tuning_export_is_deterministic_and_excludes_authority_surfaces(capsys) -> None:
+    assert main(["tuning-export"]) == 0
+    first = capsys.readouterr().out
+    assert main(["tuning-export"]) == 0
+    second = capsys.readouterr().out
+
+    assert first == second
+    payload = json.loads(first)
+    paths = {parameter["path"] for parameter in payload["parameters"]}
+    assert "harness.config.agents.coding_worker.instruction" in paths
+    assert "harness.config.workflow.progress.replan_after_no_progress" in paths
+    assert "harness.config.context.work_packet_tokens" in paths
+    assert not any("safety" in path or "sandbox" in path for path in paths)
+    assert payload["primary_objective"] == {
+        "metric": "outcome_passed",
+        "direction": "maximize",
+    }
+    assert "trace-export" in payload["trace_export_command"]
+
+
 def test_ledger_backfill_cli_reports_replay_equality(tmp_path: Path, capsys) -> None:
     state = tmp_path / "state"
     JsonlEventStore(state / "events").append("task", "task.created", {"goal": "test"})

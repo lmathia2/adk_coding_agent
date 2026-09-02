@@ -15,9 +15,10 @@ from uuid import uuid4
 from google.adk import Agent
 from google.adk.models import BaseLlm
 from google.adk.tools import ToolContext
+from google.genai import types
 
 from harness.approvals.waiting import ApprovalWaiter
-from harness.config import NotebookPtcConfig, ToolSurfaceConfig
+from harness.config import GenerationConfig, NotebookPtcConfig, ToolSurfaceConfig
 from harness.notebook import externalize_mime_bundle, materialize_notebook, reduce_notebook
 from harness.repl import PersistentPythonWorker
 from harness.state import EventKind, EventStore, JsonlEventStore
@@ -59,6 +60,7 @@ def build_coding_worker(
     model: BaseLlm,
     *,
     tools: AdkCodingTools | None = None,
+    generation_config: GenerationConfig | None = None,
     tool_config: ToolSurfaceConfig | None = None,
     ptc_config: NotebookPtcConfig | None = None,
     event_store: EventStore | None = None,
@@ -71,6 +73,7 @@ def build_coding_worker(
         state_root=settings.state_root,
     )
     active_tool_config = tool_config or ToolSurfaceConfig()
+    active_generation_config = generation_config or GenerationConfig()
     active_ptc_config = ptc_config or NotebookPtcConfig()
     active_event_store = event_store or JsonlEventStore(settings.state_root / "events")
     read_default_lines = active_tool_config.read_default_lines
@@ -631,6 +634,7 @@ def build_coding_worker(
     model_tools: list[Any] = (
         [python] if active_ptc_config.enabled else [read, bash, edit, write]
     )
+    generation = active_generation_config.model_dump(exclude_none=True)
     agent = Agent(
         name="coding_worker",
         model=model,
@@ -642,6 +646,9 @@ def build_coding_worker(
         static_instruction=settings.static_instruction,
         instruction="",
         tools=model_tools,
+        generate_content_config=(
+            types.GenerateContentConfig(**generation) if generation else None
+        ),
         before_model_callback=replies.before_model if replies is not None else None,
         after_model_callback=replies.after_model if replies is not None else None,
     )

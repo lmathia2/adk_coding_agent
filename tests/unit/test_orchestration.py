@@ -72,6 +72,30 @@ def test_pending_steering_preempts_terminal_routes_at_a_safe_point() -> None:
     assert resumed.next_action == "Apply the newest user steering before continuing"
 
 
+def test_progress_route_uses_configured_thresholds() -> None:
+    step = AgentStep(status="continue")
+    ledger = _ledger().model_copy(update={"no_progress_count": 3})
+
+    assert (
+        decide_route(
+            ledger,
+            step,
+            replan_after_no_progress=3,
+            block_after_no_progress=5,
+        )
+        == HarnessRoute.REPLAN
+    )
+    assert (
+        decide_route(
+            ledger,
+            step,
+            replan_after_no_progress=4,
+            block_after_no_progress=5,
+        )
+        == HarnessRoute.CONTINUE
+    )
+
+
 def test_work_packet_is_deterministic_and_steering_is_last() -> None:
     ledger = _ledger()
     packet = build_work_packet(

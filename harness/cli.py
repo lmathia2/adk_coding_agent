@@ -154,6 +154,12 @@ def _parser() -> argparse.ArgumentParser:
     trace_export.add_argument("--state-root", type=Path, required=True)
     trace_export.add_argument("--task-id", required=True)
 
+    tuning_export = subparsers.add_parser(
+        "tuning-export",
+        help="Print the safe optimizer-facing behavior surface as JSON",
+    )
+    tuning_export.add_argument("--config", type=Path)
+
     ledger_backfill = subparsers.add_parser(
         "ledger-backfill",
         help="Idempotently import recognized local stores and audit source counts",
@@ -629,6 +635,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         exported = TraceStore(args.state_root.resolve() / "traces.db").export_jsonl(args.task_id)
         if exported:
             print(exported)
+        return 0
+    if args.command == "tuning-export":
+        from harness.config import DEFAULT_COMPOSITION_PATH, load_harness_composition, tuning_spec
+
+        composition = load_harness_composition(args.config or DEFAULT_COMPOSITION_PATH)
+        print(tuning_spec(composition).model_dump_json(indent=2))
         return 0
     if args.command == "ledger-backfill":
         from harness.ledger.backfill import audit_backfill

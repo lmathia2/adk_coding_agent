@@ -8,6 +8,13 @@ historical feature checklist or book-rubric score.
 - Versioned YAML worker prompt with content-sensitive behavior hashes; fixed
   agent schema, tool surface, safety outcomes, Docker network isolation, and memory
   implementation remain code-owned invariants rather than decorative YAML.
+- A deterministic optimizer-facing export identifies the safe behavior surface:
+  worker prompt, model/reasoning/generation settings, progress thresholds, context and
+  tool-output budgets, and cache/compaction controls. It pins the baseline behavior
+  hash and names the existing outcome, cost, cache, tool, and redacted-trace evidence.
+  Safety, authority, topology, verification, persistence, and redaction remain outside
+  optimizer control. Fully annotated standalone profiles cover the four-tool default,
+  PTC with canonical JSONL, and PTC with canonical DuckDB.
 - Strict YAML behavior, explicit workspace/state/trust identity, closed harness
   and ADK model-provider registries.
 - One ADK coding worker with four tools; bounded context, stable prefix hashes,

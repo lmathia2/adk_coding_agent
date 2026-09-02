@@ -34,6 +34,7 @@ from harness.agent import (
     SteeringCommand,
 )
 from harness.config import (
+    GenerationConfig,
     HarnessComposition,
     PiCodingConfig,
     RuntimeBindings,
@@ -366,6 +367,38 @@ def test_composition_loads_project_instructions_only_after_explicit_trust(
     assert trusted.skill_roots == (workspace / ".agents" / "skills",)
 
 
+def test_project_instruction_budget_is_executable_configuration(tmp_path: Path) -> None:
+    composition = load_harness_composition()
+    config = cast(PiCodingConfig, composition.harness.config)
+    configured = composition.model_copy(
+        update={
+            "harness": composition.harness.model_copy(
+                update={
+                    "config": config.model_copy(
+                        update={
+                            "context": config.context.model_copy(
+                                update={"project_instruction_bytes": 0}
+                            )
+                        }
+                    )
+                }
+            )
+        }
+    )
+    (tmp_path / "AGENTS.md").write_text("MUST NOT FIT", encoding="utf-8")
+
+    settings = settings_from_composition(
+        configured,
+        RuntimeBindings(
+            workspace=tmp_path,
+            state_root=tmp_path / "state",
+            project_trusted=True,
+        ),
+    )
+
+    assert "MUST NOT FIT" not in settings.static_instruction
+
+
 @pytest.mark.asyncio
 async def test_model_tool_input_error_is_recoverable_instead_of_crashing_adk(
     tmp_path: Path,
@@ -383,6 +416,30 @@ async def test_model_tool_input_error_is_recoverable_instead_of_crashing_adk(
 
     assert result["status"] == "blocked"
     assert "Path leaves workspace" in result["model_text"]
+
+
+def test_worker_passes_generation_settings_through_adk(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    settings = settings_from_composition(
+        load_harness_composition(),
+        RuntimeBindings(workspace=workspace, state_root=tmp_path / "state"),
+    )
+
+    worker = build_coding_worker(
+        settings,
+        cast(BaseLlm, "test-model"),
+        generation_config=GenerationConfig(
+            temperature=0.2,
+            top_p=0.9,
+            max_output_tokens=8_192,
+        ),
+    )
+
+    assert worker.agent.generate_content_config is not None
+    assert worker.agent.generate_content_config.temperature == 0.2
+    assert worker.agent.generate_content_config.top_p == 0.9
+    assert worker.agent.generate_content_config.max_output_tokens == 8_192
 
 
 @pytest.mark.asyncio

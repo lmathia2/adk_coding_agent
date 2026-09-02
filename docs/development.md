@@ -95,6 +95,14 @@ the same YAML factory as the server. See `.env.example` for its identity binding
 IDs, and `ADK_CODING_TRUST_PROJECT`. Former model/workflow/learning environment
 settings are not the behavior API: migrate to YAML.
 
+`adk-coding-agent tuning-export --config FILE` emits the optimizer-facing subset of
+that YAML. It includes the baseline behavior hash, prompt/model/generation settings,
+context and tool-output budgets, progress thresholds, cache/compaction controls, and
+the existing outcome/trace observation contract. Safety, authority, topology,
+verification, persistence, and redaction are deliberately absent from its parameters.
+Treat one candidate as one behavior hash; compare candidates on held-out tasks and
+retain pass/test guardrails before optimizing cost, uncached input, or wall time.
+
 Do not run multiple server workers against one state directory. Back up local state
 before upgrading a behavior configuration; do not resume old runs across a behavior
 hash change.
@@ -108,6 +116,11 @@ The supported profiles differ only at explicit configuration seams:
 | Four-tool default | `notebook_ptc.enabled: false`, `memory.enabled: false` | Backward-compatible coding harness |
 | PTC + JSONL | `notebook_ptc.enabled: true`, `memory.enabled: true`, `ledger: jsonl` | Persistent CPython, notebook workbench, dependency-free canonical ledger |
 | PTC + DuckDB | PTC enabled, memory enabled, `ledger: duckdb` | Same authority model with SQL analytics |
+
+The corresponding fully annotated, standalone files live in
+`harness/config/profiles/`: `four-tool.yaml`, `notebook-ptc-jsonl.yaml`, and
+`notebook-ptc-duckdb.yaml`. They intentionally duplicate the complete strict schema;
+there is no inheritance layer that could hide the actual behavior hash.
 
 The Codex `--notebook-ptc` launcher generates the PTC + JSONL profile. For other
 combinations, copy `harness/config/default.yaml` and use
