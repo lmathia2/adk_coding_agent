@@ -8,12 +8,31 @@ import tempfile
 from contextlib import suppress
 from pathlib import Path
 
-from .models import NotebookState
+from .models import NotebookCell, NotebookState
 
 
 def canonical_notebook_bytes(state: NotebookState) -> bytes:
     cells = []
     for cell in state.cells:
+        if not isinstance(cell, NotebookCell):
+            cells.append(
+                {
+                    "cell_type": "markdown",
+                    "id": cell.cell_id,
+                    "metadata": {
+                        "agent": {
+                            "event_id": cell.event_id,
+                            "event_kind": cell.event_kind,
+                            "ledger_seq": cell.ledger_seq,
+                            "observed_at": cell.observed_at.isoformat(),
+                            "program_version": cell.program_version,
+                            "source_sha256": cell.source_sha256,
+                        }
+                    },
+                    "source": cell.source.splitlines(keepends=True),
+                }
+            )
+            continue
         cells.append(
             {
                 "cell_type": "code",
@@ -28,6 +47,10 @@ def canonical_notebook_bytes(state: NotebookState) -> bytes:
                         "kernel_epoch": cell.kernel_epoch,
                         "ledger_end_seq": cell.ledger_end_seq,
                         "ledger_start_seq": cell.ledger_start_seq,
+                        "observed_at": cell.observed_at.isoformat(),
+                        "completed_at": (
+                            cell.completed_at.isoformat() if cell.completed_at else None
+                        ),
                         "program_version": cell.program_version,
                         "replay_policy": cell.replay_policy,
                         "source_sha256": cell.source_sha256,
@@ -43,7 +66,7 @@ def canonical_notebook_bytes(state: NotebookState) -> bytes:
         "metadata": {
             "agent": {
                 "notebook_id": state.notebook_id,
-                "renderer_version": 1,
+                "renderer_version": 2,
                 "source_watermark": state.source_watermark,
             }
         },

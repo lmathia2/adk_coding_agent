@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -167,6 +168,14 @@ def _parser() -> argparse.ArgumentParser:
     ledger_backfill.add_argument("--state-root", type=Path, required=True)
     ledger_backfill.add_argument("--database", type=Path)
 
+    notebook = subparsers.add_parser(
+        "notebook",
+        help="List or render canonical task notebooks (uses nb-cli when installed)",
+    )
+    notebook.add_argument("--state-root", type=Path, required=True)
+    notebook.add_argument("--task-id")
+    notebook.add_argument("--cell-index", type=int)
+
     def add_steering_target(command: argparse.ArgumentParser) -> None:
         target = command.add_mutually_exclusive_group(required=True)
         target.add_argument("--repository", type=Path)
@@ -281,6 +290,61 @@ def _parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--limit", type=int, choices=range(1, 11), default=6)
     benchmark.add_argument("--no-save", action="store_true")
     return parser
+
+
+def _notebook_command(args: argparse.Namespace) -> int:
+    from harness.notebook import materialize_notebook, reduce_notebook
+    from harness.state import JsonlEventStore
+
+    state_root = args.state_root.expanduser().resolve()
+    notebook_root = state_root / "notebooks"
+    if args.task_id is None:
+        print(
+            json.dumps(
+                [path.as_posix() for path in sorted(notebook_root.glob("*.ipynb"))],
+                indent=2,
+            )
+        )
+        return 0
+
+    events = JsonlEventStore(state_root / "events").read(args.task_id)
+    if not events:
+        print(f"error: no event stream for task {args.task_id!r}", file=sys.stderr)
+        return 1
+    notebook_id = hashlib.sha256(args.task_id.encode()).hexdigest()[:32]
+    path = notebook_root / f"{notebook_id}.ipynb"
+    content = materialize_notebook(reduce_notebook(events, notebook_id), path)
+
+    nb = shutil.which("nb")
+    if nb is not None:
+        command = [nb, "read", path.as_posix(), "--no-output"]
+        if args.cell_index is not None:
+            command.extend(("--cell-index", str(args.cell_index)))
+        return subprocess.run(command, check=False).returncode
+
+    document = json.loads(content)
+    cells = document["cells"]
+    indices = range(len(cells))
+    if args.cell_index is not None:
+        index = args.cell_index if args.cell_index >= 0 else len(cells) + args.cell_index
+        if not 0 <= index < len(cells):
+            print(f"error: cell index {args.cell_index} is out of range", file=sys.stderr)
+            return 1
+        indices = (index,)
+    print(f"@@notebook {json.dumps({'path': path.as_posix()}, sort_keys=True)}")
+    for index in indices:
+        cell = cells[index]
+        header = {
+            "cell_type": cell["cell_type"],
+            "id": cell["id"],
+            "index": index,
+            "metadata": cell.get("metadata", {}),
+        }
+        print(f"@@cell {json.dumps(header, sort_keys=True, separators=(',', ':'))}")
+        print("".join(cell.get("source", [])), end="")
+        if cell.get("source") and not "".join(cell["source"]).endswith("\n"):
+            print()
+    return 0
 
 
 def _serve(args: argparse.Namespace) -> int:
@@ -655,6 +719,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         audit = audit_backfill(state_root, DuckDbLedgerStore(database))
         print(audit.model_dump_json(indent=2))
         return 0 if audit.matched else 1
+    if args.command == "notebook":
+        return _notebook_command(args)
     if args.command == "cleanup":
         repository = args.repository.resolve()
         state = (args.state_root or _default_state_root(repository)).resolve()

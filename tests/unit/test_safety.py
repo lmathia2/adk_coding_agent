@@ -41,6 +41,10 @@ def test_classifier_uses_highest_risk_shell_segment() -> None:
     assert classify_command("sudo rm -rf /") == CommandRisk.DESTRUCTIVE
     assert classify_command("find / -name '*.py'") == CommandRisk.UNKNOWN
     assert classify_command("find /workspace -name '*.py'") == CommandRisk.READ_ONLY
+    assert classify_command("nb read session.ipynb --no-output") == CommandRisk.READ_ONLY
+    assert classify_command("nb read session.ipynb") == CommandRisk.UNKNOWN
+    assert classify_command("nb execute session.ipynb") == CommandRisk.UNKNOWN
+    assert classify_command("nb cell add session.ipynb --source pass") == CommandRisk.UNKNOWN
     workspace = Path("/workspace")
     assert classify_command("cd /workspace && pytest -q", workspace=workspace) == CommandRisk.BUILD_OR_TEST
     assert classify_command("cd /tmp && pytest -q", workspace=workspace) == CommandRisk.UNKNOWN

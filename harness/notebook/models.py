@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import Field
@@ -13,6 +14,7 @@ Effect = Literal["none", "observed", "changed", "unknown"]
 
 
 class NotebookCell(StrictModel):
+    cell_type: Literal["code"] = "code"
     cell_id: str = Field(min_length=1)
     source: str
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -27,9 +29,23 @@ class NotebookCell(StrictModel):
     artifact_refs: list[str] = Field(default_factory=list)
     outputs: list[dict[str, Any]] = Field(default_factory=list)
     program_version: int = Field(default=1, ge=1)
+    observed_at: datetime
+    completed_at: datetime | None = None
+
+
+class NotebookMarkdownCell(StrictModel):
+    cell_type: Literal["markdown"] = "markdown"
+    cell_id: str = Field(min_length=1)
+    source: str
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    event_id: str = Field(min_length=1)
+    event_kind: str = Field(min_length=1)
+    ledger_seq: int = Field(ge=1)
+    observed_at: datetime
+    program_version: int = Field(default=1, ge=1)
 
 
 class NotebookState(StrictModel):
     notebook_id: str = Field(min_length=1)
-    cells: list[NotebookCell] = Field(default_factory=list)
+    cells: list[NotebookCell | NotebookMarkdownCell] = Field(default_factory=list)
     source_watermark: int = Field(ge=0)

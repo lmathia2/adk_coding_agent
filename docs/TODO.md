@@ -31,6 +31,9 @@
 - [ ] Run the four-tool versus notebook-PTC quality, token, latency, and cache-hit ablation before changing the default.
 - [x] Define notebook PTC's supported execution boundary as trusted local workspaces; production/adversarial isolation is an optional future deployment profile, not an activation gate.
 - [x] Add standalone executable notebooks for PTC state, cache-aware compaction, and versioned trace-memory programs.
+- [x] Project task, public message, steering, and compaction events into timestamped notebook Markdown cells.
+- [x] Add task-scoped notebook rematerialization and compact `nb-cli` inspection with a stdlib fallback.
+- [x] Classify only non-externalizing local `nb-cli` reads as automatic; keep notebook execution and mutation approval-gated.
 
 See `docs/design/trace-native-repl-agent.md` for tenets, contracts, phased gates,
 and the implementation/evaluation rubric.

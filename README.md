@@ -144,6 +144,27 @@ capabilities still pass through the harness broker, policy, receipts, output bou
 and redaction. Failures, blocks, retries, exceptions, and timeouts remain ledger events
 rather than being rewritten as successes.
 
+PTC does not remove Bash capability or add a second shell runtime. Python programs call
+`agent.shell.run(...)`, so compound CLI/Bash work uses the same confined Bash adapter as
+the four-tool profile while retaining Python variables across calls. Use the default
+profile to measure the familiar direct-tool baseline; use PTC to compose and reuse
+multi-call programs.
+
+Inspect the durable session notebook by task ID. The command rematerializes from the
+append-only event stream, uses `nb read --no-output` when `nb-cli` is installed, and
+otherwise emits a compact stdlib-only cell stream:
+
+```bash
+adk-coding-agent notebook --state-root ~/.local/state/adk-coding-agent-ptc
+adk-coding-agent notebook --state-root ~/.local/state/adk-coding-agent-ptc --task-id TASK_ID
+adk-coding-agent notebook --state-root ~/.local/state/adk-coding-agent-ptc --task-id TASK_ID --cell-index -1
+```
+
+The notebook interleaves task/user/assistant/compaction Markdown with PTC code and
+selected outputs. Timestamps and ledger sequence remain cell metadata. Do not use
+`nb execute` to resume a harness session: the long-lived CPython worker owns live state,
+and only replay-safe code cells are restored automatically.
+
 ### First login and model selection
 
 The launcher uses this harness's Codex subscription adapter, not a local model or
@@ -342,7 +363,8 @@ old evaluation reports are not evidence for the simplified runtime.
 - Resumable local sessions, steering, approvals, replay, and independent completion
   verification.
 - Optional notebook-native PTC with persistent CPython state and a deterministic
-  nbformat workbench.
+  nbformat workbench containing message, compaction, code, output, timestamp, and
+  ledger-provenance cells; optional `nb-cli` inspection has a stdlib fallback.
 - One append-only canonical event schema over JSONL or optional DuckDB, including
   incomplete, failed, blocked, retried, and timed-out work.
 - Deterministic history, progress, open-execution, time, task-memory, and dream/failure

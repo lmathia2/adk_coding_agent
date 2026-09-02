@@ -19,7 +19,12 @@ from google.genai import types
 
 from harness.approvals.waiting import ApprovalWaiter
 from harness.config import GenerationConfig, NotebookPtcConfig, ToolSurfaceConfig
-from harness.notebook import externalize_mime_bundle, materialize_notebook, reduce_notebook
+from harness.notebook import (
+    NotebookCell,
+    externalize_mime_bundle,
+    materialize_notebook,
+    reduce_notebook,
+)
 from harness.repl import PersistentPythonWorker
 from harness.state import EventKind, EventStore, JsonlEventStore
 from harness.tools.adk_adapter import AdkCodingTools, create_adk_tools
@@ -473,6 +478,8 @@ def build_coding_worker(
             previous = reduce_notebook(active_event_store.read(task_id), notebook_id)
             restored_cells: list[str] = []
             for prior_cell in previous.cells:
+                if not isinstance(prior_cell, NotebookCell):
+                    continue
                 if prior_cell.status != "completed" or prior_cell.replay_policy != "safe":
                     continue
                 restored = await asyncio.to_thread(
@@ -521,6 +528,12 @@ def build_coding_worker(
             EventKind.REPL_CELL_SUBMITTED,
             cell_payload,
             idempotency_key=f"repl-cell:{attempt_id}:submitted",
+        )
+        notebook_path = settings.state_root / "notebooks" / f"{notebook_id}.ipynb"
+        await asyncio.to_thread(
+            materialize_notebook,
+            reduce_notebook(active_event_store.read(task_id), notebook_id),
+            notebook_path,
         )
         broker = _CellBroker(
             task_id=task_id,
@@ -578,7 +591,6 @@ def build_coding_worker(
             idempotency_key=f"repl-cell:{attempt_id}:terminal",
         )
         notebook_state = reduce_notebook(active_event_store.read(task_id), notebook_id)
-        notebook_path = settings.state_root / "notebooks" / f"{notebook_id}.ipynb"
         notebook_bytes = await asyncio.to_thread(
             materialize_notebook,
             notebook_state,

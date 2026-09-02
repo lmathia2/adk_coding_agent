@@ -24,7 +24,12 @@ historical feature checklist or book-rubric score.
   through the existing policy/approval adapters, appends lifecycle events, and
   deterministically materializes a durable nbformat transcript. Completed safe cells
   restore Python state after a worker restart; failures, timeouts, blocked calls, and
-  unknown effects remain explicit in the event history. `start-ptc.sh` enables this
+  unknown effects remain explicit in the event history. Task contracts, public
+  user/assistant messages, steering, and structured compaction handoffs are projected
+  as timestamped Markdown cells alongside code and selected outputs. The `notebook`
+  operator command rematerializes by task ID and delegates compact reading to `nb-cli`
+  when available, with a dependency-free renderer otherwise. `nb execute` is not a
+  second execution path. `start-ptc.sh` enables this
   path together with the dependency-free canonical JSONL ledger and an isolated state
   root; the ordinary launcher retains the four-tool default.
 - Optional canonical memory now shadow-captures task events, tool-receipt transitions,

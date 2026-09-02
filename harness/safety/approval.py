@@ -198,6 +198,21 @@ def _package_risk(tokens: list[str]) -> CommandRisk:
     return CommandRisk.BUILD_OR_TEST
 
 
+def _notebook_risk(tokens: list[str]) -> CommandRisk:
+    """Only local, non-externalizing nb-cli inspection is automatic."""
+
+    if len(tokens) < 2 or {"--server", "--token"} & set(tokens[2:]):
+        return CommandRisk.UNKNOWN
+    subcommand = tokens[1]
+    if subcommand == "status":
+        return CommandRisk.READ_ONLY
+    if subcommand == "search":
+        return CommandRisk.READ_ONLY
+    if subcommand == "read" and "--no-output" in tokens[2:]:
+        return CommandRisk.READ_ONLY
+    return CommandRisk.UNKNOWN
+
+
 def _cd_risk(tokens: list[str], workspace: Path | None) -> CommandRisk:
     """Allow directory changes only when their literal target stays in the workspace."""
 
@@ -243,6 +258,8 @@ def classify_command(command: str, *, workspace: Path | None = None) -> CommandR
                 risks.append(_cd_risk(tokens, workspace))
             elif executable == "git":
                 risks.append(_git_risk(tokens))
+            elif executable == "nb":
+                risks.append(_notebook_risk(tokens))
             elif executable in {"pip", "pip3", "uv", "npm", "npx", "pnpm", "yarn", "cargo", "go"}:
                 risks.append(_package_risk(tokens))
             elif executable in _NETWORK_COMMANDS:

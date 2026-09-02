@@ -8,13 +8,48 @@ from typing import Any
 
 from harness.state.events import EventKind, HarnessEvent
 
-from .models import NotebookCell, NotebookState
+from .models import NotebookCell, NotebookMarkdownCell, NotebookState
 
 _TERMINAL_KINDS: dict[str, str] = {
     EventKind.REPL_CELL_COMPLETED.value: "completed",
     EventKind.REPL_CELL_FAILED.value: "failed",
     EventKind.REPL_CELL_TIMEOUT.value: "timeout",
 }
+
+
+def _markdown_source(event: HarnessEvent) -> str | None:
+    payload = event.payload
+    if event.kind == EventKind.TASK_CREATED:
+        ledger = payload.get("ledger")
+        if not isinstance(ledger, dict):
+            return None
+        lines = ["# User request", "", str(ledger.get("goal", ""))]
+        criteria = ledger.get("acceptance_criteria")
+        if isinstance(criteria, list) and criteria:
+            lines.extend(("", "## Acceptance criteria", ""))
+            lines.extend(f"- {item}" for item in criteria)
+        return "\n".join(lines).rstrip() + "\n"
+    if event.kind == EventKind.MESSAGE_RECORDED:
+        role = str(payload.get("role", "message")).capitalize()
+        return f"# {role}\n\n{payload.get('content', '')}\n"
+    if event.kind == EventKind.STEERING_RECEIVED:
+        return f"# User steering\n\n{payload.get('content', '')}\n"
+    if event.kind == EventKind.COMPACTION_CREATED:
+        return f"# Compaction handoff\n\n{payload.get('summary', '')}\n"
+    return None
+
+
+def _markdown_cell(event: HarnessEvent, source: str) -> NotebookMarkdownCell:
+    digest = hashlib.sha256(f"markdown:{event.event_id}".encode()).hexdigest()
+    return NotebookMarkdownCell(
+        cell_id=digest[:32],
+        source=source,
+        source_sha256=hashlib.sha256(source.encode()).hexdigest(),
+        event_id=event.event_id,
+        event_kind=event.kind,
+        ledger_seq=event.sequence,
+        observed_at=event.timestamp,
+    )
 
 
 def _outputs(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -43,11 +78,19 @@ def reduce_notebook(events: Iterable[HarnessEvent], notebook_id: str) -> Noteboo
     """Build one notebook deterministically from its ordered event stream."""
 
     ordered = sorted(events, key=lambda event: event.sequence)
-    cells: dict[str, NotebookCell] = {}
+    cells: dict[str, NotebookCell | NotebookMarkdownCell] = {}
     order: list[str] = []
     watermark = 0
     for event in ordered:
         payload = event.payload
+        markdown = _markdown_source(event)
+        if markdown is not None:
+            watermark = max(watermark, event.sequence)
+            narrative = _markdown_cell(event, markdown)
+            if narrative.cell_id not in cells:
+                cells[narrative.cell_id] = narrative
+                order.append(narrative.cell_id)
+            continue
         if payload.get("notebook_id") != notebook_id:
             continue
         watermark = max(watermark, event.sequence)
@@ -68,6 +111,7 @@ def reduce_notebook(events: Iterable[HarnessEvent], notebook_id: str) -> Noteboo
                 replay_policy=payload.get("replay_policy", "requires_reconciliation"),
                 artifact_refs=sorted(set(payload.get("artifact_refs", []))),
                 program_version=payload.get("program_version", 1),
+                observed_at=event.timestamp,
             )
             if cell_id in cells and cells[cell_id] != candidate:
                 raise ValueError(f"conflicting notebook cell: {cell_id}")
@@ -78,6 +122,8 @@ def reduce_notebook(events: Iterable[HarnessEvent], notebook_id: str) -> Noteboo
         if not isinstance(cell_id, str) or cell_id not in cells:
             continue
         cell = cells[cell_id]
+        if not isinstance(cell, NotebookCell):
+            continue
         if payload.get("attempt_id", cell.attempt_id) != cell.attempt_id:
             raise ValueError(f"attempt does not match notebook cell: {cell_id}")
         if event.kind == EventKind.REPL_CELL_SUBMITTED:
@@ -96,6 +142,7 @@ def reduce_notebook(events: Iterable[HarnessEvent], notebook_id: str) -> Noteboo
                         set(cell.artifact_refs) | set(payload.get("artifact_refs", []))
                     ),
                     "outputs": _outputs(payload),
+                    "completed_at": event.timestamp,
                 }
             )
         elif event.kind == EventKind.NOTEBOOK_CELL_DELETED:

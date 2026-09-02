@@ -58,6 +58,42 @@ def test_notebook_projection_preserves_order_provenance_outputs_and_artifacts() 
     }
 
 
+def test_notebook_projects_messages_and_compaction_with_time_provenance() -> None:
+    events = [
+        HarnessEvent(
+            event_id="task-event",
+            task_id="task-1",
+            sequence=1,
+            kind=EventKind.TASK_CREATED,
+            payload={"ledger": {"goal": "Fix it", "acceptance_criteria": ["Tests pass"]}},
+        ),
+        HarnessEvent(
+            event_id="message-event",
+            task_id="task-1",
+            sequence=2,
+            kind=EventKind.MESSAGE_RECORDED,
+            payload={"role": "assistant", "content": "Inspecting the failure."},
+        ),
+        HarnessEvent(
+            event_id="compaction-event",
+            task_id="task-1",
+            sequence=3,
+            kind=EventKind.COMPACTION_CREATED,
+            payload={"summary": "Continue from verification."},
+        ),
+    ]
+
+    document = json.loads(canonical_notebook_bytes(reduce_notebook(events, "notebook-1")))
+
+    assert [cell["cell_type"] for cell in document["cells"]] == [
+        "markdown", "markdown", "markdown",
+    ]
+    assert "# User request" in "".join(document["cells"][0]["source"])
+    assert "# Assistant" in "".join(document["cells"][1]["source"])
+    assert "# Compaction handoff" in "".join(document["cells"][2]["source"])
+    assert document["cells"][2]["metadata"]["agent"]["observed_at"].endswith("+00:00")
+
+
 def test_timeout_with_unknown_effect_and_failure_are_durable() -> None:
     events = [
         _event(1, EventKind.NOTEBOOK_CELL_ADDED, {

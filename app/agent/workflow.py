@@ -24,6 +24,7 @@ from harness.models.agent_step import AgentStep
 from harness.models.checkpoint import Checkpoint
 from harness.models.ledger import TaskLedger
 from harness.models.task import TaskRequest
+from harness.notebook import materialize_notebook, reduce_notebook
 from harness.orchestration import (
     HarnessRoute,
     build_work_packet,
@@ -162,6 +163,7 @@ _LEDGER_DUPLICATE_EVENT_KINDS = {
     EventKind.TASK_CREATED,
     EventKind.LEDGER_PATCHED,
     EventKind.CHECKPOINT_CREATED,
+    EventKind.MESSAGE_RECORDED,
 }
 
 
@@ -357,6 +359,33 @@ def _save_checkpoint(
 
 def _event_count(deps: PiWorkflowDependencies, task_id: str, kind: EventKind) -> int:
     return sum(1 for event in deps.event_store.read(task_id) if event.kind == kind)
+
+
+def _record_message(
+    deps: PiWorkflowDependencies,
+    *,
+    task_id: str,
+    role: Literal["user", "assistant"],
+    content: str,
+    idempotency_key: str,
+) -> None:
+    """Record public prose, then refresh an existing notebook projection."""
+
+    if not content:
+        return
+    deps.event_store.append(
+        task_id,
+        EventKind.MESSAGE_RECORDED,
+        {"role": role, "content": content},
+        idempotency_key=idempotency_key,
+    )
+    notebook_id = hashlib.sha256(task_id.encode()).hexdigest()[:32]
+    notebook_path = deps.settings.state_root / "notebooks" / f"{notebook_id}.ipynb"
+    if notebook_path.exists():
+        materialize_notebook(
+            reduce_notebook(deps.event_store.read(task_id), notebook_id),
+            notebook_path,
+        )
 
 
 def _record_outcome(
@@ -587,6 +616,15 @@ def _initialize_run(
             idempotency_key="task-created",
         )
 
+    invocation_id = ctx.get_invocation_context().invocation_id
+    _record_message(
+        deps,
+        task_id=task_id,
+        role="user",
+        content=request.goal,
+        idempotency_key=f"message:user:{invocation_id}",
+    )
+
     latest_checkpoint = deps.checkpoint_store.latest(task_id)
     current_fingerprint = _workspace_fingerprint(deps, task_id)
     if latest_checkpoint is not None and latest_checkpoint.git_tree_hash != current_fingerprint:
@@ -722,6 +760,13 @@ def _answer_result(
         status="answered",
         passed=False,
         started=started,
+    )
+    _record_message(
+        deps,
+        task_id=ledger.task_id,
+        role="assistant",
+        content=step.message,
+        idempotency_key=f"message:assistant:answer:{ledger.iteration}",
     )
     return ledger, json.dumps({"status": "answered", "message": step.message})
 
@@ -859,6 +904,13 @@ async def _verification_transition(
         started=started,
         tests_passed=int(report.get("tests_passed", 0)),
         tests_failed=int(report.get("tests_failed", 0)),
+    )
+    _record_message(
+        deps,
+        task_id=ledger.task_id,
+        role="assistant",
+        content=step.message,
+        idempotency_key=f"message:assistant:complete:{ledger.iteration}",
     )
     return _VerificationTransition(
         ledger=ledger,
@@ -1053,6 +1105,13 @@ async def _orchestrate_owned(
                 step = step.model_copy(update={"status": "verify"})
             elif deps.steering_enabled and deps.steering_queue.has_pending(task_id):
                 if reply_stream is not None and reply_stream.started:
+                    _record_message(
+                        deps,
+                        task_id=task_id,
+                        role="assistant",
+                        content=step.message,
+                        idempotency_key=f"message:assistant:steering:{ledger.iteration + 1}",
+                    )
                     yield message_event(step.message)
                 step = step.model_copy(update={"status": "continue", "message": ""})
             else:
@@ -1136,6 +1195,13 @@ async def _orchestrate_owned(
             block_after_no_progress=deps.progress_human_threshold,
         )
         if step.message and route in {HarnessRoute.CONTINUE, HarnessRoute.COMPACT}:
+            _record_message(
+                deps,
+                task_id=task_id,
+                role="assistant",
+                content=step.message,
+                idempotency_key=f"message:assistant:step:{ledger.iteration}",
+            )
             yield message_event(step.message)
         checkpoint = _save_checkpoint(
             deps,

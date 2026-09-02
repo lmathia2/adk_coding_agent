@@ -1110,8 +1110,8 @@ Every harness-owned cell has a small metadata envelope:
 }
 ```
 
-Timestamps remain available through ledger provenance and MAY appear in the
-archival notebook. They are excluded from the stable model renderer unless the
+Observed and terminal timestamps are preserved in archival notebook cell metadata
+alongside ledger provenance. They are excluded from the stable model renderer unless the
 current query depends on time. Notebook execution counts are presentation metadata,
 not causal order. Ledger sequence is causal order.
 
@@ -1297,6 +1297,19 @@ the supported CLI for inspecting, exporting, and explicitly importing notebooks.
 If maintaining two serializers becomes measurable maintenance debt, extract or
 embed the `nb-cli` serialization library; do not introduce a daemon or FFI layer
 speculatively.
+
+The implemented operator path is:
+
+```bash
+adk-coding-agent notebook --state-root STATE_ROOT [--task-id TASK_ID] [--cell-index N]
+```
+
+Without a task ID it lists materialized notebooks. With a task ID it first rebuilds
+the canonical notebook from the append-only task events, then calls
+`nb read --no-output` when available. A compact standard-library renderer preserves
+the same read-only workflow when `nb-cli` is absent. Model-authored `nb read
+--no-output`, local `nb search`, and `nb status` classify as inspection; `nb execute`,
+cell/output mutation, remote server flags, and other modes remain approval-gated.
 
 ## 14. Phase- and query-specific memory
 

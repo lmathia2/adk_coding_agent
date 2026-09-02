@@ -266,6 +266,29 @@ def test_ledger_backfill_cli_reports_replay_equality(tmp_path: Path, capsys) -> 
     assert report["imported_records"]["harness_events"] == 1
 
 
+def test_notebook_cli_lists_and_renders_without_nb_cli(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    state = tmp_path / "state"
+    JsonlEventStore(state / "events").append(
+        "task-1",
+        "task.created",
+        {"ledger": {"goal": "Explain state", "acceptance_criteria": []}},
+    )
+    monkeypatch.setattr("harness.cli.shutil.which", lambda command: None)
+
+    assert main(["notebook", "--state-root", str(state), "--task-id", "task-1"]) == 0
+    rendered = capsys.readouterr().out
+    assert rendered.startswith("@@notebook ")
+    assert "# User request" in rendered
+    assert "observed_at" in rendered
+
+    assert main(["notebook", "--state-root", str(state)]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert len(listed) == 1
+    assert listed[0].endswith(".ipynb")
+
+
 
 def test_steer_cli_queues_without_exposing_content_and_reports_status(
     tmp_path: Path,
