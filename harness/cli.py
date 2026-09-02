@@ -288,6 +288,15 @@ def _parser() -> argparse.ArgumentParser:
     eval_next.add_argument("--matrix", type=Path, required=True)
     eval_next.add_argument("--results", type=Path, required=True)
 
+    eval_import = subparsers.add_parser(
+        "eval-import",
+        help="Append one Harbor trial result to an experiment ledger",
+    )
+    eval_import.add_argument("--matrix", type=Path, required=True)
+    eval_import.add_argument("--trial-key", required=True)
+    eval_import.add_argument("--harbor-result", type=Path, required=True)
+    eval_import.add_argument("--results", type=Path, required=True)
+
     codex_serve = subparsers.add_parser(
         "serve-codex",
         help="Serve the harness with a ChatGPT subscription Codex model",
@@ -651,6 +660,38 @@ def _eval_next(args: argparse.Namespace) -> int:
     return 0
 
 
+def _eval_import(args: argparse.Namespace) -> int:
+    from harness.evals.experiments import (
+        ExperimentMatrix,
+        append_trial_record,
+        trial_record_from_harbor_result,
+    )
+
+    matrix = ExperimentMatrix.model_validate_json(
+        args.matrix.expanduser().resolve().read_text(encoding="utf-8")
+    )
+    assignment = next(
+        (item for item in matrix.assignments if item.trial_key == args.trial_key),
+        None,
+    )
+    if assignment is None:
+        print("error: trial key is not assigned by this matrix", file=sys.stderr)
+        return 2
+    record = trial_record_from_harbor_result(
+        assignment,
+        args.harbor_result.expanduser().resolve().read_text(encoding="utf-8"),
+    )
+    appended = append_trial_record(args.results.expanduser().resolve(), record)
+    print(
+        json.dumps(
+            {"appended": appended, "record": record.model_dump(mode="json")},
+            sort_keys=True,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def _codex_command(args: argparse.Namespace) -> int:
     import time
 
@@ -852,6 +893,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _eval_analyze(args)
     if args.command == "eval-next":
         return _eval_next(args)
+    if args.command == "eval-import":
+        return _eval_import(args)
     if args.command == "codex":
         return _codex_command(args)
     if args.command == "hello":

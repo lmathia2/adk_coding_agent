@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import random
 from collections import defaultdict
+from collections.abc import Mapping
+from datetime import datetime
 from itertools import combinations
 from pathlib import Path
 from statistics import median
@@ -246,24 +249,24 @@ INFRASTRUCTURE_STATUSES = {
 class TrialMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    active_wall_time_seconds: float = Field(ge=0)
-    end_to_end_wall_time_seconds: float = Field(ge=0)
-    api_equivalent_cost_usd: float = Field(ge=0)
-    uncached_input_tokens: int = Field(ge=0)
-    cache_read_tokens: int = Field(ge=0)
-    cache_write_tokens: int = Field(ge=0)
-    output_tokens: int = Field(ge=0)
-    reasoning_tokens: int = Field(ge=0)
-    model_turns: int = Field(ge=0)
-    steps: int = Field(ge=0)
-    tool_calls: int = Field(ge=0)
-    shell_calls: int = Field(ge=0)
-    verification_runs: int = Field(ge=0)
-    changed_files: int = Field(ge=0)
-    compactions: int = Field(ge=0)
-    duplicate_actions: int = Field(ge=0)
-    operator_interventions: int = Field(ge=0)
-    subscription_limit_interruptions: int = Field(ge=0)
+    active_wall_time_seconds: float | None = Field(default=None, ge=0)
+    end_to_end_wall_time_seconds: float | None = Field(default=None, ge=0)
+    api_equivalent_cost_usd: float | None = Field(default=None, ge=0)
+    uncached_input_tokens: int | None = Field(default=None, ge=0)
+    cache_read_tokens: int | None = Field(default=None, ge=0)
+    cache_write_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    reasoning_tokens: int | None = Field(default=None, ge=0)
+    model_turns: int | None = Field(default=None, ge=0)
+    steps: int | None = Field(default=None, ge=0)
+    tool_calls: int | None = Field(default=None, ge=0)
+    shell_calls: int | None = Field(default=None, ge=0)
+    verification_runs: int | None = Field(default=None, ge=0)
+    changed_files: int | None = Field(default=None, ge=0)
+    compactions: int | None = Field(default=None, ge=0)
+    duplicate_actions: int | None = Field(default=None, ge=0)
+    operator_interventions: int | None = Field(default=None, ge=0)
+    subscription_limit_interruptions: int | None = Field(default=None, ge=0)
 
 
 class TrialRecord(BaseModel):
@@ -289,6 +292,48 @@ class TrialRecord(BaseModel):
         return self
 
 
+class _Timing(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class _AgentResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    n_input_tokens: int | None = None
+    n_cache_tokens: int | None = None
+    n_output_tokens: int | None = None
+    cost_usd: float | None = None
+    metadata: dict[str, object] | None = None
+
+
+class _VerifierResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    rewards: dict[str, float | int] | None = None
+
+
+class _ExceptionInfo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    exception_type: str
+    exception_message: str
+
+
+class _HarborResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    task_name: str
+    agent_result: _AgentResult | None = None
+    verifier_result: _VerifierResult | None = None
+    exception_info: _ExceptionInfo | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    agent_execution: _Timing | None = None
+
+
 class MetricSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -309,6 +354,7 @@ class CandidateSummary(BaseModel):
     capability_benchmark_scores: dict[Benchmark, float]
     capability_composite: float
     metric_summaries: dict[str, MetricSummary]
+    metric_coverage: dict[str, float]
     api_equivalent_cost_per_pass: float | None
     active_seconds_per_pass: float | None
 
@@ -341,6 +387,144 @@ def _percentile(values: list[float], fraction: float) -> float:
 
 def _metric(values: list[float]) -> MetricSummary | None:
     return MetricSummary(median=median(values), p90=_percentile(values, 0.9)) if values else None
+
+
+def _duration(timing: _Timing | None) -> float | None:
+    if timing is None or timing.started_at is None or timing.finished_at is None:
+        return None
+    return max(0.0, (timing.finished_at - timing.started_at).total_seconds())
+
+
+def _number(mapping: Mapping[str, object], name: str) -> int | None:
+    value = mapping.get(name)
+    return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def trial_record_from_harbor_result(
+    assignment: TrialAssignment,
+    payload: str | bytes | Mapping[str, object],
+) -> TrialRecord:
+    """Normalize Harbor's result without trusting agent-authored score metadata."""
+
+    result = (
+        _HarborResult.model_validate_json(payload)
+        if isinstance(payload, (str, bytes))
+        else _HarborResult.model_validate(payload)
+    )
+    if result.task_name not in {assignment.task_id, assignment.harbor_task.split("/", 1)[-1]}:
+        raise ValueError("Harbor result task does not match the assigned task")
+    agent = result.agent_result or _AgentResult()
+    metadata = agent.metadata or {}
+    skein = metadata.get("skein")
+    skein_result = skein if isinstance(skein, Mapping) else {}
+    raw_metrics = skein_result.get("metrics")
+    metrics = raw_metrics if isinstance(raw_metrics, Mapping) else {}
+    subscription = skein_result.get("subscription_limit")
+    subscription_interrupted = bool(
+        isinstance(subscription, Mapping) and subscription.get("interrupted") is True
+    )
+    error = skein_result.get("error")
+    error_data = error if isinstance(error, Mapping) else {}
+    error_code = str(error_data.get("code") or "")
+    exception_message = (
+        f"{result.exception_info.exception_type}: {result.exception_info.exception_message}"
+        if result.exception_info is not None
+        else ""
+    )
+    diagnostic = f"{error_code} {exception_message}".lower()
+
+    reward_value = (
+        result.verifier_result.rewards.get("reward")
+        if result.verifier_result is not None and result.verifier_result.rewards is not None
+        else None
+    )
+    reward: Literal[0, 1] | None = None
+    if (
+        isinstance(reward_value, (int, float))
+        and not isinstance(reward_value, bool)
+        and reward_value in (0, 1)
+    ):
+        reward = 0 if reward_value == 0 else 1
+    if subscription_interrupted or any(
+        marker in diagnostic for marker in ("429", "rate limit", "usage limit", "quota")
+    ):
+        status: TrialStatus = "subscription_interruption"
+        reward = None
+    elif any(marker in diagnostic for marker in ("workspace_violation", "secret leak")):
+        status = "safety_failure"
+        reward = 0
+    elif "timeout" in diagnostic:
+        status = "agent_timeout"
+        reward = 0
+    elif result.exception_info is not None:
+        status = "infrastructure_error"
+        reward = None
+    elif reward is None:
+        status = "verifier_error"
+    else:
+        status = "pass" if reward == 1 else "task_failure"
+
+    total_input = _number(metrics, "input_tokens")
+    cache_read = _number(metrics, "cache_read_tokens")
+    total_input = total_input if total_input is not None else agent.n_input_tokens
+    cache_read = cache_read if cache_read is not None else agent.n_cache_tokens
+    changed = skein_result.get("changed_paths")
+    trial_metrics = TrialMetrics(
+        active_wall_time_seconds=_duration(result.agent_execution),
+        end_to_end_wall_time_seconds=(
+            max(0.0, (result.finished_at - result.started_at).total_seconds())
+            if result.started_at is not None and result.finished_at is not None
+            else None
+        ),
+        api_equivalent_cost_usd=(
+            float(skein_result["api_equivalent_cost_usd"])
+            if isinstance(skein_result.get("api_equivalent_cost_usd"), (int, float))
+            else agent.cost_usd
+        ),
+        uncached_input_tokens=(
+            max(total_input - (cache_read or 0), 0) if total_input is not None else None
+        ),
+        cache_read_tokens=cache_read,
+        cache_write_tokens=_number(metrics, "cache_write_tokens"),
+        output_tokens=_number(metrics, "output_tokens") or agent.n_output_tokens,
+        reasoning_tokens=_number(metrics, "reasoning_tokens"),
+        model_turns=_number(metrics, "model_calls"),
+        steps=_number(metrics, "outcome_iterations"),
+        tool_calls=_number(metrics, "tool_calls"),
+        verification_runs=(1 if skein_result.get("verification") is not None else None),
+        changed_files=(len(changed) if isinstance(changed, list) else None),
+        compactions=_number(metrics, "outcome_compactions"),
+        operator_interventions=_number(metrics, "outcome_user_interventions"),
+        subscription_limit_interruptions=int(subscription_interrupted),
+    )
+    return TrialRecord(
+        trial_key=assignment.trial_key,
+        benchmark=assignment.benchmark,
+        task_id=assignment.task_id,
+        attempt=assignment.attempt,
+        candidate_id=assignment.candidate_id,
+        status=status,
+        official_reward=reward,
+        metrics=trial_metrics,
+        error_code=error_code or (result.exception_info.exception_type if result.exception_info else None),
+    )
+
+
+def append_trial_record(path: Path, record: TrialRecord) -> bool:
+    """Append one result exactly once; a conflicting retry must use a new trial key."""
+
+    existing = load_trial_records(path) if path.exists() else ()
+    prior = next((item for item in existing if item.trial_key == record.trial_key), None)
+    if prior is not None:
+        if prior != record:
+            raise ValueError("trial key already has a different result")
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(record.model_dump_json() + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    return True
 
 
 def _scores(records: list[TrialRecord]) -> tuple[dict[Benchmark, float], float]:
@@ -469,7 +653,10 @@ def analyze_trials(
         metric_values: dict[str, list[float]] = defaultdict(list)
         for item in metrics:
             for name, value in item.model_dump().items():
-                metric_values[name].append(float(value))
+                if value is not None:
+                    metric_values[name].append(float(value))
+        complete_cost = len(metric_values["api_equivalent_cost_usd"]) == assigned
+        complete_active_time = len(metric_values["active_wall_time_seconds"]) == assigned
         summaries.append(
             CandidateSummary(
                 candidate_id=candidate_id,
@@ -488,14 +675,18 @@ def analyze_trials(
                     for name, values in sorted(metric_values.items())
                     if (summary := _metric(values)) is not None
                 },
+                metric_coverage={
+                    name: len(metric_values[name]) / assigned
+                    for name in sorted(TrialMetrics.model_fields)
+                },
                 api_equivalent_cost_per_pass=(
-                    sum(m.api_equivalent_cost_usd for m in metrics) / passed
-                    if passed
+                    sum(metric_values["api_equivalent_cost_usd"]) / passed
+                    if passed and complete_cost
                     else None
                 ),
                 active_seconds_per_pass=(
-                    sum(m.active_wall_time_seconds for m in metrics) / passed
-                    if passed
+                    sum(metric_values["active_wall_time_seconds"]) / passed
+                    if passed and complete_active_time
                     else None
                 ),
             )

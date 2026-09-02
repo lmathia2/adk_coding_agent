@@ -8,9 +8,11 @@ from harness.evals.experiments import (
     TrialMetrics,
     TrialRecord,
     analyze_trials,
+    append_trial_record,
     build_matrix_from_file,
     harbor_command,
     next_assignment,
+    trial_record_from_harbor_result,
 )
 
 SPEC = Path("tests/eval/experiments/phase4-ablation-v1.json")
@@ -106,3 +108,58 @@ def test_analysis_rejects_missing_or_mismatched_trials() -> None:
     )
     with pytest.raises(ValueError, match=r"incomplete|identity mismatch"):
         analyze_trials(matrix, (record,), bootstrap_samples=100)
+
+
+def test_harbor_import_uses_verifier_reward_and_appends_idempotently(tmp_path: Path) -> None:
+    matrix = build_matrix_from_file(SPEC)
+    assignment = matrix.assignments[0]
+    payload = {
+        "task_name": assignment.task_id,
+        "started_at": "2026-09-02T12:00:00Z",
+        "finished_at": "2026-09-02T12:01:00Z",
+        "agent_execution": {
+            "started_at": "2026-09-02T12:00:05Z",
+            "finished_at": "2026-09-02T12:00:55Z",
+        },
+        "agent_result": {
+            "n_input_tokens": 120,
+            "n_cache_tokens": 20,
+            "n_output_tokens": 30,
+            "cost_usd": 0.2,
+            "metadata": {
+                "official_reward": 0,
+                "skein": {
+                    "api_equivalent_cost_usd": 0.2,
+                    "changed_paths": ["src/a.py"],
+                    "metrics": {
+                        "input_tokens": 120,
+                        "cache_read_tokens": 20,
+                        "cache_write_tokens": 5,
+                        "output_tokens": 30,
+                        "reasoning_tokens": 10,
+                        "model_calls": 3,
+                        "tool_calls": 4,
+                        "outcome_iterations": 3,
+                        "outcome_compactions": 1,
+                        "outcome_user_interventions": 0,
+                    },
+                    "subscription_limit": {"interrupted": False},
+                    "verification": {"passed": True},
+                },
+            },
+        },
+        "verifier_result": {"rewards": {"reward": 1}},
+    }
+
+    record = trial_record_from_harbor_result(assignment, payload)
+
+    assert record.status == "pass"
+    assert record.official_reward == 1
+    assert record.metrics is not None
+    assert record.metrics.uncached_input_tokens == 100
+    assert record.metrics.active_wall_time_seconds == 50
+    ledger = tmp_path / "results.jsonl"
+    assert append_trial_record(ledger, record)
+    assert not append_trial_record(ledger, record)
+    with pytest.raises(ValueError, match="different result"):
+        append_trial_record(ledger, record.model_copy(update={"official_reward": 0}))

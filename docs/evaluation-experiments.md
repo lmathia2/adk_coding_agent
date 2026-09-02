@@ -48,6 +48,22 @@ task at concurrency 1, uses the immutable Harbor task digest, and passes no
 credential into the task container. On a subscription interruption, record the
 interruption and stop until the documented reset.
 
+After Harbor finishes, import its `result.json` under the assigned key:
+
+```sh
+skein eval-import \
+  --matrix phase4-matrix.json \
+  --trial-key TRIAL_KEY \
+  --harbor-result HARBOR_TRIAL/result.json \
+  --results phase4-results.jsonl
+```
+
+The importer accepts the official verifier's `reward` as the score; agent
+metadata cannot override it. It normalizes provider, subscription, verifier,
+infrastructure, timeout, safety, and ordinary task outcomes, captures available
+token/cost/time/step metrics, and appends idempotently. A conflicting rerun is
+rejected and must receive a new predeclared trial key.
+
 JSONL and DuckDB remain a mechanical storage decision. Existing deterministic
 tests prove byte-equal canonical events and equivalent notebook event capture.
 Do not spend model calls comparing them unless a future code change makes the
