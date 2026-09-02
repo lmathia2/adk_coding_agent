@@ -1,6 +1,7 @@
-# ADK Coding Agent
+# Skein
 
-A small, configurable Google ADK coding harness with a Pi-style terminal client.
+Skein is a trace-native coding agent built on Google ADK: programmatic tool calling,
+memory as programs, and only the scaffolding intelligence needs to act safely.
 One coding worker uses four tools by default: `read`, `bash`, `edit`, and `write`.
 The experimental local-only notebook PTC mode instead exposes one `python` tool;
 the launcher enables it with `--notebook-ptc` and YAML enables it with
@@ -8,6 +9,19 @@ the launcher enables it with `--notebook-ptc` and YAML enables it with
 Canonical memory is independently configurable: the dependency-free local profile uses
 JSONL and lexical views, while DuckDB and LanceDB remain optional accelerators.
 The server owns task state, steering, approval requests, and deterministic verification.
+
+## Why Skein
+
+A **skein** is a loosely wound length of thread or yarn.
+
+As an agent name, it suggests:
+
+- execution traces as continuous threads;
+- memory woven from programs;
+- one tool connecting thought to action;
+- a minimal harness that holds the thread without becoming the intelligence.
+
+It’s pronounced **“skayn.”** Poetic and distinctive, though less immediately understandable than **Kernel** or **Monad**.
 
 ## Quick start
 
@@ -28,7 +42,7 @@ Start notebook PTC instead:
 Both install helpers install the same application; `install-ptc.sh` is a memorable
 alias. `start-ptc.sh` selects the persistent CPython/notebook path, enables canonical
 JSONL memory, and keeps its state separate at
-`~/.local/state/adk-coding-agent-ptc`. Set `ADK_CODING_AGENT_PTC_STATE_ROOT` to
+`~/.local/state/skein-ptc`. Set `SKEIN_PTC_STATE_ROOT` to
 override that location.
 
 In the terminal, run `/login` if prompted, `/model` to choose a model, and then enter
@@ -49,8 +63,8 @@ For a new checkout:
 
 ```bash
 mkdir -p "$HOME/src"
-git clone https://github.com/lmathia2/adk_coding_agent.git "$HOME/src/adk_coding_agent"
-cd "$HOME/src/adk_coding_agent"
+git clone https://github.com/lmathia2/skein.git "$HOME/src/skein"
+cd "$HOME/src/skein"
 ./install.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
@@ -59,15 +73,15 @@ If you already have the checkout, skip cloning. Stop its running server/TUI befo
 reinstalling:
 
 ```bash
-cd "$HOME/src/adk_coding_agent"
+cd "$HOME/src/skein"
 ./install.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
 The installer detects macOS, installs missing uv/Git/Node.js through Homebrew, creates
 Python 3.11+ in this checkout's `.venv`, syncs the locked dependencies, and builds
-the Pi-toolkit terminal **by default**. It links `adk-coding-agent`, `adk-agent-tui`, and
-`adk-agent-start` into the specified command directory. You do not need to activate
+the Pi-toolkit terminal **by default**. It links `skein`, `skein-tui`, and
+`skein-start` into the specified command directory. You do not need to activate
 the virtual environment, install Pi or Magnitude, or pass a workspace to installation.
 Indexed search comes from the pinned `fff-search` dependency; no separate rg/fd
 installation is needed for that search backend.
@@ -106,7 +120,7 @@ changes as you would any local edits.
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-adk-agent-start run --workspace "$HOME/src/coding_tools"
+skein-start run --workspace "$HOME/src/coding_tools"
 ```
 
 This starts a managed server, opens the TUI, and stops that server child when you
@@ -118,14 +132,14 @@ Terminal 1 — start the server and leave it running:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-adk-agent-start server --workspace "$HOME/src/coding_tools"
+skein-start server --workspace "$HOME/src/coding_tools"
 ```
 
 Terminal 2 — connect the TUI:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-adk-agent-start tui
+skein-start tui
 ```
 
 The launcher reads the token and sets the TUI environment automatically. No token
@@ -157,10 +171,10 @@ append-only event stream, uses `nb read --no-output` when `nb-cli` is installed,
 otherwise emits a compact stdlib-only cell stream:
 
 ```bash
-RUN_STATE="$HOME/.local/state/adk-coding-agent-ptc/runs/RUN_ID"
-adk-coding-agent notebook --state-root "$RUN_STATE"
-adk-coding-agent notebook --state-root "$RUN_STATE" --task-id RUN_ID
-adk-coding-agent notebook --state-root "$RUN_STATE" --task-id RUN_ID --cell-index -1
+RUN_STATE="$HOME/.local/state/skein-ptc/runs/RUN_ID"
+skein notebook --state-root "$RUN_STATE"
+skein notebook --state-root "$RUN_STATE" --task-id RUN_ID
+skein notebook --state-root "$RUN_STATE" --task-id RUN_ID --cell-index -1
 ```
 
 The notebook interleaves task/user/assistant/compaction Markdown with PTC code and
@@ -200,7 +214,7 @@ tokens. Defaults:
 
 | Data | Location |
 | --- | --- |
-| State root | `~/.local/state/adk-coding-agent` |
+| State root | `~/.local/state/skein` |
 | Codex credentials | `STATE_ROOT/auth/openai-codex.json` |
 | Saved model selection | `STATE_ROOT/auth/model-selection.json` (older `openai-codex-selection.json` is read for migration) |
 | Generated Codex configuration | `STATE_ROOT/server/openai-codex.yaml` |
@@ -208,12 +222,12 @@ tokens. Defaults:
 | Combined-launch server log | `STATE_ROOT/server/foreground.log` |
 | Per-run state and artifacts | `STATE_ROOT/runs/` |
 
-`ADK_CODING_AGENT_STATE_ROOT` overrides the launcher's default state directory.
-`ADK_CODING_AGENT_SERVER_URL` overrides the TUI URL, not the server listener.
-`ADK_CODING_AGENT_TUI_COMMAND` can select an alternate compatible terminal executable;
+`SKEIN_STATE_ROOT` overrides the launcher's default state directory.
+`SKEIN_SERVER_URL` overrides the TUI URL, not the server listener.
+`SKEIN_TUI_COMMAND` can select an alternate compatible terminal executable;
 the checkout's pinned Pi-style terminal is used by default.
-The TUI process receives `ADK_CODING_AGENT_TOKEN` from the token file and
-`ADK_CODING_AGENT_STATE_ROOT` from the resolved directory. Tokens are not command-line
+The TUI process receives `SKEIN_TOKEN` from the token file and
+`SKEIN_STATE_ROOT` from the resolved directory. Tokens are not command-line
 arguments. The default endpoint is `ws://127.0.0.1:8765/v1/agent`; it is not a browser UI.
 
 For a different state directory, pass the **same** `--state-root /absolute/path`
@@ -241,15 +255,15 @@ settings. Start a custom configuration with:
 Terminal 1:
 
 ```bash
-adk-coding-agent serve --config /absolute/path/to/harness.yaml \
+skein serve --config /absolute/path/to/harness.yaml \
   --workspace /absolute/path/to/repository \
-  --state-root "$HOME/.local/state/adk-coding-agent"
+  --state-root "$HOME/.local/state/skein"
 ```
 
 Terminal 2:
 
 ```bash
-adk-agent-start tui
+skein-start tui
 ```
 
 Built-in providers are native ADK/Gemini (`google_adk`) and Codex subscription
@@ -265,7 +279,7 @@ Volatile state stays out of the stable instruction prefix.
 Export the current safe optimization surface as deterministic JSON:
 
 ```bash
-adk-coding-agent tuning-export --config /absolute/path/to/harness.yaml > tuning.json
+skein tuning-export --config /absolute/path/to/harness.yaml > tuning.json
 ```
 
 The export pins the baseline behavior hash, current values, parameter domains,
@@ -326,7 +340,7 @@ Skills are read from trusted directories, selected deterministically, and disclo
 within a byte/token budget. Redacted interaction traces remain available:
 
 ```bash
-adk-coding-agent trace-export --state-root /path/to/run-state --task-id TASK_ID
+skein trace-export --state-root /path/to/run-state --task-id TASK_ID
 ```
 
 ## Safety and verification

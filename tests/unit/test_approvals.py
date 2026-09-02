@@ -57,8 +57,8 @@ def test_managed_command_executes_after_exact_approval(
     monkeypatch,
 ) -> None:
     state = tmp_path / "state"
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(state))
-    monkeypatch.setenv("ADK_CODING_TASK_ID", "task")
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(state))
+    monkeypatch.setenv("SKEIN_TASK_ID", "task")
     tools = create_adk_tools(tmp_path)
 
     blocked = tools.bash("command printf approved")
@@ -78,8 +78,8 @@ def test_managed_command_executes_after_exact_approval(
 
 def test_managed_command_honors_denied_approval(tmp_path: Path, monkeypatch) -> None:
     state = tmp_path / "state"
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(state))
-    monkeypatch.setenv("ADK_CODING_TASK_ID", "task")
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(state))
+    monkeypatch.setenv("SKEIN_TASK_ID", "task")
     tools = create_adk_tools(tmp_path)
 
     blocked = tools.bash("command printf denied")

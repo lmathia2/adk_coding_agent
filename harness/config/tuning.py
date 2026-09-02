@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .models import FrozenModel, HarnessComposition, PiCodingConfig
+from .models import FrozenModel, HarnessComposition, SkeinConfig
 
 TunableValue = str | int | float | bool | None
 
@@ -44,8 +44,8 @@ def tuning_spec(composition: HarnessComposition) -> TuningSpec:
     """Expose current values and domains without granting safety or topology changes."""
 
     config = composition.harness.config
-    if not isinstance(config, PiCodingConfig):
-        raise TypeError("tuning export currently supports pi_coding_v1")
+    if not isinstance(config, SkeinConfig):
+        raise TypeError("tuning export currently supports skein_v1")
 
     parameters: list[TuningParameter] = []
 
@@ -249,7 +249,7 @@ def tuning_spec(composition: HarnessComposition) -> TuningSpec:
             "outcome_tests_passed",
         ),
         trace_export_command=(
-            "adk-coding-agent trace-export --state-root STATE_ROOT --task-id TASK_ID"
+            "skein trace-export --state-root STATE_ROOT --task-id TASK_ID"
         ),
         parameters=tuple(sorted(parameters, key=lambda parameter: parameter.path)),
         cross_parameter_constraints=(

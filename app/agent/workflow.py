@@ -66,7 +66,7 @@ from .streaming import PublicReplies
 
 
 @dataclass(frozen=True, slots=True)
-class PiWorkflowDependencies:
+class SkeinWorkflowDependencies:
     settings: HarnessSettings
     event_store: EventStore
     steering_queue: SteeringQueue
@@ -120,7 +120,7 @@ def _session_id(ctx: Context) -> str | None:
     return str(identifier) if identifier else None
 
 
-def _git_output(deps: PiWorkflowDependencies, *args: str) -> str:
+def _git_output(deps: SkeinWorkflowDependencies, *args: str) -> str:
     completed = subprocess.run(
         args,
         cwd=deps.settings.workspace,
@@ -132,7 +132,7 @@ def _git_output(deps: PiWorkflowDependencies, *args: str) -> str:
     return completed.stdout if completed.returncode == 0 else ""
 
 
-def _fallback_workspace_fingerprint(deps: PiWorkflowDependencies) -> str:
+def _fallback_workspace_fingerprint(deps: SkeinWorkflowDependencies) -> str:
     digest = hashlib.sha256()
     digest.update(_git_output(deps, "git", "rev-parse", "HEAD").encode())
     digest.update(_git_output(deps, "git", "diff", "--binary", "HEAD").encode())
@@ -152,7 +152,7 @@ def _fallback_workspace_fingerprint(deps: PiWorkflowDependencies) -> str:
     return digest.hexdigest()
 
 
-def _workspace_fingerprint(deps: PiWorkflowDependencies, task_id: str) -> str:
+def _workspace_fingerprint(deps: SkeinWorkflowDependencies, task_id: str) -> str:
     manager = deps.workspace_manager
     if manager is not None and manager.load(task_id) is not None:
         return manager.fingerprint(task_id)
@@ -167,7 +167,7 @@ _LEDGER_DUPLICATE_EVENT_KINDS = {
 }
 
 
-def _render_recent_events(deps: PiWorkflowDependencies, task_id: str) -> list[str]:
+def _render_recent_events(deps: SkeinWorkflowDependencies, task_id: str) -> list[str]:
     rendered: list[str] = []
     events = [
         event
@@ -183,7 +183,7 @@ def _render_recent_events(deps: PiWorkflowDependencies, task_id: str) -> list[st
 
 
 def _latest_compaction(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     task_id: str,
 ) -> tuple[str, str | None]:
     for event in reversed(deps.event_store.read(task_id)):
@@ -314,7 +314,7 @@ def _reserve_task_input_budget(
 
 
 def _save_checkpoint(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     *,
     task_id: str,
     ledger: TaskLedger,
@@ -357,12 +357,12 @@ def _save_checkpoint(
     return checkpoint
 
 
-def _event_count(deps: PiWorkflowDependencies, task_id: str, kind: EventKind) -> int:
+def _event_count(deps: SkeinWorkflowDependencies, task_id: str, kind: EventKind) -> int:
     return sum(1 for event in deps.event_store.read(task_id) if event.kind == kind)
 
 
 def _record_message(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     *,
     task_id: str,
     role: Literal["user", "assistant"],
@@ -389,7 +389,7 @@ def _record_message(
 
 
 def _record_outcome(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     *,
     task_id: str,
     ledger: TaskLedger,
@@ -488,7 +488,7 @@ def _skill_runtime_from_state(ctx: Context) -> SkillRuntimeContext | None:
 
 
 async def _verify_task(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     ctx: Context,
     node_input: dict[str, Any],
 ) -> dict[str, Any]:
@@ -557,7 +557,7 @@ async def _verify_task(
 
 
 def _initialize_run(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     ctx: Context,
     node_input: str | dict[str, Any],
 ) -> tuple[_RunState, bool, bool]:
@@ -721,7 +721,7 @@ def _initialize_run(
 
 
 def _answer_result(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     *,
     ledger: TaskLedger,
     step: AgentStep,
@@ -772,7 +772,7 @@ def _answer_result(
 
 
 def _blocked_result(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     *,
     ledger: TaskLedger,
     started: float,
@@ -805,7 +805,7 @@ def _blocked_result(
 
 
 async def _verification_transition(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     ctx: Context,
     verify_node: BaseNode,
     *,
@@ -929,7 +929,7 @@ async def _verification_transition(
 
 
 async def _orchestrate_owned(
-    deps: PiWorkflowDependencies,
+    deps: SkeinWorkflowDependencies,
     ctx: Context,
     node_input: str | dict[str, Any],
     *,
@@ -1318,7 +1318,7 @@ async def _orchestrate_owned(
     )
 
 
-def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
+def build_root_agent(deps: SkeinWorkflowDependencies) -> Workflow:
     """Build closure-bound nodes so concurrent assemblies cannot share state."""
 
     @node
@@ -1356,4 +1356,4 @@ def build_root_agent(deps: PiWorkflowDependencies) -> Workflow:
     )
 
 
-__all__ = ["PiWorkflowDependencies", "build_root_agent"]
+__all__ = ["SkeinWorkflowDependencies", "build_root_agent"]

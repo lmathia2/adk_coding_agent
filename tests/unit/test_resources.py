@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agent.config import settings_from_composition
-from app.agent.factory import PiCodingHarnessFactory
+from app.agent.factory import SkeinHarnessFactory
 from app.agent.skills import build_skill_context
 from harness.agent.resources import HarnessResources
 from harness.config import RuntimeBindings, load_harness_composition
@@ -28,7 +28,7 @@ def test_inventory_respects_project_trust_and_matches_runtime_selection(tmp_path
     (tmp_path / "AGENTS.md").write_text("PRIVATE_PROJECT_INSTRUCTION")
     composition = load_harness_composition()
     bindings = RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state")
-    factory = PiCodingHarnessFactory()
+    factory = SkeinHarnessFactory()
     untrusted = factory.resources(composition, bindings)
     assert not any(item.kind in {"instruction", "skill", "skill_root"} for item in untrusted.items)
     assert "--trust-project" in untrusted.warnings[0]
@@ -55,7 +55,7 @@ def test_configured_roots_work_without_project_trust_and_disabled_budgets_are_tr
     config = config.model_copy(update={"skills": config.skills.model_copy(update={"additional_roots": (Path("configured"),)})})
     composition = composition.model_copy(update={"harness": composition.harness.model_copy(update={"config": config})})
     bindings = RuntimeBindings(workspace=tmp_path, configuration_root=tmp_path, state_root=tmp_path / "state")
-    factory = PiCodingHarnessFactory()
+    factory = SkeinHarnessFactory()
     inventory = factory.resources(composition, bindings)
     assert any(item.kind == "skill" and item.status == "available" for item in inventory.items)
     disabled = config.model_copy(update={"context": config.context.model_copy(update={"skill_context_bytes": 0})})
@@ -72,7 +72,7 @@ def test_configured_roots_work_without_project_trust_and_disabled_budgets_are_tr
 def test_inventory_is_deterministically_bounded(tmp_path: Path) -> None:
     for index in range(130):
         skill(tmp_path / ".agents/skills", f"fixture-{index:03}")
-    factory = PiCodingHarnessFactory()
+    factory = SkeinHarnessFactory()
     composition = load_harness_composition()
     bindings = RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state", project_trusted=True)
     inventory = factory.resources(composition, bindings)
@@ -91,7 +91,7 @@ def test_authenticated_resource_discovery_does_not_block_ping_or_expose_failures
         if fail:
             raise RuntimeError("PRIVATE_RESOURCE_BODY")
         return HarnessResources()
-    monkeypatch.setattr(PiCodingHarnessFactory, "resources", slow)
+    monkeypatch.setattr(SkeinHarnessFactory, "resources", slow)
     assembly = build_server_assembly(workspace=tmp_path, state_root=tmp_path / "state")
     token = assembly.auth_token_path.read_text().strip()
     try:

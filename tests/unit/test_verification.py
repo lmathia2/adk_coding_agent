@@ -172,7 +172,7 @@ def test_verifier_uses_explicit_managed_sandbox(
     monkeypatch,
 ) -> None:
     sandbox = _RecordingSandbox(tmp_path)
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     executor = ManagedValidationExecutor(
         tmp_path, state_root=tmp_path / "configured", task_id="test",
         sandbox=sandbox,

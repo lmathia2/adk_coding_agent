@@ -61,7 +61,7 @@ def test_interrupted_task_replays_state_and_mutation_without_duplication(
     state = tmp_path / "state"
     manager = GitWorktreeManager(source, state)
     workspace = manager.create("task-replay")
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(state))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(state))
 
     ledger = TaskLedger(
         task_id="task-replay",

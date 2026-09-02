@@ -198,7 +198,7 @@ demonstrated.
   invalid references, unreachable nodes, and completion paths without verification.
 - [x] A4. A stable transport contract lets the TUI survive a harness factory swap.
 - [~] A5. YAML can alter the complete behavior of the selected harness. The schema
-  describes nodes including `parallel`, but `pi_coding_v1` compares the graph to one
+  describes nodes including `parallel`, but `skein_v1` compares the graph to one
   fixed literal and rejects changes.
 - [x] A6. A materially different harness can be registered behind the same server,
   event, and control interfaces.
@@ -491,7 +491,7 @@ deterministic repeat-to-replan-to-handoff coverage.
 
 ### P1 — YAML topology is descriptive but not executable for Pi
 
-The generic schema validates route and parallel nodes, but `PiCodingHarnessFactory`
+The generic schema validates route and parallel nodes, but `SkeinHarnessFactory`
 requires exact equality with one literal graph. This is safe and makes new harness
 registration possible, but it does not satisfy “change the harness behavior entirely
 through YAML.”

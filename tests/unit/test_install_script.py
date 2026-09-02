@@ -29,7 +29,7 @@ def test_install_refuses_to_overwrite_unowned_paths(tmp_path: Path, protected: s
     if protected == "venv-symlink":
         (checkout / ".venv").symlink_to(untouched, target_is_directory=True)
     else:
-        (commands / "adk-coding-agent").write_text("user-owned command")
+        (commands / "skein").write_text("user-owned command")
     result = subprocess.run(
         [str(script), "--minimal", "--bin-dir", str(commands)],
         env={**os.environ, "PATH": str(prerequisites) + os.pathsep + os.environ["PATH"]},
@@ -39,7 +39,7 @@ def test_install_refuses_to_overwrite_unowned_paths(tmp_path: Path, protected: s
     assert "refusing" in result.stderr
     assert sentinel.read_text() == "preserve me"
     if protected == "command-file":
-        assert (commands / "adk-coding-agent").read_text() == "user-owned command"
+        assert (commands / "skein").read_text() == "user-owned command"
 
 
 def test_install_script_is_executable_and_has_valid_help() -> None:

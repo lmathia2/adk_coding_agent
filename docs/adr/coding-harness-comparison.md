@@ -20,7 +20,7 @@ Their centers of gravity differ:
 - **Codex** optimizes for a typed, deeply defended execution platform: provider/session separation, typed world state, rollout reconstruction, unified process control, dynamic/deferred tools, OS sandbox/approvals, goals, multi-agent threads, and host-side Code Mode.
 - **ADK Long Horizon** optimizes for multiple lifetimes on an ADK service substrate: cache-tiered prompts, resumable HITL, per-user environments/sandboxes, scoped secrets, process tools, child approval resurfacing, Memory Bank, review forks, and scheduled routines.
 
-No implementation is best on every axis. This document compares the implementations without turning the comparison into a product plan. The separate [minimal SOTA extensions proposal](coding-harness-minimal-sota-extensions.md) applies these findings to the current ADK coding agent.
+No implementation is best on every axis. This document compares the implementations without turning the comparison into a product plan. The separate [minimal SOTA extensions proposal](coding-harness-minimal-sota-extensions.md) applies these findings to Skein.
 
 ## Source and support-level discipline
 
@@ -233,7 +233,7 @@ The implementations cover this unevenly:
 | Horizon | user turn + project/plan files | model-maintained `plan.md`, counters, no-progress guardrails | plan-file rewrite | model unless task-specific check |
 | This ADK repository | typed `TaskLedger.goal`, acceptance criteria, constraints/non-goals | compact ledger projection, observed files/actions/validations, deterministic replan routing | no explicit dropped/superseded plan-step status yet | deterministic verifier |
 
-The crucial separation is **declared progress versus observed progress**. OpenCode todos, Codex plans, Horizon's plan file, and Pi summaries are useful working memory, but the model can mark them incorrectly. This ADK repository already resists that failure: repeated-action fingerprints drive no-progress routing independently of model prose ([progress reducer](/Users/mathiasl/src/adk_coding_agent/harness/state/progress.py:24)), workspace changes are observed before ledger reduction, and a `done` claim routes to verification ([workflow](/Users/mathiasl/src/adk_coding_agent/app/agent/workflow.py:1091)). Its remaining gap is lifecycle precision for replanning: `PlanStepStatus` has pending/active/complete/blocked but no dropped or superseded state ([task model](/Users/mathiasl/src/adk_coding_agent/harness/models/task.py:31)).
+The crucial separation is **declared progress versus observed progress**. OpenCode todos, Codex plans, Horizon's plan file, and Pi summaries are useful working memory, but the model can mark them incorrectly. Skein already resists that failure: repeated-action fingerprints drive no-progress routing independently of model prose ([progress reducer](../../harness/state/progress.py)), workspace changes are observed before ledger reduction, and a `done` claim routes to verification ([workflow](../../app/agent/workflow.py)). Its remaining gap is lifecycle precision for replanning: `PlanStepStatus` has pending/active/complete/blocked but no dropped or superseded state ([task model](../../harness/models/task.py)).
 
 ### Delegation and context isolation
 
@@ -289,7 +289,7 @@ These dimensions are now included in each standalone dossier where the implement
 
 ## Reconciliation with this repository's earlier ADK design
 
-The original design correctly identified a small prompt, four tools, progressive disclosure, bounded outputs, append-oriented history, structured compaction, sessions, deterministic state, receipts, and verification as the competitive core. Those remain sound in [`pi-inspired-adk-coding-harness.md`](/Users/mathiasl/src/adk_coding_agent/docs/design/pi-inspired-adk-coding-harness.md:1).
+The original design correctly identified a small prompt, four tools, progressive disclosure, bounded outputs, append-oriented history, structured compaction, sessions, deterministic state, receipts, and verification as the competitive core. Those remain sound in [`pi-inspired-adk-coding-harness.md`](../design/pi-inspired-adk-coding-harness.md).
 
 The current implementation has since closed several gaps the earlier report identified. Its supported boundary now includes:
 
@@ -301,7 +301,7 @@ The current implementation has since closed several gaps the earlier report iden
 - optional canonical JSONL/DuckDB memory with deterministic views and provenance;
 - explicit task erasure across operational/canonical stores and artifacts.
 
-These claims and remaining limitations are enumerated in [`IMPLEMENTATION_STATUS.md`](/Users/mathiasl/src/adk_coding_agent/docs/IMPLEMENTATION_STATUS.md:6). The actual effect receipt key and at-least-once recovery boundary are implemented in [`receipts.py`](/Users/mathiasl/src/adk_coding_agent/harness/state/receipts.py:14); deterministic compaction is derived from the typed ledger in [`compaction.py`](/Users/mathiasl/src/adk_coding_agent/harness/context/compaction.py:332); durable steering uses lease/ack semantics in [`steering.py`](/Users/mathiasl/src/adk_coding_agent/harness/state/steering.py:44).
+These claims and remaining limitations are enumerated in [`IMPLEMENTATION_STATUS.md`](../IMPLEMENTATION_STATUS.md). The actual effect receipt key and at-least-once recovery boundary are implemented in [`receipts.py`](../../harness/state/receipts.py); deterministic compaction is derived from the typed ledger in [`compaction.py`](../../harness/context/compaction.py); durable steering uses lease/ack semantics in [`steering.py`](../../harness/state/steering.py).
 
 ### What the earlier design still under-specified
 
@@ -326,8 +326,8 @@ The earlier report was right not to require every mature-system feature. For thi
 - a second semantic index as authority;
 - remote/distributed execution without deployment demand;
 - automatic skill promotion into trusted instructions;
-- PTC enabled by default before the pending four-tool-versus-PTC ablation in [`TODO.md`](/Users/mathiasl/src/adk_coding_agent/docs/TODO.md:3).
+- PTC enabled by default before the pending four-tool-versus-PTC ablation in [`TODO.md`](../TODO.md).
 
 ## Separate ADK implementation proposal
 
-The source-grounded extension plan for `/Users/mathiasl/src/adk_coding_agent`—including one-tool Code Mode, one trace-native store, human message disposition, explicit goal control, and bounded clean-context delegation—is in [Minimal SOTA coding-agent extensions on ADK](coding-harness-minimal-sota-extensions.md).
+The source-grounded extension plan for Skein—including one-tool Code Mode, one trace-native store, human message disposition, explicit goal control, and bounded clean-context delegation—is in [Minimal SOTA coding-agent extensions on ADK](coding-harness-minimal-sota-extensions.md).

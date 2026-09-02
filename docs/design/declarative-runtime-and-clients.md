@@ -54,7 +54,7 @@ roots, task and worker identifiers, base revisions, and ADK invocation identifie
 are supplied as typed runtime bindings. This keeps volatile state out of the stable
 prompt and makes the same composition reusable across workspaces.
 
-The current `pi_coding_v1` factory deliberately rejects changes to its hard-coded
+The current `skein_v1` factory deliberately rejects changes to its hard-coded
 node edges, routes, agent bindings, and prompt contracts instead of silently ignoring
 them. Its budgets, models, tools, safety, sandbox, steering, tracing, learning, and
 review behavior remain configurable. A different workflow topology is a different

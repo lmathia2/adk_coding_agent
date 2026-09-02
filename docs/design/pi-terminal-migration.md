@@ -109,7 +109,7 @@ instead of clearing the editor and reporting that input was not sent.
 The migration was rechecked from a clean installer-created environment. The macOS
 installer removed and recreated the isolated `.venv`, synchronized the locked Python
 dependencies, installed the pinned Node dependencies, built the terminal, and created
-working `adk-agent-start` and `adk-agent-tui` launchers in a temporary command directory.
+working `skein-start` and `skein-tui` launchers in a temporary command directory.
 Both launchers provide standalone help without requiring a token or running server.
 
 The final deterministic gate contains 521 Python unit/integration cases and 46 Node

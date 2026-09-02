@@ -956,7 +956,7 @@ Model switching should occur at checkpoints or compaction boundaries.
 ## 13. Suggested package structure
 
 ```text
-adk_coding_agent/
+skein/
 ├── pyproject.toml
 ├── README.md
 ├── agents-cli-manifest.yaml

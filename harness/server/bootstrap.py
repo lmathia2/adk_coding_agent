@@ -36,7 +36,7 @@ from .websocket import (
     create_websocket_app,
 )
 
-LOCAL_TOKEN_ENV = "ADK_CODING_AGENT_TOKEN"
+LOCAL_TOKEN_ENV = "SKEIN_TOKEN"
 
 
 def _startup_coding_model_status(

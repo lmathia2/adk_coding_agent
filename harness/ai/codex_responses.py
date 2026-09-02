@@ -20,7 +20,7 @@ from pydantic import PrivateAttr
 from .codex_auth import CodexCredential, CodexCredentialManager
 
 DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api"
-DEFAULT_CODEX_USER_AGENT = "adk-coding-agent/0.1"
+DEFAULT_CODEX_USER_AGENT = "skein/0.1"
 
 
 class _AsyncClientFactory(Protocol):
@@ -347,7 +347,7 @@ class CodexResponsesLlm(BaseLlm):
     retry_initial_delay_seconds: float = 1
     retry_exponential_base: float = 2
     retry_statuses: tuple[int, ...] = (429, 500, 502, 503, 504)
-    originator: str = "adk-coding-agent"
+    originator: str = "skein"
     client_version: str | None = None
 
     _credentials: CodexCredentialManager = PrivateAttr()

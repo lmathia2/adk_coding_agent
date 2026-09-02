@@ -79,9 +79,9 @@ class _RecordingSearchBackend:
 def test_managed_adapter_blocks_unapproved_network_and_redacts(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("MY_API_KEY", "super-secret-api-key-value")
-    monkeypatch.setenv("ADK_CODING_REDACT_ENV_VARS", "MY_API_KEY")
+    monkeypatch.setenv("SKEIN_REDACT_ENV_VARS", "MY_API_KEY")
     tools = create_adk_tools(tmp_path)
 
     tools.write(
@@ -102,7 +102,7 @@ def test_managed_adapter_blocks_unapproved_network_and_redacts(
 def test_exact_write_replay_uses_receipt_without_repeating_side_effect(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     tools = create_adk_tools(tmp_path)
 
     first = tools.write("result.txt", "stable\n", expected_absent=True)
@@ -218,7 +218,7 @@ def test_approved_model_bash_uses_injected_command_sandbox(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     sandbox = _RecordingSandbox(tmp_path)
     tools = create_adk_tools(tmp_path, sandbox=sandbox)
 
@@ -260,7 +260,7 @@ def test_virtual_search_routes_before_policy_and_shell_dispatch(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     sandbox = _RecordingSandbox(tmp_path)
     backend = _RecordingSearchBackend()
     tools = create_adk_tools(tmp_path, sandbox=sandbox, search_backend=backend)
@@ -307,7 +307,7 @@ def test_virtual_search_is_unavailable_for_non_authoritative_sandbox(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     sandbox = _RecordingSandbox(tmp_path)
     tools = create_adk_tools(tmp_path, sandbox=sandbox)
 
@@ -323,9 +323,9 @@ def test_virtual_search_redacts_bounded_page_and_spill_artifact(
     monkeypatch,
 ) -> None:
     secret = "search-result-sensitive-value"
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("SEARCH_API_KEY", secret)
-    monkeypatch.setenv("ADK_CODING_REDACT_ENV_VARS", "SEARCH_API_KEY")
+    monkeypatch.setenv("SKEIN_REDACT_ENV_VARS", "SEARCH_API_KEY")
     backend = _RecordingSearchBackend()
     backend.text = "\n".join(f"  {line}: {secret}" for line in range(1, 260))
     tools = create_adk_tools(tmp_path, search_backend=backend)
@@ -345,7 +345,7 @@ def test_malformed_reserved_search_never_reaches_policy_or_shell(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     sandbox = _RecordingSandbox(tmp_path)
     tools = create_adk_tools(
         tmp_path,
@@ -364,7 +364,7 @@ def test_verified_mutation_refreshes_search_but_replay_does_not(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     backend = _RecordingSearchBackend()
     tools = create_adk_tools(tmp_path, search_backend=backend)
 
@@ -380,9 +380,9 @@ def test_managed_read_recovers_bounded_workspace_and_command_artifacts(
     monkeypatch,
 ) -> None:
     state_root = tmp_path / "state"
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(state_root))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(state_root))
     monkeypatch.setenv("MY_API_KEY", "artifact-sensitive-value")
-    monkeypatch.setenv("ADK_CODING_REDACT_ENV_VARS", "MY_API_KEY")
+    monkeypatch.setenv("SKEIN_REDACT_ENV_VARS", "MY_API_KEY")
     tools = create_adk_tools(tmp_path)
 
     workspace_content = b"first\nartifact-sensitive-value\nthird\nfourth\n"
@@ -421,7 +421,7 @@ def test_managed_read_rejects_foreign_traversal_and_tampered_artifacts(
     monkeypatch,
 ) -> None:
     state_root = tmp_path / "state"
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(state_root))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(state_root))
     tools = create_adk_tools(tmp_path)
 
     foreign_content = b"foreign"

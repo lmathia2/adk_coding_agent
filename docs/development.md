@@ -1,4 +1,4 @@
-# Development
+# Skein development
 
 ## Fast path
 
@@ -41,17 +41,17 @@ npm run build --prefix clients/terminal
 Start the usual server in terminal 1:
 
 ```bash
-adk-agent-start server --workspace /absolute/path/to/project
+skein-start server --workspace /absolute/path/to/project
 ```
 
 From this checkout in terminal 2:
 
 ```bash
-npm start --prefix clients/terminal -- --state-root "$HOME/.local/state/adk-coding-agent"
+npm start --prefix clients/terminal -- --state-root "$HOME/.local/state/skein"
 ```
 
 For a custom server, also pass `--server ws://127.0.0.1:PORT/v1/agent` and use its
-state root. The client reads `ADK_CODING_AGENT_TOKEN` when set, otherwise
+state root. The client reads `SKEIN_TOKEN` when set, otherwise
 `STATE_ROOT/server/auth-token`; provider credentials stay on the server. `/resources`
 shows server paths, `/login` and `/model` control the provider, `/resume` restores
 history, and `/approvals` reviews waiting commands. Escape defers an approval dialog;
@@ -85,17 +85,17 @@ provider access. Do not interpret deterministic smoke tests as model benchmarks.
 ## Configuration and entrypoints
 
 Copy `harness/config/default.yaml` and pass `serve --config FILE` for custom
-behavior. The launcher `adk-agent-start run` defaults to the Codex subscription
+behavior. The launcher `skein-start run` defaults to the Codex subscription
 configuration and handles server/TUI state handoff.
 
 The optional Google Agents CLI is not installed by the minimal installer.
 If already installed, it can load `app.agent.application`; this entrypoint uses
 the same YAML factory as the server. See `.env.example` for its identity bindings:
-`ADK_CODING_CONFIG`, `ADK_CODING_WORKSPACE`, `ADK_CODING_STATE_DIR`, task/workspace
-IDs, and `ADK_CODING_TRUST_PROJECT`. Former model/workflow/learning environment
+`SKEIN_CONFIG`, `SKEIN_WORKSPACE`, `SKEIN_STATE_DIR`, task/workspace
+IDs, and `SKEIN_TRUST_PROJECT`. Former model/workflow/learning environment
 settings are not the behavior API: migrate to YAML.
 
-`adk-coding-agent tuning-export --config FILE` emits the optimizer-facing subset of
+`skein tuning-export --config FILE` emits the optimizer-facing subset of
 that YAML. It includes the baseline behavior hash, prompt/model/generation settings,
 context and tool-output budgets, progress thresholds, cache/compaction controls, and
 the existing outcome/trace observation contract. Safety, authority, topology,
@@ -124,7 +124,7 @@ there is no inheritance layer that could hide the actual behavior hash.
 
 The Codex `--notebook-ptc` launcher generates the PTC + JSONL profile. For other
 combinations, copy `harness/config/default.yaml` and use
-`adk-coding-agent serve --config FILE`. `retrieval: lance` is rejected until a versioned embedding provider is
+`skein serve --config FILE`. `retrieval: lance` is rejected until a versioned embedding provider is
 wired; Lance is currently a tested disposable projection API, not a live prompt source.
 
 Per-run notebooks and canonical ledgers live below `STATE_ROOT/runs/RUN_ID/`. The
@@ -136,8 +136,8 @@ Inspect a PTC workbench without starting Jupyter:
 
 ```bash
 RUN_STATE="STATE_ROOT/runs/RUN_ID"
-adk-coding-agent notebook --state-root "$RUN_STATE" --task-id RUN_ID
-adk-coding-agent notebook --state-root "$RUN_STATE" --task-id RUN_ID --cell-index -1
+skein notebook --state-root "$RUN_STATE" --task-id RUN_ID
+skein notebook --state-root "$RUN_STATE" --task-id RUN_ID --cell-index -1
 ```
 
 The command delegates to `nb read --no-output` when the Jupyter `nb-cli` binary is on
@@ -182,7 +182,7 @@ Inspect and decide pending approvals in the connected TUI with `/approvals`. Do 
 commands to make a test pass.
 
 ```bash
-adk-coding-agent trace-export --state-root /path/to/run-state --task-id TASK_ID
+skein trace-export --state-root /path/to/run-state --task-id TASK_ID
 ```
 
 Exports are already-redacted records. Metadata/off/redacted modes are configured

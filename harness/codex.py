@@ -69,8 +69,8 @@ def _headers(credential: CodexCredential, *, client_version: str | None = None) 
     headers = {
         "Authorization": f"Bearer {credential.access_token}",
         "chatgpt-account-id": credential.account_id,
-        "originator": "adk-coding-agent",
-        "User-Agent": "adk-coding-agent/0.1",
+        "originator": "skein",
+        "User-Agent": "skein/0.1",
         "accept": "application/json",
     }
     if client_version:

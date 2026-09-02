@@ -33,9 +33,9 @@ from harness.agent import (
 from harness.ai import ClosedAdkModelProviderRegistry
 from harness.config import (
     ModelConfig,
-    PiCodingConfig,
     RuntimeBindings,
     SecretRef,
+    SkeinConfig,
     load_harness_composition,
 )
 from harness.safety import SecretRedactor
@@ -1286,7 +1286,7 @@ async def test_real_adk_runner_unwraps_content_for_pi_workflow_root(
     providers = ClosedAdkModelProviderRegistry((_BlockingModelProvider(),))
     registry = default_harness_registry(model_providers=providers)
     composition = load_harness_composition(config_models=registry.config_models())
-    config = cast(PiCodingConfig, composition.harness.config)
+    config = cast(SkeinConfig, composition.harness.config)
     models = {
         name: model.model_copy(update={"provider": "blocking_test"})
         for name, model in config.models.items()

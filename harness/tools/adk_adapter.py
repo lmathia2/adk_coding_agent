@@ -61,12 +61,12 @@ def _truthy(name: str, default: bool = False) -> bool:
 
 
 def _state_root(workspace: Path) -> Path:
-    configured = os.getenv("ADK_CODING_STATE_DIR")
+    configured = os.getenv("SKEIN_STATE_DIR")
     if configured:
         root = Path(configured).expanduser().resolve()
     else:
         digest = hashlib.sha256(workspace.as_posix().encode()).hexdigest()[:16]
-        root = Path.home() / ".cache" / "adk-coding-agent" / digest
+        root = Path.home() / ".cache" / "skein" / digest
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -76,7 +76,7 @@ def discover_known_secrets(additional_names: Sequence[str] = ()) -> list[str]:
 
     explicit_names = {
         name.strip()
-        for name in os.getenv("ADK_CODING_REDACT_ENV_VARS", "").split(",")
+        for name in os.getenv("SKEIN_REDACT_ENV_VARS", "").split(",")
         if name.strip()
     }
     explicit_names.update(additional_names)
@@ -263,19 +263,19 @@ class _ManagedTools:
         )
         approved = {
             item.strip()
-            for item in os.getenv("ADK_CODING_APPROVED_COMMAND_FINGERPRINTS", "").split(",")
+            for item in os.getenv("SKEIN_APPROVED_COMMAND_FINGERPRINTS", "").split(",")
             if item.strip()
         }
         self.policy = policy or ApprovalPolicy(
-            allow_dependency_install=_truthy("ADK_CODING_ALLOW_DEPENDENCY_INSTALL"),
-            allow_network=_truthy("ADK_CODING_ALLOW_NETWORK"),
-            allow_git_history_mutation=_truthy("ADK_CODING_ALLOW_GIT_MUTATION"),
-            allow_unknown=_truthy("ADK_CODING_ALLOW_UNKNOWN_COMMANDS"),
+            allow_dependency_install=_truthy("SKEIN_ALLOW_DEPENDENCY_INSTALL"),
+            allow_network=_truthy("SKEIN_ALLOW_NETWORK"),
+            allow_git_history_mutation=_truthy("SKEIN_ALLOW_GIT_MUTATION"),
+            allow_unknown=_truthy("SKEIN_ALLOW_UNKNOWN_COMMANDS"),
             approved_fingerprints=approved,
         )
         self.task_scope = (
             task_scope
-            or os.getenv("ADK_CODING_TASK_ID")
+            or os.getenv("SKEIN_TASK_ID")
             or hashlib.sha256(self.workspace.as_posix().encode()).hexdigest()[:24]
         )
         self.bash_max_timeout_seconds = bash_max_timeout_seconds
@@ -285,13 +285,13 @@ class _ManagedTools:
             (
                 search_mode
                 if search_mode is not None
-                else os.getenv("ADK_CODING_SEARCH_BACKEND", "auto")
+                else os.getenv("SKEIN_SEARCH_BACKEND", "auto")
             )
             .strip()
             .lower()
         )
         if configured_search not in {"auto", "disabled", "fff"}:
-            raise ValueError("ADK_CODING_SEARCH_BACKEND must be auto, fff, or disabled")
+            raise ValueError("SKEIN_SEARCH_BACKEND must be auto, fff, or disabled")
         self.search_backend = search_backend
         self.search_unavailable_reason: str | None = None
         if search_backend is None and configured_search != "disabled":

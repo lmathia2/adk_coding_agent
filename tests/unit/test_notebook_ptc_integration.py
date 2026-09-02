@@ -12,8 +12,8 @@ from app.agent.config import settings_from_composition
 from app.agent.factory import default_harness_registry
 from harness.agent import SteeringCommand
 from harness.config import (
-    PiCodingConfig,
     RuntimeBindings,
+    SkeinConfig,
     load_harness_composition,
     parse_harness_composition,
 )
@@ -23,7 +23,7 @@ from harness.tools.adk_adapter import create_adk_tools
 
 def _enabled_composition():
     composition = load_harness_composition()
-    config = cast(PiCodingConfig, composition.harness.config)
+    config = cast(SkeinConfig, composition.harness.config)
     enabled = config.model_copy(
         update={"notebook_ptc": config.notebook_ptc.model_copy(update={"enabled": True})}
     )
@@ -180,7 +180,7 @@ async def test_notebook_native_ptc_is_one_tool_and_persists_code_state_and_effec
     workspace.mkdir()
     state_root = tmp_path / "state"
     composition = _enabled_composition()
-    config = cast(PiCodingConfig, composition.harness.config)
+    config = cast(SkeinConfig, composition.harness.config)
     settings = settings_from_composition(
         composition,
         RuntimeBindings(workspace=workspace, state_root=state_root, task_id="task-1"),
@@ -239,7 +239,7 @@ async def test_python_routes_registered_mcp_capability_and_blocks_unknown(
     workspace.mkdir()
     state_root = tmp_path / "state"
     composition = _enabled_composition()
-    config = cast(PiCodingConfig, composition.harness.config)
+    config = cast(SkeinConfig, composition.harness.config)
     settings = settings_from_composition(
         composition,
         RuntimeBindings(workspace=workspace, state_root=state_root, task_id="task-mcp"),
@@ -268,7 +268,7 @@ async def test_failed_cell_is_materialized_without_destroying_warm_state(tmp_pat
     workspace.mkdir()
     state_root = tmp_path / "state"
     composition = _enabled_composition()
-    config = cast(PiCodingConfig, composition.harness.config)
+    config = cast(SkeinConfig, composition.harness.config)
     settings = settings_from_composition(
         composition,
         RuntimeBindings(workspace=workspace, state_root=state_root, task_id="task-2"),

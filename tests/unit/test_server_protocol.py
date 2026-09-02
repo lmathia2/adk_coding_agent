@@ -37,8 +37,8 @@ from harness.server.protocol import (
 
 def _descriptor() -> HarnessDescriptor:
     return HarnessDescriptor(
-        implementation="pi_coding_v1",
-        display_name="Pi coding harness",
+        implementation="skein_v1",
+        display_name="Skein",
         capabilities=frozenset(
             {
                 RuntimeCapability.STREAMING,

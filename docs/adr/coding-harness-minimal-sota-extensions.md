@@ -1,7 +1,7 @@
 # Minimal SOTA coding-agent extensions on ADK
 
 > **Status:** source-grounded proposal
-> **Current repository:** `/Users/mathiasl/src/adk_coding_agent`
+> **Current repository:** [Skein](https://github.com/lmathia2/skein)
 > **Compared designs:** [Pi](coding-harness-pi.md), [OpenCode](coding-harness-opencode.md), [Codex](coding-harness-codex.md), [ADK Long Horizon](coding-harness-adk-long-horizon.md)
 > **Comparison:** [cross-harness synthesis](coding-harness-comparison.md)
 
@@ -49,18 +49,18 @@ This is a consolidation proposal, not a rewrite. Most difficult primitives are a
 
 | Target primitive | Current implementation | Remaining gap |
 |---|---|---|
-| One code-mode tool | Enabling notebook PTC makes `python` the only worker tool in [`factory.py`](/Users/mathiasl/src/adk_coding_agent/app/agent/factory.py:209) | Disabled by default; ablation pending |
-| Warm scratchpad | Persistent CPython namespace in [`worker.py`](/Users/mathiasl/src/adk_coding_agent/harness/repl/worker.py:286) | Warm state is process-live; durable named state is absent |
-| Brokered filesystem/shell/API calls | `agent.fs`, `agent.shell`, and registered MCP routing in [`worker.py`](/Users/mathiasl/src/adk_coding_agent/harness/repl/worker.py:196) | No capability discovery, trace/state, process, or delegation namespace |
-| Effect authority | Nested calls return through the existing tools, approvals, receipts, redaction, and bounds in [`builders.py`](/Users/mathiasl/src/adk_coding_agent/app/agent/builders.py:235) | Preserve this invariant as capabilities grow |
-| Notebook trace | Cells and nested capability lifecycle events plus deterministic `.ipynb` materialization in [`builders.py`](/Users/mathiasl/src/adk_coding_agent/app/agent/builders.py:438) | Notebook is still a projection beside other operational stores |
-| Canonical events | Immutable `LedgerEvent` with sequence, provenance, time, effect, correlation, payload hash, and idempotency in [`models.py`](/Users/mathiasl/src/adk_coding_agent/harness/ledger/models.py:22) | Optional/shadow operation and multiple live stores remain |
-| Programmable views | Versioned `ViewRequest`/`ViewResult` with watermarks, hashes, evidence IDs, and byte bounds in [`models.py`](/Users/mathiasl/src/adk_coding_agent/harness/memory/models.py:12) | Not used by the live prompt or exposed in code mode |
-| Stored relational programs | Candidate → shadow → active → retired SQL programs in [`catalog.py`](/Users/mathiasl/src/adk_coding_agent/harness/memory/catalog.py:17) | Separate from the seeded view runtime; no single computation catalog |
-| Prompt manifests | Receipt-bearing P0–P3 compiled projections in [`prompt.py`](/Users/mathiasl/src/adk_coding_agent/harness/memory/prompt.py:46) | Test-only rather than the live context source |
-| Goal/progress control | Typed `TaskLedger`, observed action fingerprints, deterministic replan, and verifier in [`task.py`](/Users/mathiasl/src/adk_coding_agent/harness/models/task.py:85), [`progress.py`](/Users/mathiasl/src/adk_coding_agent/harness/state/progress.py:24), and [`workflow.py`](/Users/mathiasl/src/adk_coding_agent/app/agent/workflow.py:1091) | Plan lifecycle lacks dropped/superseded states; control projection is not trace-program-native |
-| Human steering | Durable SQLite lease/ack queue and safe-point injection in [`steering.py`](/Users/mathiasl/src/adk_coding_agent/harness/state/steering.py:44) | Every message targets current work; no delivery intent or unrelated inbox |
-| Completion control | Deterministic validation and completion fence in [`workflow.py`](/Users/mathiasl/src/adk_coding_agent/app/agent/workflow.py:762) | Keep; expose its evidence through trace views |
+| One code-mode tool | Enabling notebook PTC makes `python` the only worker tool in [`factory.py`](../../app/agent/factory.py) | Disabled by default; ablation pending |
+| Warm scratchpad | Persistent CPython namespace in [`worker.py`](../../harness/repl/worker.py) | Warm state is process-live; durable named state is absent |
+| Brokered filesystem/shell/API calls | `agent.fs`, `agent.shell`, and registered MCP routing in [`worker.py`](../../harness/repl/worker.py) | No capability discovery, trace/state, process, or delegation namespace |
+| Effect authority | Nested calls return through the existing tools, approvals, receipts, redaction, and bounds in [`builders.py`](../../app/agent/builders.py) | Preserve this invariant as capabilities grow |
+| Notebook trace | Cells and nested capability lifecycle events plus deterministic `.ipynb` materialization in [`builders.py`](../../app/agent/builders.py) | Notebook is still a projection beside other operational stores |
+| Canonical events | Immutable `LedgerEvent` with sequence, provenance, time, effect, correlation, payload hash, and idempotency in [`models.py`](../../harness/ledger/models.py) | Optional/shadow operation and multiple live stores remain |
+| Programmable views | Versioned `ViewRequest`/`ViewResult` with watermarks, hashes, evidence IDs, and byte bounds in [`models.py`](../../harness/memory/models.py) | Not used by the live prompt or exposed in code mode |
+| Stored relational programs | Candidate → shadow → active → retired SQL programs in [`catalog.py`](../../harness/memory/catalog.py) | Separate from the seeded view runtime; no single computation catalog |
+| Prompt manifests | Receipt-bearing P0–P3 compiled projections in [`prompt.py`](../../harness/memory/prompt.py) | Test-only rather than the live context source |
+| Goal/progress control | Typed `TaskLedger`, observed action fingerprints, deterministic replan, and verifier in [`task.py`](../../harness/models/task.py), [`progress.py`](../../harness/state/progress.py), and [`workflow.py`](../../app/agent/workflow.py) | Plan lifecycle lacks dropped/superseded states; control projection is not trace-program-native |
+| Human steering | Durable SQLite lease/ack queue and safe-point injection in [`steering.py`](../../harness/state/steering.py) | Every message targets current work; no delivery intent or unrelated inbox |
+| Completion control | Deterministic validation and completion fence in [`workflow.py`](../../app/agent/workflow.py) | Keep; expose its evidence through trace views |
 
 The shortest path is to connect these pieces and retire duplicate authorities after equality gates pass.
 

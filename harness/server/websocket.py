@@ -134,12 +134,12 @@ async def authenticate_local_connection(websocket: WebSocket) -> str:
 
     The identity never comes from task metadata, headers, query parameters, or a
     client protocol frame. Server bootstrap normally injects a generated or explicit
-    token authenticator; direct embedders may set ``ADK_CODING_AGENT_TOKEN``.
+    token authenticator; direct embedders may set ``SKEIN_TOKEN``.
     """
 
-    token = os.getenv("ADK_CODING_AGENT_TOKEN", "")
+    token = os.getenv("SKEIN_TOKEN", "")
     if not token:
-        raise AuthenticationError("ADK_CODING_AGENT_TOKEN is not configured")
+        raise AuthenticationError("SKEIN_TOKEN is not configured")
     return await LocalBearerAuthenticator(token)(websocket)
 
 

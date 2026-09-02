@@ -1,10 +1,13 @@
-# Implementation status
+# Skein implementation status
 
 The supported capability boundary is the simplified local harness, not the
 historical feature checklist or book-rubric score.
 
 ## Retained and verified
 
+- The project identity is Skein: the Python distribution and primary CLI are `skein`,
+  the runtime implementation key is `skein_v1`, launchers are `skein-start` and
+  `skein-tui`, and runtime environment settings use the `SKEIN_` prefix.
 - Versioned YAML worker prompt with content-sensitive behavior hashes; fixed
   agent schema, tool surface, safety outcomes, Docker network isolation, and memory
   implementation remain code-owned invariants rather than decorative YAML.

@@ -11,8 +11,8 @@ from pathlib import Path
 from harness.config import (
     DEFAULT_COMPOSITION_PATH,
     HarnessComposition,
-    PiCodingConfig,
     RuntimeBindings,
+    SkeinConfig,
 )
 from harness.context import build_static_prefix
 from harness.repo import collect_project_instructions
@@ -55,12 +55,12 @@ class HarnessSettings:
 
 
 def _state_root(workspace: Path) -> Path:
-    configured = os.getenv("ADK_CODING_STATE_DIR")
+    configured = os.getenv("SKEIN_STATE_DIR")
     if configured:
         root = Path(configured).expanduser().resolve()
     else:
         digest = hashlib.sha256(workspace.as_posix().encode()).hexdigest()[:16]
-        root = Path.home() / ".cache" / "adk-coding-agent" / digest
+        root = Path.home() / ".cache" / "skein" / digest
     return root
 
 
@@ -89,25 +89,25 @@ def runtime_bindings_from_env(configuration_root: Path) -> RuntimeBindings:
         "SEARCH_BACKEND",
     }
     configured = sorted(
-        f"ADK_CODING_{name}" for name in obsolete if f"ADK_CODING_{name}" in os.environ
+        f"SKEIN_{name}" for name in obsolete if f"SKEIN_{name}" in os.environ
     )
     if configured:
         raise ValueError(
-            "Move removed behavior environment settings to ADK_CODING_CONFIG YAML: "
+            "Move removed behavior environment settings to SKEIN_CONFIG YAML: "
             + ", ".join(configured)
         )
-    workspace = Path(os.getenv("ADK_CODING_WORKSPACE", os.getcwd())).expanduser().resolve()
-    source = os.getenv("ADK_CODING_SOURCE_REPOSITORY")
+    workspace = Path(os.getenv("SKEIN_WORKSPACE", os.getcwd())).expanduser().resolve()
+    source = os.getenv("SKEIN_SOURCE_REPOSITORY")
     return RuntimeBindings(
         workspace=workspace,
         state_root=_state_root(workspace),
         configuration_root=configuration_root,
         source_repository=Path(source).expanduser().resolve() if source else None,
-        task_id=os.getenv("ADK_CODING_TASK_ID"),
-        base_revision=os.getenv("ADK_CODING_BASE_REVISION"),
-        workspace_id=os.getenv("ADK_CODING_WORKSPACE_ID"),
-        worker_id=os.getenv("ADK_CODING_WORKER_ID"),
-        project_trusted=os.getenv("ADK_CODING_TRUST_PROJECT", "0").lower()
+        task_id=os.getenv("SKEIN_TASK_ID"),
+        base_revision=os.getenv("SKEIN_BASE_REVISION"),
+        workspace_id=os.getenv("SKEIN_WORKSPACE_ID"),
+        worker_id=os.getenv("SKEIN_WORKER_ID"),
+        project_trusted=os.getenv("SKEIN_TRUST_PROJECT", "0").lower()
         in {"1", "true", "yes", "on"},
     )
 
@@ -116,7 +116,7 @@ def load_settings() -> HarnessSettings:
     from harness.config import DEFAULT_COMPOSITION_PATH, load_harness_composition
 
     path = (
-        Path(os.getenv("ADK_CODING_CONFIG", str(DEFAULT_COMPOSITION_PATH))).expanduser().resolve()
+        Path(os.getenv("SKEIN_CONFIG", str(DEFAULT_COMPOSITION_PATH))).expanduser().resolve()
     )
     return settings_from_composition(
         load_harness_composition(path), runtime_bindings_from_env(path.parent)
@@ -130,8 +130,8 @@ def settings_from_composition(
     """Resolve validated declarative behavior against volatile runtime bindings."""
 
     config = composition.harness.config
-    if not isinstance(config, PiCodingConfig):
-        raise TypeError("pi_coding_v1 requires PiCodingConfig")
+    if not isinstance(config, SkeinConfig):
+        raise TypeError("skein_v1 requires SkeinConfig")
     workspace = bindings.workspace.expanduser().resolve()
     state_root = bindings.state_root.expanduser().resolve()
     configuration_root = (

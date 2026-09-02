@@ -1,4 +1,4 @@
-"""Registered, configuration-driven assembly of the Pi coding harness."""
+"""Registered, configuration-driven assembly of Skein."""
 
 from __future__ import annotations
 
@@ -30,8 +30,8 @@ from harness.config import (
     FOUR_CODING_TOOLS,
     HarnessComposition,
     ModelConfig,
-    PiCodingConfig,
     RuntimeBindings,
+    SkeinConfig,
 )
 from harness.context import prefix_hash
 from harness.ledger import LedgerBackedEventStore, LedgerStore, open_ledger
@@ -57,17 +57,17 @@ from .builders import build_coding_worker
 from .config import settings_from_composition
 from .skills import build_skill_registry
 from .streaming import PublicReplies
-from .workflow import PiWorkflowDependencies, build_root_agent
+from .workflow import SkeinWorkflowDependencies, build_root_agent
 
 LOGGER = logging.getLogger(__name__)
 
 
-class _PiControlHooks:
+class _SkeinControlHooks:
     def __init__(
         self,
         *,
         steering: SteeringQueue,
-        deps: PiWorkflowDependencies,
+        deps: SkeinWorkflowDependencies,
         enabled: bool,
         max_message_bytes: int,
     ) -> None:
@@ -104,7 +104,7 @@ class _PiControlHooks:
         return ControlReceipt(
             accepted=False,
             command_id=command.idempotency_key or f"pause:{command.run_id}",
-            detail="pause is not supported by pi_coding_v1",
+            detail="pause is not supported by skein_v1",
         )
 
     async def cancel(self, command: ControlCommand) -> ControlReceipt:
@@ -129,8 +129,8 @@ class _PiControlHooks:
         )
 
 
-class PiCodingHarnessFactory:
-    """Build isolated ADK Apps from validated Pi behavior and runtime bindings."""
+class SkeinHarnessFactory:
+    """Build isolated ADK Apps from validated Skein behavior and runtime bindings."""
 
     def __init__(
         self,
@@ -141,9 +141,9 @@ class PiCodingHarnessFactory:
         self._pricing = dict(pricing or {})
         self._model_providers = model_providers or default_adk_model_provider_registry()
         self._descriptor = HarnessDescriptor(
-            implementation="pi_coding_v1",
+            implementation="skein_v1",
             api_version=1,
-            display_name="Pi-inspired ADK coding harness",
+            display_name="Skein",
             capabilities=frozenset(
                 {
                     RuntimeCapability.STREAMING,
@@ -163,24 +163,24 @@ class PiCodingHarnessFactory:
 
     @property
     def config_model(self) -> type[BaseModel]:
-        return PiCodingConfig
+        return SkeinConfig
 
     def coding_model(self, config: BaseModel) -> ModelConfig:
-        if not isinstance(config, PiCodingConfig):
-            raise TypeError("pi_coding_v1 requires PiCodingConfig")
+        if not isinstance(config, SkeinConfig):
+            raise TypeError("skein_v1 requires SkeinConfig")
         return config.models[config.agents["coding_worker"].model]
 
     def with_coding_model(self, config: BaseModel, model: ModelConfig) -> BaseModel:
-        if not isinstance(config, PiCodingConfig):
-            raise TypeError("pi_coding_v1 requires PiCodingConfig")
+        if not isinstance(config, SkeinConfig):
+            raise TypeError("skein_v1 requires SkeinConfig")
         payload = config.model_dump()
         payload["models"][config.agents["coding_worker"].model] = model.model_dump()
-        configured = PiCodingConfig.model_validate(payload)
+        configured = SkeinConfig.model_validate(payload)
         self._validate_supported_shape(configured)
         return configured
 
-    def _validate_supported_shape(self, config: PiCodingConfig) -> None:
-        PiCodingConfig.model_validate(config.model_dump())
+    def _validate_supported_shape(self, config: SkeinConfig) -> None:
+        SkeinConfig.model_validate(config.model_dump())
         if config.notebook_ptc.enabled and config.sandbox.kind != "local":
             raise ValueError("notebook-native PTC currently requires the local sandbox")
         if config.memory.enabled and config.memory.retrieval == "lance":
@@ -203,8 +203,8 @@ class PiCodingHarnessFactory:
     ) -> HarnessResources:
         """Use the execution loaders, without building a model, tools or state stores."""
         config = composition.harness.config
-        if not isinstance(config, PiCodingConfig):
-            raise TypeError("pi_coding_v1 requires PiCodingConfig")
+        if not isinstance(config, SkeinConfig):
+            raise TypeError("skein_v1 requires SkeinConfig")
         settings = settings_from_composition(composition, bindings)
         tool_names = ("python",) if config.notebook_ptc.enabled else FOUR_CODING_TOOLS
         items = [ResourceItem(kind="tool", name=name) for name in tool_names]
@@ -257,7 +257,7 @@ class PiCodingHarnessFactory:
         )
 
     @staticmethod
-    def _known_secrets(config: PiCodingConfig) -> list[str]:
+    def _known_secrets(config: SkeinConfig) -> list[str]:
         names = set(config.safety.redact_environment_names)
         names.update(
             model.api_key.env for model in config.models.values() if model.api_key is not None
@@ -270,8 +270,8 @@ class PiCodingHarnessFactory:
         bindings: RuntimeBindings,
     ) -> AdkHarnessAssembly:
         config = composition.harness.config
-        if not isinstance(config, PiCodingConfig):
-            raise TypeError("pi_coding_v1 requires PiCodingConfig")
+        if not isinstance(config, SkeinConfig):
+            raise TypeError("skein_v1 requires SkeinConfig")
         self._validate_supported_shape(config)
         settings = settings_from_composition(composition, bindings)
         settings.state_root.mkdir(parents=True, exist_ok=True)
@@ -409,7 +409,7 @@ class PiCodingHarnessFactory:
             if settings.source_repository is not None
             else None
         )
-        deps = PiWorkflowDependencies(
+        deps = SkeinWorkflowDependencies(
             settings=settings,
             event_store=event_store,
             steering_queue=steering,
@@ -534,7 +534,7 @@ class PiCodingHarnessFactory:
             explicit_public_messages=True,
             approvals=approvals,
             close=worker.close,
-            controls=_PiControlHooks(
+            controls=_SkeinControlHooks(
                 steering=steering,
                 deps=deps,
                 enabled=config.steering.enabled,
@@ -548,7 +548,7 @@ def default_harness_registry(
     model_providers: AdkModelProviderRegistry | None = None,
 ) -> HarnessRegistry:
     registry = HarnessRegistry()
-    registry.register(PiCodingHarnessFactory(model_providers=model_providers))
+    registry.register(SkeinHarnessFactory(model_providers=model_providers))
     return registry
 
 
@@ -563,7 +563,7 @@ def build_harness(
 
 
 __all__ = [
-    "PiCodingHarnessFactory",
+    "SkeinHarnessFactory",
     "build_harness",
     "default_harness_registry",
 ]

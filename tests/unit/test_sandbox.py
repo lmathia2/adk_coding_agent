@@ -218,10 +218,10 @@ def test_factory_defaults_local_and_requires_a_docker_image(
     workspace.mkdir()
     state = tmp_path / "state"
 
-    monkeypatch.delenv("ADK_CODING_SANDBOX", raising=False)
+    monkeypatch.delenv("SKEIN_SANDBOX", raising=False)
     assert isinstance(create_command_sandbox(workspace, state), LocalSandbox)
 
-    monkeypatch.setenv("ADK_CODING_SANDBOX", "docker")
-    monkeypatch.delenv("ADK_CODING_SANDBOX_IMAGE", raising=False)
+    monkeypatch.setenv("SKEIN_SANDBOX", "docker")
+    monkeypatch.delenv("SKEIN_SANDBOX_IMAGE", raising=False)
     with pytest.raises(ValueError, match="SANDBOX_IMAGE"):
         create_command_sandbox(workspace, state)

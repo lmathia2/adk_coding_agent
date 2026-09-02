@@ -18,6 +18,6 @@ def open_ledger(
         from .store import DuckDbLedgerStore
     except ImportError as exc:
         raise RuntimeError(
-            "DuckDB memory is configured; install adk-coding-agent[memory-duckdb]"
+            "DuckDB memory is configured; install skein[memory-duckdb]"
         ) from exc
     return DuckDbLedgerStore(state_root / "ledger.duckdb")

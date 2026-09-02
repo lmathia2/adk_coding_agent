@@ -1,11 +1,11 @@
 ---
 name: coding-harness-development
-description: Implements and reviews changes to this Pi-inspired Google ADK coding harness. Use for harness orchestration, context management, coding tools, repository indexing, durable state, verification, safety, evaluation, and documentation changes.
+description: Implements and reviews changes to Skein, the Google ADK coding harness. Use for harness orchestration, context management, coding tools, repository indexing, durable state, verification, safety, evaluation, and documentation changes.
 license: Apache-2.0
 compatibility: Python 3.12+, Google ADK 2.x, Google Agents CLI, Git, uv
 metadata:
   upstream-workflow: google/agents-cli skills
-  project: adk_coding_agent
+  project: skein
 ---
 
 # Coding Harness Development

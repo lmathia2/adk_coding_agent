@@ -13,7 +13,7 @@ export class SessionHeader implements Component {
   invalidate(): void {}
   render(width: number): string[] {
     const identity = safeText(this.state.harness || "waiting for server").replace(/[\n\t]/g, " ");
-    return [truncateToWidth(theme.accent("adk-agent") + theme.dim(` · ${identity}`), width, "…")];
+    return [truncateToWidth(theme.accent("skein") + theme.dim(` · ${identity}`), width, "…")];
   }
 }
 

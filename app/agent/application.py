@@ -10,7 +10,7 @@ from .config import runtime_bindings_from_env
 from .factory import build_harness
 
 _COMPOSITION_PATH = Path(
-    os.getenv("ADK_CODING_CONFIG", str(DEFAULT_COMPOSITION_PATH))
+    os.getenv("SKEIN_CONFIG", str(DEFAULT_COMPOSITION_PATH))
 ).expanduser().resolve()
 _ASSEMBLY = build_harness(
     load_harness_composition(_COMPOSITION_PATH),

@@ -135,7 +135,7 @@ def test_adk_tool_adapter_exposes_four_working_tools(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
     tools = create_adk_tools(tmp_path)
     tools.write("hello.py", "print('hello')\n", expected_absent=True)
     assert "hello" in tools.read("hello.py")["model_text"]

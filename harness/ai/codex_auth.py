@@ -345,7 +345,7 @@ class CodexCredentialManager:
             credential = self.store.load()
             if credential is None:
                 raise CodexAuthenticationError(
-                    "OpenAI Codex is not authenticated; run `adk-coding-agent codex login`"
+                    "OpenAI Codex is not authenticated; run `skein codex login`"
                 )
             now_ms = int(self._now() * 1000)
             if force_refresh or credential.expires_at_ms <= now_ms + self._refresh_margin_ms:

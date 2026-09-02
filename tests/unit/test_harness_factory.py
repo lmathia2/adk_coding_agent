@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.agent.builders import build_coding_worker
 from app.agent.config import settings_from_composition
 from app.agent.factory import (
-    PiCodingHarnessFactory,
+    SkeinHarnessFactory,
     build_harness,
     default_harness_registry,
 )
@@ -36,8 +36,8 @@ from harness.agent import (
 from harness.config import (
     GenerationConfig,
     HarnessComposition,
-    PiCodingConfig,
     RuntimeBindings,
+    SkeinConfig,
     load_harness_composition,
     parse_harness_composition,
 )
@@ -154,10 +154,10 @@ def test_registry_rejects_composition_validated_for_a_different_factory(
 ) -> None:
     registry = HarnessRegistry()
     registry.register(_FakeHarnessFactory())
-    pi_composition = load_harness_composition()
-    mismatched = pi_composition.model_copy(
+    skein_composition = load_harness_composition()
+    mismatched = skein_composition.model_copy(
         update={
-            "harness": pi_composition.harness.model_copy(
+            "harness": skein_composition.harness.model_copy(
                 update={
                     "implementation": "fake_adk_v1",
                     "required_capabilities": ("streaming",),
@@ -166,7 +166,7 @@ def test_registry_rejects_composition_validated_for_a_different_factory(
         }
     )
 
-    assert isinstance(mismatched.harness.config, PiCodingConfig)
+    assert isinstance(mismatched.harness.config, SkeinConfig)
     with pytest.raises(TypeError, match="_FakeHarnessConfig"):
         registry.build(
             mismatched,
@@ -174,36 +174,36 @@ def test_registry_rejects_composition_validated_for_a_different_factory(
         )
 
 
-def test_default_pi_factory_builds_from_composition_without_credentials(
+def test_default_skein_factory_builds_from_composition_without_credentials(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.setenv("ADK_CODING_MODEL", "environment-model-must-not-win")
+    monkeypatch.setenv("SKEIN_MODEL", "environment-model-must-not-win")
     environment_state = tmp_path / "environment-selected-state"
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(environment_state))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(environment_state))
 
     assert not environment_state.exists()
 
     registry = default_harness_registry()
-    assert isinstance(PiCodingHarnessFactory(), HarnessFactory)
-    assert registry.config_models() == {"pi_coding_v1": PiCodingConfig}
+    assert isinstance(SkeinHarnessFactory(), HarnessFactory)
+    assert registry.config_models() == {"skein_v1": SkeinConfig}
     composition = load_harness_composition(config_models=registry.config_models())
-    pi_config = cast(PiCodingConfig, composition.harness.config)
+    skein_config = cast(SkeinConfig, composition.harness.config)
     configured_model = "composition-selected-model"
-    models = dict(pi_config.models)
+    models = dict(skein_config.models)
     models["coding"] = models["coding"].model_copy(update={"name": configured_model})
     configured = composition.model_copy(
         update={
             "app": composition.app.model_copy(update={"name": "configured_app"}),
             "harness": composition.harness.model_copy(
                 update={
-                    "config": pi_config.model_copy(
+                    "config": skein_config.model_copy(
                         update={
                             "models": models,
-                            "workflow": pi_config.workflow.model_copy(update={"max_iterations": 7}),
-                            "context": pi_config.context.model_copy(
+                            "workflow": skein_config.workflow.model_copy(update={"max_iterations": 7}),
+                            "context": skein_config.context.model_copy(
                                 update={"compact_at_tokens": 12_345}
                             ),
                         }
@@ -229,7 +229,7 @@ def test_default_pi_factory_builds_from_composition_without_credentials(
     assert settings.state_root == bindings.state_root.resolve()
     assert isinstance(assembly, AdkHarnessAssembly)
     assert isinstance(assembly.app, App)
-    assert assembly.descriptor.implementation == "pi_coding_v1"
+    assert assembly.descriptor.implementation == "skein_v1"
     assert assembly.app.name == "configured_app"
     assert assembly.build_info.behavior_sha256 == configured.behavior_sha256
     assert assembly.build_info.models["coding"] == configured_model
@@ -238,7 +238,7 @@ def test_default_pi_factory_builds_from_composition_without_credentials(
     assert assembly.build_info.max_iterations == 7
     assert assembly.build_info.compact_at_tokens == 12_345
     assert "environment-model-must-not-win" not in assembly.build_info.models.values()
-    assert registry.available() == ("pi_coding_v1",)
+    assert registry.available() == ("skein_v1",)
     assert not environment_state.exists()
 
 
@@ -265,9 +265,9 @@ def test_verification_shares_yaml_sandbox_and_task_scoped_approvals(
 
     monkeypatch.setattr(factory, "create_adk_tools", tools)
     monkeypatch.setattr(factory, "build_root_agent", root)
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "wrong-state"))
-    monkeypatch.setenv("ADK_CODING_ALLOW_NETWORK", "true")
-    monkeypatch.setenv("ADK_CODING_SANDBOX", "local")
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "wrong-state"))
+    monkeypatch.setenv("SKEIN_ALLOW_NETWORK", "true")
+    monkeypatch.setenv("SKEIN_SANDBOX", "local")
     payload = load_harness_composition().model_dump(mode="json")
     payload["harness"]["config"]["sandbox"] = {"kind": "docker", "image": "test:local"}
     state = tmp_path / "state"
@@ -295,7 +295,7 @@ def test_verification_shares_yaml_sandbox_and_task_scoped_approvals(
     assert not (tmp_path / "wrong-state").exists()
 
 
-def test_pi_factory_executes_prompt_and_agent_model_bindings(
+def test_skein_factory_executes_prompt_and_agent_model_bindings(
     tmp_path: Path,
 ) -> None:
     registry = default_harness_registry()
@@ -369,7 +369,7 @@ def test_composition_loads_project_instructions_only_after_explicit_trust(
 
 def test_project_instruction_budget_is_executable_configuration(tmp_path: Path) -> None:
     composition = load_harness_composition()
-    config = cast(PiCodingConfig, composition.harness.config)
+    config = cast(SkeinConfig, composition.harness.config)
     configured = composition.model_copy(
         update={
             "harness": composition.harness.model_copy(
@@ -481,7 +481,7 @@ async def test_model_tools_do_not_block_the_server_event_loop(tmp_path: Path) ->
     assert result["status"] == "ok"
 
 
-def test_importing_pi_factory_does_not_build_environment_singletons(
+def test_importing_skein_factory_does_not_build_environment_singletons(
     tmp_path: Path,
 ) -> None:
     repository_root = Path(__file__).resolve().parents[2]
@@ -489,8 +489,8 @@ def test_importing_pi_factory_does_not_build_environment_singletons(
     environment = os.environ.copy()
     environment.pop("GOOGLE_API_KEY", None)
     environment.pop("GEMINI_API_KEY", None)
-    environment["ADK_CODING_WORKSPACE"] = str(tmp_path)
-    environment["ADK_CODING_STATE_DIR"] = str(environment_state)
+    environment["SKEIN_WORKSPACE"] = str(tmp_path)
+    environment["SKEIN_STATE_DIR"] = str(environment_state)
     environment["PYTHONPATH"] = str(repository_root)
 
     completed = subprocess.run(
@@ -507,7 +507,7 @@ def test_importing_pi_factory_does_not_build_environment_singletons(
     assert not environment_state.exists()
 
 
-def test_pi_factory_builds_are_isolated(tmp_path: Path) -> None:
+def test_skein_factory_builds_are_isolated(tmp_path: Path) -> None:
     registry = default_harness_registry()
     composition = load_harness_composition(config_models=registry.config_models())
     first_root = tmp_path / "first"
@@ -533,12 +533,12 @@ def test_pi_factory_builds_are_isolated(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pi_factory_wires_tool_defaults_limits_and_dynamic_task_scope(
+async def test_skein_factory_wires_tool_defaults_limits_and_dynamic_task_scope(
     tmp_path: Path,
 ) -> None:
     registry = default_harness_registry()
     composition = load_harness_composition(config_models=registry.config_models())
-    config = cast(PiCodingConfig, composition.harness.config)
+    config = cast(SkeinConfig, composition.harness.config)
     configured = composition.model_copy(
         update={
             "harness": composition.harness.model_copy(
@@ -590,10 +590,10 @@ async def test_pi_factory_wires_tool_defaults_limits_and_dynamic_task_scope(
     assert second.get("replayed") is not True
 
 
-def test_pi_factory_disables_steering(tmp_path: Path) -> None:
+def test_skein_factory_disables_steering(tmp_path: Path) -> None:
     registry = default_harness_registry()
     composition = load_harness_composition(config_models=registry.config_models())
-    config = cast(PiCodingConfig, composition.harness.config)
+    config = cast(SkeinConfig, composition.harness.config)
     configured = composition.model_copy(
         update={
             "harness": composition.harness.model_copy(
@@ -623,10 +623,10 @@ def test_pi_factory_disables_steering(tmp_path: Path) -> None:
     assert "disabled" in (receipt.detail or "")
 
 
-def test_pi_factory_enforces_configured_steering_message_limit(tmp_path: Path) -> None:
+def test_skein_factory_enforces_configured_steering_message_limit(tmp_path: Path) -> None:
     registry = default_harness_registry()
     composition = load_harness_composition(config_models=registry.config_models())
-    config = cast(PiCodingConfig, composition.harness.config)
+    config = cast(SkeinConfig, composition.harness.config)
     configured = composition.model_copy(
         update={
             "harness": composition.harness.model_copy(

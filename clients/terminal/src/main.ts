@@ -13,14 +13,14 @@ import { ApprovalPresenter } from "./approvals.js";
 
 const {values} = parseArgs({options: {
   server: {type: "string", default: "ws://127.0.0.1:8765/v1/agent"},
-  "state-root": {type: "string", default: join(homedir(), ".local/state/adk-coding-agent")},
+  "state-root": {type: "string", default: join(homedir(), ".local/state/skein")},
   help: {type: "boolean", short: "h", default: false},
 }});
 if (values.help) {
   process.stdout.write(`Pi-style terminal for the ADK coding harness.
 
 Usage:
-  adk-agent-tui [--server URL] [--state-root DIR]
+  skein-tui [--server URL] [--state-root DIR]
 
 Options:
   --server URL      Harness WebSocket (default: ws://127.0.0.1:8765/v1/agent)
@@ -32,7 +32,7 @@ Inside the terminal, use /help for interactive commands and keyboard shortcuts.
   process.exit(0);
 }
 try {
-  const token = process.env.ADK_CODING_AGENT_TOKEN || readFileSync(join(values["state-root"], "server/auth-token"), "utf8").trim();
+  const token = process.env.SKEIN_TOKEN || readFileSync(join(values["state-root"], "server/auth-token"), "utf8").trim();
   const session = new RemoteSession({url: values.server, token});
   const tui = new TuiMainScreen(new ProcessTerminal());
   let stopped = false;
@@ -155,6 +155,6 @@ try {
   process.on("SIGINT", quit);
   tui.start(); session.connect();
 } catch {
-  process.stderr.write("Unable to connect the terminal. Start the harness server and check --state-root / ADK_CODING_AGENT_TOKEN.\n");
+  process.stderr.write("Unable to connect the terminal. Start the harness server and check --state-root / SKEIN_TOKEN.\n");
   process.exitCode = 1;
 }

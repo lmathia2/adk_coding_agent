@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "adk-coding-agent"
+name = "skein"
 version = "0.1.0"
-description = "Pi-inspired token-efficient coding harness on Google ADK 2.x"
+description = "Trace-native coding intelligence with one-tool PTC and program memory"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
@@ -25,7 +25,7 @@ memory-duckdb = ["duckdb>=1.4,<2.0"]
 memory-search = ["duckdb>=1.4,<2.0", "lancedb>=0.38,<1.0"]
 
 [project.scripts]
-adk-coding-agent = "harness.cli:main"
+skein = "harness.cli:main"
 
 [dependency-groups]
 dev = [

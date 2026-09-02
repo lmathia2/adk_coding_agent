@@ -16,8 +16,8 @@ from .models import (
     HarnessComposition,
     HarnessSelectionConfig,
     PersistenceConfig,
-    PiCodingConfig,
     ServerConfig,
+    SkeinConfig,
 )
 
 DEFAULT_COMPOSITION_PATH = Path(__file__).with_name("default.yaml")
@@ -70,7 +70,7 @@ class _CompositionEnvelope(FrozenModel):
 
 
 DEFAULT_HARNESS_CONFIG_MODELS: Mapping[str, type[BaseModel]] = {
-    "pi_coding_v1": PiCodingConfig,
+    "skein_v1": SkeinConfig,
 }
 
 

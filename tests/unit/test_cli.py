@@ -39,8 +39,8 @@ def test_prepare_run_sets_workspace_identity_environment(tmp_path: Path) -> None
     )
 
     assert preparation.workspace.path.exists()
-    assert preparation.environment["ADK_CODING_WORKSPACE"] == preparation.workspace.path.as_posix()
-    assert preparation.environment["ADK_CODING_BASE_REVISION"]
+    assert preparation.environment["SKEIN_WORKSPACE"] == preparation.workspace.path.as_posix()
+    assert preparation.environment["SKEIN_BASE_REVISION"]
     assert preparation.command == ("agents-cli", "run", "Fix the app")
     payload = json.loads(preparation.to_json())
     assert payload["workspace"]["task_id"] == "task-123"

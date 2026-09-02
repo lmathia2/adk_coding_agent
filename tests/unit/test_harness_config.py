@@ -9,8 +9,8 @@ from pydantic import ValidationError
 
 from harness.config import (
     FOUR_CODING_TOOLS,
-    PiCodingConfig,
     RuntimeBindings,
+    SkeinConfig,
     load_harness_composition,
     parse_harness_composition,
 )
@@ -26,7 +26,7 @@ def _composition_payload() -> dict[str, Any]:
         "schema_version": 1,
         "app": {"name": "coding_harness"},
         "harness": {
-            "implementation": "pi_coding_v1",
+            "implementation": "skein_v1",
             "api_version": 1,
             "config": harness_config,
         },
@@ -39,7 +39,7 @@ def _composition_payload() -> dict[str, Any]:
 def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     composition = load_harness_composition()
     config = composition.harness.config
-    assert isinstance(config, PiCodingConfig)
+    assert isinstance(config, SkeinConfig)
 
     assert composition.schema_version == 1
     assert FOUR_CODING_TOOLS == ("read", "bash", "edit", "write")
@@ -83,7 +83,7 @@ def test_annotated_standard_profiles_are_complete_and_strict(
     composition = load_harness_composition(path)
     config = composition.harness.config
 
-    assert isinstance(config, PiCodingConfig)
+    assert isinstance(config, SkeinConfig)
     assert config.notebook_ptc.enabled is ptc_enabled
     assert config.memory.enabled is memory_enabled
     assert config.memory.ledger == ledger
@@ -167,7 +167,7 @@ def test_loader_preserves_portable_resource_paths(tmp_path: Path) -> None:
 
     composition = load_harness_composition(config_path)
     config = composition.harness.config
-    assert isinstance(config, PiCodingConfig)
+    assert isinstance(config, SkeinConfig)
     assert config.agents["coding_worker"].instruction == "test worker"
     assert config.skills.additional_roots == (Path("skills"),)
     assert str(tmp_path) not in composition.canonical_json()
@@ -219,7 +219,7 @@ def test_removed_graph_dsl_is_rejected(field: str) -> None:
         parse_harness_composition(payload)
 
 
-def test_pi_config_rejects_unused_model_entries() -> None:
+def test_skein_config_rejects_unused_model_entries() -> None:
     payload = _composition_payload()
     payload["harness"]["config"]["models"]["unused"] = {
         "provider": "google_adk",

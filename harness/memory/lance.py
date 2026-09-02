@@ -72,7 +72,7 @@ class LanceMemorySearch:
         try:
             import lancedb
         except ImportError as exc:  # pragma: no cover - optional dependency boundary
-            raise RuntimeError("install adk-coding-agent[memory-search] to use Lance search") from exc
+            raise RuntimeError("install skein[memory-search] to use Lance search") from exc
         task_ids = {event.task_id for event in events}
         if len(task_ids) != 1:
             raise ValueError("one Lance projection cannot mix tasks")
@@ -108,7 +108,7 @@ class LanceMemorySearch:
             import pyarrow as pa
             from lancedb.index import FTS
         except ImportError as exc:  # pragma: no cover - exercised without the optional extra
-            raise RuntimeError("install adk-coding-agent[memory-search] to use Lance search") from exc
+            raise RuntimeError("install skein[memory-search] to use Lance search") from exc
 
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = Path(tempfile.mkdtemp(prefix=".lance-", dir=destination.parent))

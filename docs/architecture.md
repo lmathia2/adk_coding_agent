@@ -1,4 +1,4 @@
-# Architecture
+# Skein architecture
 
 The supported runtime is local, single-process, and built around one ADK coding
 worker. This document supersedes the larger historical designs.
@@ -116,7 +116,7 @@ The ledger, notebook, and CPython worker deliberately have separate authority:
   restores completed replay-safe cells; it never infers success from notebook order.
 
 For a server run, operational notebooks and task events live under
-`STATE_ROOT/runs/RUN_ID`. `adk-coding-agent notebook --state-root RUN_STATE
+`STATE_ROOT/runs/RUN_ID`. `skein notebook --state-root RUN_STATE
 --task-id RUN_ID` rematerializes from events and uses `nb-cli` for compact reading when
 installed, with a standard-library renderer otherwise.
 

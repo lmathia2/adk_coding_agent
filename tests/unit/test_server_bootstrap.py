@@ -83,7 +83,7 @@ def test_server_assembly_maps_yaml_and_creates_durable_local_services(
     assert server.settings.max_connections == 7
     assert server.settings.outbound_queue_capacity == 19
     assert assembly.coordinator.broker.queue_capacity == 19
-    assert assembly.coordinator.descriptor.implementation == "pi_coding_v1"
+    assert assembly.coordinator.descriptor.implementation == "skein_v1"
     assert (state_root / "server" / "runs.db").is_file()
     assert assembly.auth_token_path == state_root / "server" / "auth-token"
     assert assembly.auth_token_path.is_file()

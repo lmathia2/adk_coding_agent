@@ -13,7 +13,7 @@ esac
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 workspace=${1:-$(pwd -P)}
 [ "$#" -eq 0 ] || shift
-state_root=${ADK_CODING_AGENT_PTC_STATE_ROOT:-${HOME}/.local/state/adk-coding-agent-ptc}
+state_root=${SKEIN_PTC_STATE_ROOT:-${HOME}/.local/state/skein-ptc}
 PATH=${HOME}/.local/bin:${PATH}
 export PATH
 

@@ -9,7 +9,7 @@ def _fake_command(directory: Path, name: str) -> Path:
     command = directory / name
     command.write_text(
         "#!/bin/sh\n"
-        "printf 'token-present=%s\\n' \"${ADK_CODING_AGENT_TOKEN:+yes}\"\n"
+        "printf 'token-present=%s\\n' \"${SKEIN_TOKEN:+yes}\"\n"
         "printf 'arg=%s\\n' \"$@\"\n",
         encoding="utf-8",
     )
@@ -21,19 +21,19 @@ def _environment(fake_bin: Path, home: Path) -> dict[str, str]:
     environment = os.environ.copy()
     environment["HOME"] = str(home)
     environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
-    environment.pop("ADK_CODING_AGENT_STATE_ROOT", None)
-    environment.pop("ADK_CODING_AGENT_SERVER_URL", None)
-    environment.pop("ADK_CODING_AGENT_TOKEN", None)
-    terminal = fake_bin / "adk-agent-tui"
+    environment.pop("SKEIN_STATE_ROOT", None)
+    environment.pop("SKEIN_SERVER_URL", None)
+    environment.pop("SKEIN_TOKEN", None)
+    terminal = fake_bin / "skein-tui"
     if terminal.exists():
-        environment["ADK_CODING_AGENT_TUI_COMMAND"] = str(terminal)
+        environment["SKEIN_TUI_COMMAND"] = str(terminal)
     else:
-        environment.pop("ADK_CODING_AGENT_TUI_COMMAND", None)
+        environment.pop("SKEIN_TUI_COMMAND", None)
     return environment
 
 
 def _fake_managed_server(directory: Path) -> Path:
-    command = directory / "adk-coding-agent"
+    command = directory / "skein"
     command.write_text(
         "#!/bin/sh\n"
         "state_root=\n"
@@ -69,29 +69,29 @@ def test_start_script_is_executable_and_has_valid_help() -> None:
         text=True,
     )
 
-    assert "adk-agent-start server" in completed.stdout
-    assert "adk-agent-start tui" in completed.stdout
-    assert "adk-agent-start run" in completed.stdout
-    assert "ADK_CODING_AGENT_STATE_ROOT" in completed.stdout
-    assert "ADK_CODING_AGENT_SERVER_URL" in completed.stdout
+    assert "skein-start server" in completed.stdout
+    assert "skein-start tui" in completed.stdout
+    assert "skein-start run" in completed.stdout
+    assert "SKEIN_STATE_ROOT" in completed.stdout
+    assert "SKEIN_SERVER_URL" in completed.stdout
 
 
 def test_installed_launcher_symlink_resolves_checkout_terminal(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
-    installed = tmp_path / "bin/adk-agent-start"
+    installed = tmp_path / "bin/skein-start"
     installed.parent.mkdir()
     installed.symlink_to(root / "start.sh")
     assert os.access(installed.resolve(), os.X_OK)
     completed = subprocess.run((str(installed), "--help"), check=True,
         capture_output=True, text=True)
-    assert "adk-agent-start run" in completed.stdout
+    assert "skein-start run" in completed.stdout
 
 
 def test_server_uses_current_directory_and_shared_default_state(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    _fake_command(fake_bin, "adk-coding-agent")
+    _fake_command(fake_bin, "skein")
     home = tmp_path / "home"
     home.mkdir()
     workspace = tmp_path / "workspace"
@@ -106,7 +106,7 @@ def test_server_uses_current_directory_and_shared_default_state(tmp_path: Path) 
         text=True,
     )
 
-    state_root = home / ".local/state/adk-coding-agent"
+    state_root = home / ".local/state/skein"
     assert state_root.is_dir()
     assert f"State root: {state_root}" in completed.stdout
     assert f"Auth token file: {state_root}/server/auth-token" in completed.stdout
@@ -121,14 +121,14 @@ def test_server_accepts_flag_alias_and_state_environment_override(tmp_path: Path
     root = Path(__file__).resolve().parents[2]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    _fake_command(fake_bin, "adk-coding-agent")
+    _fake_command(fake_bin, "skein")
     home = tmp_path / "home"
     home.mkdir()
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     state_root = tmp_path / "shared-state"
     environment = _environment(fake_bin, home)
-    environment["ADK_CODING_AGENT_STATE_ROOT"] = str(state_root)
+    environment["SKEIN_STATE_ROOT"] = str(state_root)
 
     completed = subprocess.run(
         (str(root / "start.sh"), "--server", "--workspace", str(workspace)),
@@ -147,7 +147,7 @@ def test_server_forwards_and_announces_explicit_project_trust(tmp_path: Path) ->
     root = Path(__file__).resolve().parents[2]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    _fake_command(fake_bin, "adk-coding-agent")
+    _fake_command(fake_bin, "skein")
     home = tmp_path / "home"
     home.mkdir()
     workspace = tmp_path / "workspace"
@@ -175,7 +175,7 @@ def test_server_forwards_notebook_ptc_mode(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    _fake_command(fake_bin, "adk-coding-agent")
+    _fake_command(fake_bin, "skein")
     home = tmp_path / "home"
     home.mkdir()
     workspace = tmp_path / "workspace"
@@ -213,16 +213,16 @@ def test_tui_reads_token_and_does_not_expose_it(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    _fake_command(fake_bin, "adk-agent-tui")
+    _fake_command(fake_bin, "skein-tui")
     home = tmp_path / "home"
     home.mkdir()
-    state_root = home / ".local/state/adk-coding-agent"
+    state_root = home / ".local/state/skein"
     token_file = state_root / "server/auth-token"
     token_file.parent.mkdir(parents=True)
     secret = "a-secret-token-that-must-not-be-printed"
     token_file.write_text(f"{secret}\n", encoding="utf-8")
     environment = _environment(fake_bin, home)
-    environment["ADK_CODING_AGENT_SERVER_URL"] = "ws://localhost:9999/custom"
+    environment["SKEIN_SERVER_URL"] = "ws://localhost:9999/custom"
 
     completed = subprocess.run(
         (str(root / "start.sh"), "tui", "--", "--input", "hello"),
@@ -233,7 +233,7 @@ def test_tui_reads_token_and_does_not_expose_it(tmp_path: Path) -> None:
     )
 
     assert secret not in completed.stdout
-    assert "Environment set for TUI: ADK_CODING_AGENT_TOKEN" in completed.stdout
+    assert "Environment set for TUI: SKEIN_TOKEN" in completed.stdout
     assert "token-present=yes" in completed.stdout
     assert "arg=ws://localhost:9999/custom" in completed.stdout
     assert "arg=--input" in completed.stdout
@@ -244,7 +244,7 @@ def test_tui_explains_missing_token(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    _fake_command(fake_bin, "adk-agent-tui")
+    _fake_command(fake_bin, "skein-tui")
     home = tmp_path / "home"
     home.mkdir()
 
@@ -266,7 +266,7 @@ def test_run_owns_server_and_forwards_exact_codex_model(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     _fake_managed_server(fake_bin)
-    _fake_command(fake_bin, "adk-agent-tui")
+    _fake_command(fake_bin, "skein-tui")
     home = tmp_path / "home"
     home.mkdir()
     workspace = tmp_path / "workspace"
@@ -311,7 +311,7 @@ def test_server_can_select_codex_provider_without_login(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[2]
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
-    _fake_command(fake_bin, "adk-coding-agent")
+    _fake_command(fake_bin, "skein")
     home = tmp_path / "home"
     home.mkdir()
     workspace = tmp_path / "workspace"

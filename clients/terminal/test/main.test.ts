@@ -8,7 +8,7 @@ test("command help works without a token or server and never prints a stack trac
   const entrypoint = resolve(dirname(fileURLToPath(import.meta.url)), "../src/main.js");
   const result = spawnSync(process.execPath, [entrypoint, "--help"], {encoding: "utf8", env: {PATH: process.env.PATH ?? ""}});
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /adk-agent-tui \[--server URL\]/);
+  assert.match(result.stdout, /skein-tui \[--server URL\]/);
   assert.match(result.stdout, /\/help for interactive commands/);
   assert.equal(result.stderr, "");
 });

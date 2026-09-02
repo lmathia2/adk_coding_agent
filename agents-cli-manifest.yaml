@@ -1,4 +1,4 @@
-name: adk-coding-agent
+name: skein
 agent_directory: app
 agents_cli_version: "1.4.1"
 create_params:

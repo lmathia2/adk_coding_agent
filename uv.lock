@@ -10,7 +10,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "adk-coding-agent"
+name = "skein"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

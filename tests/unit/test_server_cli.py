@@ -31,7 +31,7 @@ def test_serve_print_config_resolves_composition_without_listening(
 
     assert result == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["harness"] == "pi_coding_v1"
+    assert payload["harness"] == "skein_v1"
     assert payload["websocket_url"] == "ws://127.0.0.1:8765/v1/agent"
     assert payload["workspace"] == tmp_path.resolve().as_posix()
     assert payload["state_root"] == state_root.resolve().as_posix()
@@ -96,7 +96,7 @@ def test_serve_uses_adk_coding_config_when_flag_is_absent(
     payload["server"]["port"] = 9_876
     config_path = tmp_path / "selected.yaml"
     config_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
-    monkeypatch.setenv("ADK_CODING_CONFIG", str(config_path))
+    monkeypatch.setenv("SKEIN_CONFIG", str(config_path))
 
     result = main(
         [

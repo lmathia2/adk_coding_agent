@@ -150,12 +150,12 @@ def estimate_cost(counts: Mapping[str, int], pricing: ModelPricing) -> float:
 def pricing_from_env() -> dict[str, ModelPricing]:
     """Load a model-to-pricing map from JSON without embedding stale prices."""
 
-    raw = os.getenv("ADK_CODING_MODEL_PRICING_JSON", "").strip()
+    raw = os.getenv("SKEIN_MODEL_PRICING_JSON", "").strip()
     if not raw:
         return {}
     parsed = json.loads(raw)
     if not isinstance(parsed, dict):
-        raise ValueError("ADK_CODING_MODEL_PRICING_JSON must be a JSON object")
+        raise ValueError("SKEIN_MODEL_PRICING_JSON must be a JSON object")
     result: dict[str, ModelPricing] = {}
     for model, value in parsed.items():
         if not isinstance(value, dict):

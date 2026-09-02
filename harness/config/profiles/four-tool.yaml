@@ -1,13 +1,13 @@
 # Standard profile: stable four-tool coding worker with legacy local stores.
-# Safe optimizer-owned fields are discoverable with `adk-coding-agent tuning-export`.
+# Safe optimizer-owned fields are discoverable with `skein tuning-export`.
 # Safety, authority, topology, verification, persistence, and redaction stay fixed.
 schema_version: 1  # Composition schema, not an experiment parameter.
 
 app:
-  name: pi_inspired_adk_coding_agent  # Stable ADK application identity.
+  name: skein  # Stable ADK application identity.
 
 harness:
-  implementation: pi_coding_v1  # Closed factory key; topology is code-owned.
+  implementation: skein_v1  # Closed factory key; topology is code-owned.
   api_version: 1
   required_capabilities:  # Client/runtime compatibility contract.
     - streaming

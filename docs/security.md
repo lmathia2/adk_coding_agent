@@ -1,4 +1,4 @@
-# Security Model
+# Skein security model
 
 ## Scope
 
@@ -105,7 +105,7 @@ No additional network, destructive, publication or Git mutation permission is en
 `nb-cli` is an operator/inspection surface, not an alternate execution authority.
 Local `nb read --no-output`, `nb search`, and `nb status` are classified as inspection.
 Remote server/token flags, `nb execute`, notebook mutation, and unrecognized `nb`
-subcommands remain approval-gated. The supported `adk-coding-agent notebook` command
+subcommands remain approval-gated. The supported `skein notebook` command
 passes an argument vector without a shell and never executes notebook cells.
 
 ### Indexed-search branch

@@ -1301,7 +1301,7 @@ speculatively.
 The implemented operator path is:
 
 ```bash
-adk-coding-agent notebook --state-root STATE_ROOT [--task-id TASK_ID] [--cell-index N]
+skein notebook --state-root STATE_ROOT [--task-id TASK_ID] [--cell-index N]
 ```
 
 Without a task ID it lists materialized notebooks. With a task ID it first rebuilds

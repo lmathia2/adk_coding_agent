@@ -289,8 +289,8 @@ class SkillConfig(FrozenModel):
     additional_roots: tuple[Path, ...] = ()
 
 
-class PiCodingConfig(FrozenModel):
-    """Typed behavior payload owned by the pi_coding_v1 implementation."""
+class SkeinConfig(FrozenModel):
+    """Typed behavior payload owned by the skein_v1 implementation."""
 
     models: dict[str, ModelConfig]
     agents: dict[str, AgentConfig]
@@ -307,15 +307,15 @@ class PiCodingConfig(FrozenModel):
     skills: SkillConfig = SkillConfig()
 
     @model_validator(mode="after")
-    def validate_references(self) -> PiCodingConfig:
+    def validate_references(self) -> SkeinConfig:
         for name, agent in self.agents.items():
             if agent.model not in self.models:
                 raise ValueError(f"agent {name!r} references unknown model {agent.model!r}")
         if set(self.agents) != {"coding_worker"}:
-            raise ValueError("pi_coding_v1 accepts only coding_worker")
+            raise ValueError("skein_v1 accepts only coding_worker")
         referenced_models = {agent.model for agent in self.agents.values()}
         if set(self.models) != referenced_models:
-            raise ValueError("pi_coding_v1 model entries must be referenced by a configured agent")
+            raise ValueError("skein_v1 model entries must be referenced by a configured agent")
         return self
 
 
@@ -438,12 +438,12 @@ __all__ = [
     "HarnessSelectionConfig",
     "ModelConfig",
     "NotebookPtcConfig",
-    "PiCodingConfig",
     "ProgressConfig",
     "RuntimeBindings",
     "SandboxConfig",
     "SecretRef",
     "ServerConfig",
+    "SkeinConfig",
     "ToolSurfaceConfig",
     "WorkflowConfig",
 ]

@@ -3,7 +3,7 @@ set -eu
 
 usage() {
   cat <<'EOF'
-Install ADK Coding Agent and its Pi-style terminal from this checkout.
+Install Skein and its Pi-style terminal from this checkout.
 
 Usage: ./install.sh [options]
   --bin-dir DIR  Command links (default: ~/.local/bin)
@@ -48,7 +48,7 @@ if [ "$print_plan" -eq 1 ]; then
     "  Python environment: $venv_path" \
     '  Environment policy: remove and recreate on every installation' \
     "  Pi-style terminal: $include_tui" "  Development tools: $include_dev" \
-    "  Command directory: $bin_dir" "  Runtime launcher: $bin_dir/adk-agent-start" \
+    "  Command directory: $bin_dir" "  Runtime launcher: $bin_dir/skein-start" \
     '  Launch workspace: selected at runtime'
   exit 0
 fi
@@ -72,8 +72,8 @@ if [ "$include_tui" -eq 1 ]; then
   fi
 fi
 
-commands="adk-coding-agent adk-agent-start"
-[ "$include_tui" -eq 0 ] || commands="$commands adk-agent-tui"
+commands="skein skein-start"
+[ "$include_tui" -eq 0 ] || commands="$commands skein-tui"
 mkdir -p "$bin_dir"
 for name in $commands; do
   target=$bin_dir/$name
@@ -93,7 +93,7 @@ groups=--no-default-groups
 [ "$include_dev" -eq 0 ] || groups=--all-groups
 uv sync --project "$project_root" --locked "$groups"
 "$venv_path/bin/python" -c 'import fastapi, fff, google.adk, httpx, pydantic, uvicorn, yaml'
-for name in adk-coding-agent; do
+for name in skein; do
   [ -x "$venv_path/bin/$name" ] || die "missing installed command: $name"
 done
 if [ "$include_dev" -eq 1 ]; then
@@ -105,13 +105,13 @@ if [ "$include_tui" -eq 1 ]; then
   printf '%s\n' 'Installing locked terminal dependencies and building the Pi-style TUI'
   npm ci --ignore-scripts --prefix "$project_root/clients/terminal"
   npm run build --prefix "$project_root/clients/terminal"
-  [ -x "$project_root/clients/terminal/adk-agent-tui" ] || die 'missing terminal launcher'
+  [ -x "$project_root/clients/terminal/skein-tui" ] || die 'missing terminal launcher'
 fi
 
 for name in $commands; do
   source=$venv_path/bin/$name
-  [ "$name" != adk-agent-start ] || source=$project_root/start.sh
-  [ "$name" != adk-agent-tui ] || source=$project_root/clients/terminal/adk-agent-tui
+  [ "$name" != skein-start ] || source=$project_root/start.sh
+  [ "$name" != skein-tui ] || source=$project_root/clients/terminal/skein-tui
   temporary_link=$bin_dir/$name.tmp.$$
   trap 'rm -f "$temporary_link"' EXIT
   ln -s "$source" "$temporary_link"
@@ -128,15 +128,15 @@ if [ "$include_tui" -eq 1 ]; then
   cat <<'EOF'
 
 Start server + TUI together (ChatGPT subscription):
-  adk-agent-start run --workspace /absolute/path/to/repository
+  skein-start run --workspace /absolute/path/to/repository
 
 Or use two terminals:
-  adk-agent-start server --workspace /absolute/path/to/repository
-  adk-agent-start tui
+  skein-start server --workspace /absolute/path/to/repository
+  skein-start tui
 
 Enter /login in the TUI if prompted, then /model to select a model.
 Only add --trust-project after reviewing the workspace's instructions and skills.
-State defaults to ~/.local/state/adk-coding-agent; the launcher announces all
+State defaults to ~/.local/state/skein; the launcher announces all
 paths and the token/environment handoff. No API key or local-model install is needed.
 EOF
 fi

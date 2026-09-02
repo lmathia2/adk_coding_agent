@@ -45,11 +45,11 @@ class RunPreparation:
 
 def _default_state_root(repository: Path) -> Path:
     digest = hashlib.sha256(repository.resolve().as_posix().encode()).hexdigest()[:16]
-    return Path.home() / ".cache" / "adk-coding-agent" / digest
+    return Path.home() / ".cache" / "skein" / digest
 
 
 def _default_shared_state_root() -> Path:
-    return Path.home() / ".local" / "state" / "adk-coding-agent"
+    return Path.home() / ".local" / "state" / "skein"
 
 
 def prepare_run(
@@ -69,11 +69,11 @@ def prepare_run(
     workspace = manager.create(task_id, base_ref=base_ref, branch=branch)
     project_root = (harness_root or Path(__file__).resolve().parents[1]).resolve()
     environment = {
-        "ADK_CODING_WORKSPACE": workspace.path.as_posix(),
-        "ADK_CODING_STATE_DIR": state.as_posix(),
-        "ADK_CODING_TASK_ID": task_id,
-        "ADK_CODING_BASE_REVISION": workspace.base_revision,
-        "ADK_CODING_WORKSPACE_ID": workspace.workspace_id,
+        "SKEIN_WORKSPACE": workspace.path.as_posix(),
+        "SKEIN_STATE_DIR": state.as_posix(),
+        "SKEIN_TASK_ID": task_id,
+        "SKEIN_BASE_REVISION": workspace.base_revision,
+        "SKEIN_WORKSPACE_ID": workspace.workspace_id,
     }
     return RunPreparation(
         workspace=workspace,
@@ -119,8 +119,8 @@ def _steering_record(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="adk-coding-agent",
-        description="Run the Pi-inspired ADK coding harness in an isolated Git worktree.",
+        prog="skein",
+        description="Run Skein in an isolated Git worktree.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -357,7 +357,7 @@ def _serve(args: argparse.Namespace) -> int:
         if args.state_root is not None
         else _default_state_root(workspace)
     )
-    configured_path = os.getenv("ADK_CODING_CONFIG", "").strip()
+    configured_path = os.getenv("SKEIN_CONFIG", "").strip()
     config_path = (
         args.config
         if args.config is not None
@@ -383,7 +383,7 @@ def _serve(args: argparse.Namespace) -> int:
                     "auth_token_source": (
                         assembly.auth_token_path.as_posix()
                         if assembly.auth_token_path is not None
-                        else "environment:ADK_CODING_AGENT_TOKEN"
+                        else "environment:SKEIN_TOKEN"
                     ),
                     "config_sha256": assembly.composition.composition_sha256,
                     "coding_model": (

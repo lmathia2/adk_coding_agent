@@ -54,7 +54,7 @@ export class RemoteSession {
     this.state.view.connected = false;
     socket.on("open", () => {
       if (this.stopped || this.socket !== socket) return;
-      this.send({type: "client.hello", protocol_versions: [1], client_name: "pi-adk-terminal"});
+      this.send({type: "client.hello", protocol_versions: [1], client_name: "skein-terminal"});
       this.helloTimer = setTimeout(() => socket.terminate(), 5_000);
     });
     socket.on("message", (data) => {

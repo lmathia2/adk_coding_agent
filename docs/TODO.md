@@ -1,4 +1,9 @@
-# Implementation TODO
+# Skein implementation TODO
+
+## Project identity
+
+- [x] Rename the distribution, CLI, launchers, runtime/config identity, environment
+  prefix, documentation, terminal labels, and repository to Skein; document the name.
 
 ## Optimization-facing behavior configuration
 

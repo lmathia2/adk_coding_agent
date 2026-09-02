@@ -84,7 +84,7 @@ def test_catalog_compatibility_version_can_be_overridden_without_changing_identi
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.params["client_version"] == "0.150.0"
         assert request.headers["version"] == "0.150.0"
-        assert request.headers["originator"] == "adk-coding-agent"
+        assert request.headers["originator"] == "skein"
         return httpx.Response(200, json={"models": [{"slug": "fixture", "supported_in_api": True}]})
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         assert discover_codex_models(_manager(tmp_path), client=client, client_version="0.150.0")[0].id == "fixture"

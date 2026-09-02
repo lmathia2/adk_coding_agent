@@ -18,12 +18,12 @@ from harness.tracing import (
 def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> None:
     pytest.importorskip("google.adk")
     assert version("google-adk").split(".")[:2] == ["2", "7"]
-    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
 
     module = importlib.import_module("app.agent")
 
-    assert module.app.name == "pi_inspired_adk_coding_agent"
+    assert module.app.name == "skein"
     assert module.root_agent.name == "coding_harness"
     assert module.app.root_agent is module.root_agent
     application = importlib.import_module("app.agent.application")
@@ -94,10 +94,10 @@ def test_agents_cli_uses_yaml_behavior_and_runtime_environment(monkeypatch, tmp_
     payload["harness"]["config"]["context"]["skill_context_bytes"] = 12000
     path = tmp_path / "harness.yaml"
     path.write_text(yaml.safe_dump(payload))
-    monkeypatch.setenv("ADK_CODING_CONFIG", str(path))
-    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("ADK_CODING_TRUST_PROJECT", "1")
+    monkeypatch.setenv("SKEIN_CONFIG", str(path))
+    monkeypatch.setenv("SKEIN_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_TRUST_PROJECT", "1")
     settings = config.load_settings()
     assert settings.skill_context_bytes == 12000
     assert settings.project_trusted
@@ -107,8 +107,8 @@ def test_agents_cli_uses_yaml_behavior_and_runtime_environment(monkeypatch, tmp_
 
 def test_removed_environment_behavior_fails_with_migration_guidance(monkeypatch, tmp_path) -> None:
     config = importlib.import_module("app.agent.config")
-    monkeypatch.setenv("ADK_CODING_MODEL", "ignored-before-cleanup")
-    with pytest.raises(ValueError, match="ADK_CODING_CONFIG YAML"):
+    monkeypatch.setenv("SKEIN_MODEL", "ignored-before-cleanup")
+    with pytest.raises(ValueError, match="SKEIN_CONFIG YAML"):
         config.runtime_bindings_from_env(tmp_path)
 
 
@@ -151,9 +151,9 @@ def test_skill_root_symlink_is_preserved_for_registry_validation(
     (workspace / ".agents").mkdir(parents=True)
     external.mkdir()
     (workspace / ".agents" / "skills").symlink_to(external, target_is_directory=True)
-    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(workspace))
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("ADK_CODING_TRUST_PROJECT", "1")
+    monkeypatch.setenv("SKEIN_WORKSPACE", str(workspace))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SKEIN_TRUST_PROJECT", "1")
 
     settings = config.load_settings()
 
@@ -169,9 +169,9 @@ def test_legacy_settings_do_not_load_project_instructions_without_trust(
         "UNTRUSTED PROJECT INSTRUCTION",
         encoding="utf-8",
     )
-    monkeypatch.setenv("ADK_CODING_WORKSPACE", str(tmp_path))
-    monkeypatch.setenv("ADK_CODING_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.delenv("ADK_CODING_TRUST_PROJECT", raising=False)
+    monkeypatch.setenv("SKEIN_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("SKEIN_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("SKEIN_TRUST_PROJECT", raising=False)
 
     settings = config.load_settings()
 

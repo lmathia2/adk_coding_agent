@@ -27,9 +27,9 @@ from harness.ai import AdkModelProvider, AdkModelProviderRegistry
 from harness.config import (
     HarnessComposition,
     ModelConfig,
-    PiCodingConfig,
     RuntimeBindings,
     SecretRef,
+    SkeinConfig,
     load_harness_composition,
 )
 
@@ -105,8 +105,8 @@ class _HarnessFactory:
         return self._descriptor
 
     @property
-    def config_model(self) -> type[PiCodingConfig]:
-        return PiCodingConfig
+    def config_model(self) -> type[SkeinConfig]:
+        return SkeinConfig
 
     def build(
         self,
@@ -115,7 +115,7 @@ class _HarnessFactory:
     ) -> AdkHarnessAssembly:
         assert bindings.workspace.is_absolute()
         config = composition.harness.config
-        assert isinstance(config, PiCodingConfig)
+        assert isinstance(config, SkeinConfig)
         root_agent = LlmAgent(
             name="test_coding_agent",
             model=config.models["coding"].name,
@@ -136,7 +136,7 @@ def _descriptor(
     api_version: int = 1,
 ) -> HarnessDescriptor:
     return HarnessDescriptor(
-        implementation="pi_coding_v1",
+        implementation="skein_v1",
         api_version=api_version,
         display_name="Test coding harness",
         capabilities=capabilities
@@ -183,7 +183,7 @@ def test_harness_registry_builds_an_adk_app_assembly(tmp_path: Path) -> None:
     assert isinstance(assembly, AdkHarnessAssembly)
     assert isinstance(assembly.app, App)
     assert assembly.descriptor == descriptor
-    assert registry.available() == ("pi_coding_v1",)
+    assert registry.available() == ("skein_v1",)
 
 
 def test_harness_registry_rejects_missing_required_capability(tmp_path: Path) -> None:
