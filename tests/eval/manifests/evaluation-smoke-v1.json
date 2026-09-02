@@ -1,0 +1,179 @@
+{
+  "exclusions": [],
+  "frozen": true,
+  "manifest_sha256": "e98edf6bbfac5cec7713ed5a8e7202140bf872c0f2be35f8194fa4d21b5581d3",
+  "name": "evaluation-smoke-v1",
+  "schema_version": "skein-evaluation-manifest-v1",
+  "score": {
+    "benchmark_aggregation": "task_mean",
+    "benchmark_weights": {
+      "deep_swe": 0.3333333333333333,
+      "swe_atlas_qna": 0.3333333333333333,
+      "terminal_bench": 0.3333333333333333
+    },
+    "composite_aggregation": "equal_weight_mean",
+    "official_reward": "binary",
+    "task_attempt_aggregation": "mean"
+  },
+  "seed": "skein-fixed-intelligence-2026-v1",
+  "sources": {
+    "deep_swe": {
+      "expected_tasks": 113,
+      "harbor_dataset": "datacurve/deep-swe-1-1",
+      "metadata_url": "https://deepswe.datacurve.ai/artifacts/v1.1/tasks.json",
+      "version": "1.1"
+    },
+    "swe_atlas_qna": {
+      "expected_tasks": 124,
+      "harbor_dataset": "scale-ai/swe-atlas-qna",
+      "metadata_url": null,
+      "version": "1.0"
+    },
+    "terminal_bench": {
+      "expected_tasks": 89,
+      "harbor_dataset": "terminal-bench/terminal-bench-2-1",
+      "metadata_url": null,
+      "version": "2.1"
+    }
+  },
+  "tasks": [
+    {
+      "artifact_sha256": "11e8bcc74ae78928040965b2f03dddf7d2c8ff9480e96b268cae47455693f0cd",
+      "benchmark": "deep_swe",
+      "category": "feature_request",
+      "difficulty": "medium",
+      "expected_runtime_seconds": 5400,
+      "harbor_task": "datacurve/textual-kitty-key-phases",
+      "internet_policy": "allowed",
+      "language": "python",
+      "published_pass_rate": 0.38846153846153847,
+      "repository": "https://github.com/Textualize/textual",
+      "resources": {
+        "cpus": 2,
+        "gpus": 0,
+        "memory_mb": 8192,
+        "storage_mb": 20480
+      },
+      "selection_rank": "01eabfc0ed6a140a6e1bd2b7b97c4da636c1bf36fc43d3b8348f2d7ecb1c01ce",
+      "selection_tags": [],
+      "task_id": "textual-kitty-key-phases",
+      "verifier_contract": "binary_behavioral",
+      "verifier_isolated": true
+    },
+    {
+      "artifact_sha256": "6126d0dc5baef7a87464886cdfe546e5b2f310e818f495ac2ee12982ad5afb5e",
+      "benchmark": "deep_swe",
+      "category": "feature_request",
+      "difficulty": "easy",
+      "expected_runtime_seconds": 5400,
+      "harbor_task": "datacurve/wazero-multi-module-snapshots",
+      "internet_policy": "allowed",
+      "language": "go",
+      "published_pass_rate": 0.8255813953488372,
+      "repository": "https://github.com/wazero/wazero.git",
+      "resources": {
+        "cpus": 2,
+        "gpus": 0,
+        "memory_mb": 8192,
+        "storage_mb": 20480
+      },
+      "selection_rank": "01a3e785ac7f45f81942164af8c674777c79306535fd21af96f6187c869b68f9",
+      "selection_tags": [],
+      "task_id": "wazero-multi-module-snapshots",
+      "verifier_contract": "binary_behavioral",
+      "verifier_isolated": true
+    },
+    {
+      "artifact_sha256": "587fee0d74dfb2acff073c741a2cfd6c52de9f6c804b982c2d29bbd893b0d5b6",
+      "benchmark": "swe_atlas_qna",
+      "category": "Security",
+      "difficulty": null,
+      "expected_runtime_seconds": 10800,
+      "harbor_task": "scale-ai/task-6905333b74f22949d97ba9be",
+      "internet_policy": "allowed",
+      "language": "go",
+      "published_pass_rate": null,
+      "repository": "foxcpp/maddy",
+      "resources": {
+        "cpus": 16,
+        "gpus": 0,
+        "memory_mb": 16384,
+        "storage_mb": 20480
+      },
+      "selection_rank": "024e8b34dc3f3ab730546425f0f0bc1c7ce70716939d4d7b08a1a9559a39cf48",
+      "selection_tags": [],
+      "task_id": "task-6905333b74f22949d97ba9be",
+      "verifier_contract": "all_rubric_items_and_clean_source",
+      "verifier_isolated": true
+    },
+    {
+      "artifact_sha256": "17f5cd8b5e54064309a0b72c8442fa7d10c32a26486e8b9fdd2199e97e29406d",
+      "benchmark": "swe_atlas_qna",
+      "category": "Architecture & system design",
+      "difficulty": null,
+      "expected_runtime_seconds": 10800,
+      "harbor_task": "scale-ai/task-6905333b74f22949d97ba9fa",
+      "internet_policy": "allowed",
+      "language": "c",
+      "published_pass_rate": null,
+      "repository": "kovidgoyal/kitty",
+      "resources": {
+        "cpus": 16,
+        "gpus": 0,
+        "memory_mb": 16384,
+        "storage_mb": 20480
+      },
+      "selection_rank": "06e9e9636e938b5822c75f4768f5c6deab469d699a98d627c768dd6d37702383",
+      "selection_tags": [],
+      "task_id": "task-6905333b74f22949d97ba9fa",
+      "verifier_contract": "all_rubric_items_and_clean_source",
+      "verifier_isolated": true
+    },
+    {
+      "artifact_sha256": "67a9952aca67df9c70510acf62faea336644a0e9d379f3aaf9df79f14c8fcb12",
+      "benchmark": "terminal_bench",
+      "category": "scientific-computing",
+      "difficulty": "medium",
+      "expected_runtime_seconds": 600,
+      "harbor_task": "terminal-bench/modernize-scientific-stack",
+      "internet_policy": "allowed",
+      "language": null,
+      "published_pass_rate": null,
+      "repository": null,
+      "resources": {
+        "cpus": 1,
+        "gpus": 0,
+        "memory_mb": 2048,
+        "storage_mb": 10240
+      },
+      "selection_rank": "1f783bb2a7f4b5aa285c72fd6a8425170e6a80b7f96365d4daec09c545aad710",
+      "selection_tags": [],
+      "task_id": "modernize-scientific-stack",
+      "verifier_contract": "binary_terminal_state",
+      "verifier_isolated": true
+    },
+    {
+      "artifact_sha256": "3c3b16e4b2de5fea90ca98db242b155a6843f9cc4dfd00be3479985a34bab4f7",
+      "benchmark": "terminal_bench",
+      "category": "debugging",
+      "difficulty": "easy",
+      "expected_runtime_seconds": 750,
+      "harbor_task": "terminal-bench/overfull-hbox",
+      "internet_policy": "allowed",
+      "language": null,
+      "published_pass_rate": null,
+      "repository": null,
+      "resources": {
+        "cpus": 2,
+        "gpus": 0,
+        "memory_mb": 4096,
+        "storage_mb": 10240
+      },
+      "selection_rank": "67b737fcaf883e7055ac8db796e3fb9fd753d179c5295662f77c21fd58e0d30d",
+      "selection_tags": [],
+      "task_id": "overfull-hbox",
+      "verifier_contract": "binary_terminal_state",
+      "verifier_isolated": true
+    }
+  ]
+}
