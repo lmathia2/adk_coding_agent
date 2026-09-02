@@ -43,6 +43,8 @@ For Harbor/Pier benchmark execution, use the pinned host-side external-agent
 adapter and commands in [evaluation-harbor.md](evaluation-harbor.md).
 The selected task sets, immutable hashes, and equal-weight score contract are
 defined in [evaluation-manifests.md](evaluation-manifests.md).
+The fixed-model freeze, sequential matrices, resume contract, and paired
+analysis commands are in [evaluation-experiments.md](evaluation-experiments.md).
 
 For one host-side trial, use the noninteractive runner. It reuses the server's
 production coordinator and writes a second copy of the single stdout result to

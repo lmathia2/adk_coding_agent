@@ -264,6 +264,30 @@ def _parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--trust-project", action="store_true")
     evaluate.add_argument("prompt")
 
+    eval_plan = subparsers.add_parser(
+        "eval-plan",
+        help="Build a deterministic fixed-intelligence trial matrix",
+    )
+    eval_plan.add_argument("--experiment", type=Path, required=True)
+    eval_plan.add_argument("--output", type=Path)
+    eval_plan.add_argument("--require-live-ready", action="store_true")
+
+    eval_analyze = subparsers.add_parser(
+        "eval-analyze",
+        help="Reproduce paired benchmark analysis from a completed trial ledger",
+    )
+    eval_analyze.add_argument("--matrix", type=Path, required=True)
+    eval_analyze.add_argument("--results", type=Path, required=True)
+    eval_analyze.add_argument("--bootstrap-samples", type=int, default=10_000)
+    eval_analyze.add_argument("--output", type=Path)
+
+    eval_next = subparsers.add_parser(
+        "eval-next",
+        help="Print argv for the next incomplete trial in a frozen matrix",
+    )
+    eval_next.add_argument("--matrix", type=Path, required=True)
+    eval_next.add_argument("--results", type=Path, required=True)
+
     codex_serve = subparsers.add_parser(
         "serve-codex",
         help="Serve the harness with a ChatGPT subscription Codex model",
@@ -554,6 +578,79 @@ def _eval_run(args: argparse.Namespace) -> int:
     return result.exit_code
 
 
+def _eval_plan(args: argparse.Namespace) -> int:
+    from harness.evals.experiments import build_matrix_from_file
+
+    matrix = build_matrix_from_file(args.experiment.expanduser().resolve())
+    rendered = matrix.model_dump_json(indent=2) + "\n"
+    if args.output is not None:
+        destination = args.output.expanduser().resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
+    if args.require_live_ready and not matrix.live_ready:
+        return 2
+    return 0
+
+
+def _eval_analyze(args: argparse.Namespace) -> int:
+    from harness.evals.experiments import (
+        ExperimentMatrix,
+        analyze_trials,
+        load_trial_records,
+    )
+
+    if args.bootstrap_samples < 100:
+        print("error: --bootstrap-samples must be at least 100", file=sys.stderr)
+        return 2
+    matrix = ExperimentMatrix.model_validate_json(
+        args.matrix.expanduser().resolve().read_text(encoding="utf-8")
+    )
+    records = load_trial_records(args.results.expanduser().resolve())
+    analysis = analyze_trials(matrix, records, bootstrap_samples=args.bootstrap_samples)
+    rendered = analysis.model_dump_json(indent=2) + "\n"
+    if args.output is not None:
+        destination = args.output.expanduser().resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
+    return 0
+
+
+def _eval_next(args: argparse.Namespace) -> int:
+    from harness.evals.experiments import (
+        ExperimentMatrix,
+        harbor_command,
+        load_trial_records,
+        next_assignment,
+    )
+
+    matrix = ExperimentMatrix.model_validate_json(
+        args.matrix.expanduser().resolve().read_text(encoding="utf-8")
+    )
+    if not matrix.live_ready:
+        print(json.dumps({"blockers": matrix.blockers, "live_ready": False}, indent=2))
+        return 2
+    results = args.results.expanduser().resolve()
+    records = load_trial_records(results) if results.exists() else ()
+    assignment = next_assignment(matrix, records)
+    if assignment is None:
+        print(json.dumps({"complete": True, "experiment": matrix.experiment}, indent=2))
+        return 0
+    print(
+        json.dumps(
+            {
+                "assignment": assignment.model_dump(mode="json"),
+                "argv": harbor_command(assignment, matrix.model),
+                "complete": False,
+            },
+            sort_keys=True,
+            indent=2,
+        )
+    )
+    return 0
+
+
 def _codex_command(args: argparse.Namespace) -> int:
     import time
 
@@ -749,6 +846,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _serve_codex(args)
     if args.command == "eval-run":
         return _eval_run(args)
+    if args.command == "eval-plan":
+        return _eval_plan(args)
+    if args.command == "eval-analyze":
+        return _eval_analyze(args)
+    if args.command == "eval-next":
+        return _eval_next(args)
     if args.command == "codex":
         return _codex_command(args)
     if args.command == "hello":
