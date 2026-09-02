@@ -1,14 +1,19 @@
 # Skein
 
-Skein is a trace-native coding agent built on Google ADK: programmatic tool calling,
-memory as programs, and only the scaffolding intelligence needs to act safely.
-One coding worker uses four tools by default: `read`, `bash`, `edit`, and `write`.
-The experimental local-only notebook PTC mode instead exposes one `python` tool;
-the launcher enables it with `--notebook-ptc` and YAML enables it with
-`harness.config.notebook_ptc.enabled: true`.
-Canonical memory is independently configurable: the dependency-free local profile uses
-JSONL and lexical views, while DuckDB and LanceDB remain optional accelerators.
-The server owns task state, steering, approval requests, and deterministic verification.
+<p align="center">
+  <img src="docs/assets/skein-logo.png" width="720" alt="Skein: threads of execution, woven memory, thought to action">
+</p>
+
+Skein is a trace-native coding agent built on Google ADK. Its defining notebook-PTC
+profile gives one coding worker one persistent `python` tool: intelligence writes
+programs, programs compose guarded capabilities, and every outcome becomes trace
+evidence. Versioned memory programs turn that evidence into bounded views; the harness
+stays minimal and keeps task state, approvals, policy, and verification deterministic.
+
+The four-tool profile (`read`, `bash`, `edit`, and `write`) remains the default comparison
+baseline until the pending ablation justifies changing it. Notebook PTC and canonical
+memory are enabled explicitly with `--notebook-ptc` or YAML; JSONL is dependency-free,
+while DuckDB and LanceDB remain optional accelerators.
 
 ## Why Skein
 
