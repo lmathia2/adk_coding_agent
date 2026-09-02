@@ -73,6 +73,21 @@ See `docs/design/pi-terminal-migration.md` for delivery gates.
 
 Each checked item is committed independently.
 
+## Fixed-intelligence benchmark evaluation
+
+- [x] Add a Harbor 0.22 host-side external agent that maps Skein's execution
+  boundaries into the task environment without copying provider credentials.
+- [x] Freeze deterministic 6/18/42/105-task DeepSWE 1.1, Terminal-Bench 2.1,
+  and SWE-Atlas-QnA manifests with immutable task hashes and equal-weight scoring.
+- [x] Add fail-closed experiment matrices, sequential task selection, official
+  Harbor reward import, idempotent result ledgers, and paired task-level analysis.
+- [ ] Install Docker or select another supported Harbor environment, then run all
+  selected official oracles; SWE-Atlas also requires its approved judge key.
+- [ ] Freeze the approved subscription account/workspace, Luna/max snapshot,
+  client version, and harness revisions after the authorization gate passes.
+- [ ] Run the six-task live adapter smoke, 18-task Skein ablation, 42-task
+  multi-harness pilot, and 105-task/two-attempt finalist confirmation in order.
+
 ## Historical delivery record
 
 The entries below describe earlier deliveries, not the supported feature inventory.

@@ -120,6 +120,10 @@ historical feature checklist or book-rubric score.
 - Gemini, Codex subscription, and direct OpenRouter OpenResponses adapters. The
   OpenRouter path keeps API keys out of serialized results, records exact
   provider-reported cost/cache usage, and exposes the concrete routed model.
+- A pinned Harbor 0.22 host-side adapter, immutable public benchmark manifests,
+  sequential fixed-intelligence matrices, official-reward import, and paired
+  analysis. These are locally verified evaluation infrastructure, not live scores;
+  Docker/oracle execution and the approved Luna/max credential remain pending.
 - Fresh uv checkout installation and default TUI build; no Magnitude requirement.
 
 ## Removed
