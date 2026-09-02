@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable, Mapping
 
 from google.adk.models import BaseLlm, Gemini
@@ -12,6 +13,7 @@ from harness.config import ModelConfig, RuntimeBindings, SecretRef
 from .codex_auth import CodexCredentialManager, CodexCredentialStore
 from .codex_responses import CodexResponsesLlm
 from .contracts import AdkModelProvider
+from .openrouter_responses import OpenRouterResponsesLlm
 
 
 class GoogleAdkModelProvider:
@@ -74,6 +76,39 @@ class OpenAiCodexModelProvider:
         )
 
 
+class OpenRouterModelProvider:
+    """Use OpenRouter through its fixed OpenResponses API endpoint."""
+
+    @property
+    def provider_id(self) -> str:
+        return "openrouter"
+
+    def build_model(
+        self,
+        config: ModelConfig,
+        *,
+        secrets: Mapping[str, SecretRef],
+        bindings: RuntimeBindings | None = None,
+    ) -> BaseLlm:
+        del bindings
+        secret = secrets.get("api_key") or config.api_key
+        if secret is None:
+            raise ValueError("openrouter requires an API key reference")
+        api_key = os.getenv(secret.env)
+        if not api_key:
+            raise ValueError(f"openrouter API key environment variable {secret.env!r} is unset")
+        retry = config.retry
+        return OpenRouterResponsesLlm(
+            model=config.name,
+            reasoning_effort=config.reasoning,
+            retry_attempts=retry.attempts,
+            retry_initial_delay_seconds=retry.initial_delay_seconds,
+            retry_exponential_base=retry.exponential_base,
+            retry_statuses=retry.retry_statuses,
+            api_key=api_key,
+        )
+
+
 class ClosedAdkModelProviderRegistry:
     """Deterministic provider registry; configuration cannot import arbitrary code."""
 
@@ -106,6 +141,7 @@ def default_adk_model_provider_registry() -> ClosedAdkModelProviderRegistry:
         (
             GoogleAdkModelProvider(),
             OpenAiCodexModelProvider(),
+            OpenRouterModelProvider(),
         )
     )
 
@@ -114,5 +150,6 @@ __all__ = [
     "ClosedAdkModelProviderRegistry",
     "GoogleAdkModelProvider",
     "OpenAiCodexModelProvider",
+    "OpenRouterModelProvider",
     "default_adk_model_provider_registry",
 ]

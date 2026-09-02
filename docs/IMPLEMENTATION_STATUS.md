@@ -117,7 +117,9 @@ historical feature checklist or book-rubric score.
 - Plain-language turns support a distinct `answered` outcome without inventing a
   coding task. Direct answers permit no managed shell/write/edit action and no
   explicit verification obligation; coding results still route through verification.
-- Gemini and Codex subscription adapters.
+- Gemini, Codex subscription, and direct OpenRouter OpenResponses adapters. The
+  OpenRouter path keeps API keys out of serialized results, records exact
+  provider-reported cost/cache usage, and exposes the concrete routed model.
 - Fresh uv checkout installation and default TUI build; no Magnitude requirement.
 
 ## Removed

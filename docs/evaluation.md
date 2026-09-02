@@ -57,6 +57,30 @@ skein eval-run \
 Keep `--auth-state-root` on the trusted host and outside the fresh trial state.
 The command never copies credentials into the workspace or its result artifacts.
 
+For a fixed-model OpenRouter trial, keep the API key on the host and reference only
+its environment-variable name:
+
+```bash
+# Load OPENROUTER_API_KEY through your shell's secret manager first.
+export OPENROUTER_API_KEY
+skein eval-run \
+  --workspace /path/to/clean/task-repository \
+  --state-root /path/to/fresh/trial-state \
+  --task-id smoke-001 \
+  --provider openrouter \
+  --model meta/muse-spark-1.2-contributor \
+  --reasoning xhigh \
+  --wall-time-seconds 900 \
+  "Fix the task and verify the result."
+```
+
+The contributor endpoint permits Meta to use prompts and outputs to improve its
+products. Use it only for public benchmark repositories and non-sensitive fixtures.
+The adapter requests OpenRouter routing metadata and persists only allowlisted model,
+provider, region, attempt, token, cache, and cost fields. Dynamic routers such as
+`openrouter/pareto-code` are a separate system-level treatment, not a fixed-intelligence
+harness comparison.
+
 ### Subscription automation authorization gate
 
 Status on 2026-09-01: **blocked pending an authorized authentication path**.

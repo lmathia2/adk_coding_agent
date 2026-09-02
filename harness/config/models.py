@@ -92,6 +92,12 @@ class ModelConfig(FrozenModel):
                 "openai_codex uses the fixed ChatGPT subscription endpoint and cannot "
                 "define base_url or api_key"
             )
+        elif self.provider == "openrouter" and (
+            self.base_url is not None or self.api_key is None
+        ):
+            raise ValueError(
+                "openrouter uses its fixed API endpoint and requires an api_key reference"
+            )
         elif self.provider != "openai_codex" and self.client_version is not None:
             raise ValueError("client_version is supported only by openai_codex")
         return self

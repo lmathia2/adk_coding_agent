@@ -235,6 +235,8 @@ class _ResponseAccumulator:
     reasoning_items: dict[str, bytes] = field(default_factory=dict)
     usage: types.GenerateContentResponseUsageMetadata | None = None
     response_id: str | None = None
+    model_version: str | None = None
+    custom_metadata: dict[str, Any] = field(default_factory=dict)
     completed: bool = False
 
     def consume(self, event: Mapping[str, Any]) -> types.Part | None:
@@ -259,7 +261,10 @@ class _ResponseAccumulator:
         if event_type == "response.completed":
             response = event.get("response")
             if isinstance(response, Mapping):
-                self._capture_response(response)
+                completed = dict(response)
+                if "openrouter_metadata" not in completed:
+                    completed["openrouter_metadata"] = event.get("openrouter_metadata")
+                self._capture_response(completed)
             self.completed = True
         if event_type in {"response.failed", "response.incomplete", "error"}:
             error = event.get("error") or event.get("response") or event
@@ -282,6 +287,40 @@ class _ResponseAccumulator:
         response_id = response.get("id")
         if isinstance(response_id, str):
             self.response_id = response_id
+        model = response.get("model")
+        if isinstance(model, str):
+            self.model_version = model
+        usage = response.get("usage")
+        if isinstance(usage, Mapping):
+            cost = usage.get("cost")
+            if isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost >= 0:
+                self.custom_metadata["provider_cost_usd"] = float(cost)
+        router = response.get("openrouter_metadata")
+        if isinstance(router, Mapping):
+            for source, target in (
+                ("requested", "requested_model"),
+                ("strategy", "routing_strategy"),
+                ("region", "routing_region"),
+                ("attempt", "routing_attempt"),
+            ):
+                value = router.get(source)
+                if isinstance(value, (str, int)) and not isinstance(value, bool):
+                    self.custom_metadata[target] = value
+            endpoints = router.get("endpoints")
+            available = endpoints.get("available") if isinstance(endpoints, Mapping) else None
+            if isinstance(available, list):
+                selected = next(
+                    (
+                        endpoint
+                        for endpoint in available
+                        if isinstance(endpoint, Mapping) and endpoint.get("selected") is True
+                    ),
+                    None,
+                )
+                if isinstance(selected, Mapping):
+                    provider = selected.get("provider")
+                    if isinstance(provider, str):
+                        self.custom_metadata["provider_name"] = provider
         output = response.get("output")
         if isinstance(output, list):
             for item in output:
@@ -313,8 +352,9 @@ class _ResponseAccumulator:
             turn_complete=True,
             finish_reason=types.FinishReason.STOP,
             usage_metadata=self.usage,
-            model_version=model,
+            model_version=self.model_version or model,
             interaction_id=self.response_id,
+            custom_metadata=self.custom_metadata or None,
         )
 
 

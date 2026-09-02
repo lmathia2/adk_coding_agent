@@ -147,6 +147,20 @@ def estimate_cost(counts: Mapping[str, int], pricing: ModelPricing) -> float:
     return max(total / 1_000_000, 0.0)
 
 
+def reported_cost(response: Any) -> float | None:
+    """Return an exact provider-reported USD cost when an adapter supplies one."""
+
+    metadata = _attribute(response, "custom_metadata", "customMetadata")
+    value = _attribute(metadata, "provider_cost_usd")
+    if isinstance(value, bool):
+        return None
+    try:
+        cost = float(value)
+    except (TypeError, ValueError):
+        return None
+    return cost if cost >= 0 else None
+
+
 def pricing_from_env() -> dict[str, ModelPricing]:
     """Load a model-to-pricing map from JSON without embedding stale prices."""
 
@@ -440,8 +454,12 @@ class HarnessMetricsPlugin(BasePlugin):
             prefix_hash = pending.static_prefix_hash
             prefix_tokens = pending.static_prefix_tokens
             dynamic_tokens = pending.dynamic_suffix_tokens
+        response_model = _attribute(llm_response, "model_version", "modelVersion")
+        if response_model:
+            model = str(response_model)
         counts = usage_counts(llm_response)
         pricing = self.pricing.get(model, ModelPricing())
+        exact_cost = reported_cost(llm_response)
         self.store.record_model_usage(
             ModelUsageSample(
                 task_id=task_id,
@@ -455,7 +473,7 @@ class HarnessMetricsPlugin(BasePlugin):
                 cache_read_tokens=counts["cache_read_tokens"],
                 cache_write_tokens=counts["cache_write_tokens"],
                 reasoning_tokens=counts["reasoning_tokens"],
-                cost_usd=estimate_cost(counts, pricing),
+                cost_usd=(exact_cost if exact_cost is not None else estimate_cost(counts, pricing)),
                 latency_ms=max(int((time.monotonic() - started) * 1_000), 0),
             )
         )
@@ -541,5 +559,6 @@ __all__ = [
     "ModelPricing",
     "estimate_cost",
     "pricing_from_env",
+    "reported_cost",
     "usage_counts",
 ]

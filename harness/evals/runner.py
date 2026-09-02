@@ -47,8 +47,13 @@ class EvaluationRunRequest(BaseModel):
     auth_state_root: Path
     task_id: str = Field(min_length=1, max_length=256)
     prompt: str = Field(min_length=1, max_length=50_000)
+    provider: Literal["openai_codex", "openrouter"] = "openai_codex"
     model: str = Field(min_length=1, max_length=128)
     reasoning: ReasoningEffort
+    api_key_env: str | None = Field(
+        default=None,
+        pattern=r"^[A-Z][A-Z0-9_]{1,127}$",
+    )
     config_template: Path = DEFAULT_COMPOSITION_PATH
     client_version: str | None = None
     max_iterations: int | None = Field(default=None, ge=1, le=1_000)
@@ -169,11 +174,13 @@ def prepare_evaluation_config(request: EvaluationRunRequest) -> tuple[Path, Harn
     coding_model_key = agents["coding_worker"]["model"]
     retry = models[coding_model_key]["retry"]
     selected: dict[str, object] = {
-        "provider": "openai_codex",
+        "provider": request.provider,
         "name": request.model,
         "reasoning": request.reasoning,
         "retry": retry,
     }
+    if request.provider == "openrouter":
+        selected["api_key"] = {"env": request.api_key_env or "OPENROUTER_API_KEY"}
     if request.client_version is not None:
         selected["client_version"] = request.client_version
     models[coding_model_key] = selected
@@ -409,7 +416,7 @@ async def run_evaluation(request: EvaluationRunRequest) -> EvaluationRunResult:
         pricing = pricing_from_env()
         api_cost = (
             float(metrics.get("cost_usd", 0.0) or 0.0)
-            if request.model in pricing
+            if request.provider == "openrouter" or request.model in pricing
             else None
         )
         safe_error = redactor.redact_text(error_message) if error_message else None

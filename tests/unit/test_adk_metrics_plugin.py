@@ -31,6 +31,8 @@ class _Usage:
 class _Response:
     usage_metadata: _Usage
     partial: bool | None = None
+    model_version: str | None = None
+    custom_metadata: dict[str, Any] | None = None
 
 
 @dataclass
@@ -105,6 +107,39 @@ def test_plugin_records_one_model_call(tmp_path) -> None:
     assert summary["input_tokens"] == 1_000
     assert summary["cache_read_tokens"] == 800
     assert summary["prefix_versions"] == 1
+
+
+def test_plugin_prefers_provider_reported_cost_and_concrete_model(tmp_path) -> None:
+    database = tmp_path / "metrics.db"
+    plugin = HarnessMetricsPlugin(
+        database=database,
+        static_prefix_hash="prefix",
+        static_prefix_tokens=500,
+        default_model="openrouter/pareto-code",
+        default_task_id="task-1",
+        pricing={"routed/model": ModelPricing(input=99.0)},
+    )
+    context = _Context()
+    asyncio.run(
+        plugin.before_model_callback(
+            callback_context=context,
+            llm_request=_Request(model="openrouter/pareto-code"),
+        )
+    )
+    asyncio.run(
+        plugin.after_model_callback(
+            callback_context=context,
+            llm_response=_Response(
+                usage_metadata=_Usage(),
+                model_version="routed/model",
+                custom_metadata={"provider_cost_usd": 0.0123},
+            ),
+        )
+    )
+
+    with sqlite3.connect(database) as connection:
+        row = connection.execute("SELECT model, cost_usd FROM model_usage").fetchone()
+    assert row == ("routed/model", 0.0123)
 
 
 def test_plugin_captures_per_call_prefix_before_state_changes(tmp_path) -> None:

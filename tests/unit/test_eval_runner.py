@@ -51,6 +51,28 @@ def test_evaluation_config_pins_luna_max_without_auth_state(tmp_path: Path) -> N
     assert str(request.auth_state_root) not in path.read_text(encoding="utf-8")
 
 
+def test_evaluation_config_pins_openrouter_model_and_secret_reference(tmp_path: Path) -> None:
+    request = _request(tmp_path, tmp_path).model_copy(
+        update={
+            "provider": "openrouter",
+            "model": "meta/muse-spark-1.2-contributor",
+            "reasoning": "xhigh",
+            "api_key_env": "EVAL_OPENROUTER_KEY",
+        }
+    )
+
+    path, composition = runner.prepare_evaluation_config(request)
+    config = composition.harness.config
+    assert isinstance(config, SkeinConfig)
+    model = config.models[config.agents["coding_worker"].model]
+
+    assert model.provider == "openrouter"
+    assert model.name == "meta/muse-spark-1.2-contributor"
+    assert model.reasoning == "xhigh"
+    assert model.api_key is not None and model.api_key.env == "EVAL_OPENROUTER_KEY"
+    assert "EVAL_OPENROUTER_KEY" in path.read_text(encoding="utf-8")
+
+
 def test_evaluation_rejects_a_dirty_workspace_before_model_start(tmp_path: Path) -> None:
     request = _request(tmp_path, _repository(tmp_path / "repo", dirty=True))
 

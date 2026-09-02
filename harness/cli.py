@@ -241,6 +241,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Trusted host state containing the subscription credential",
     )
     evaluate.add_argument("--task-id", required=True)
+    evaluate.add_argument(
+        "--provider",
+        choices=("openai_codex", "openrouter"),
+        default="openai_codex",
+    )
     evaluate.add_argument("--model", default="gpt-5.6-luna")
     evaluate.add_argument(
         "--reasoning",
@@ -248,6 +253,10 @@ def _parser() -> argparse.ArgumentParser:
         default="max",
     )
     evaluate.add_argument("--client-version")
+    evaluate.add_argument(
+        "--api-key-env",
+        help="Environment variable containing the provider API key",
+    )
     evaluate.add_argument("--config", type=Path)
     evaluate.add_argument("--max-iterations", type=int)
     evaluate.add_argument("--max-task-input-tokens", type=int)
@@ -495,8 +504,10 @@ def _eval_run(args: argparse.Namespace) -> int:
             auth_state_root=args.auth_state_root,
             task_id=args.task_id,
             prompt=args.prompt,
+            provider=args.provider,
             model=args.model,
             reasoning=args.reasoning,
+            api_key_env=args.api_key_env,
             config_template=args.config or DEFAULT_COMPOSITION_PATH,
             client_version=args.client_version,
             max_iterations=args.max_iterations,

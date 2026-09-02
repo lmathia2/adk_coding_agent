@@ -270,8 +270,10 @@ Terminal 2:
 skein-start tui
 ```
 
-Built-in providers are native ADK/Gemini (`google_adk`) and Codex subscription
-(`openai_codex`). Gemini needs its normal ADK credentials.
+Built-in providers are native ADK/Gemini (`google_adk`), Codex subscription
+(`openai_codex`), and OpenRouter's OpenResponses API (`openrouter`). Gemini needs
+its normal ADK credentials; OpenRouter reads only the configured API-key environment
+variable and always uses OpenRouter's fixed HTTPS endpoint.
 The closed `HarnessFactory` and model-provider registries permit explicit
 Python extensions without changing the server protocol or TUI.
 

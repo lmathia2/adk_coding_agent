@@ -11,8 +11,11 @@ from harness.ai import (
     ClosedAdkModelProviderRegistry,
     GoogleAdkModelProvider,
     OpenAiCodexModelProvider,
+    OpenRouterModelProvider,
+    default_adk_model_provider_registry,
 )
 from harness.ai.codex_responses import CodexResponsesLlm
+from harness.ai.openrouter_responses import OpenRouterResponsesLlm
 from harness.config import (
     ModelConfig,
     RuntimeBindings,
@@ -63,6 +66,39 @@ def test_openai_codex_provider_uses_runtime_oauth_and_never_api_key(tmp_path: Pa
         )
 
 
+def test_openrouter_provider_resolves_only_its_declared_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-test-key")
+    config = ModelConfig(
+        provider="openrouter",
+        name="meta/muse-spark-1.2-contributor",
+        reasoning="xhigh",
+        api_key=SecretRef(env="OPENROUTER_API_KEY"),
+    )
+
+    model = OpenRouterModelProvider().build_model(
+        config,
+        secrets={"api_key": config.api_key},  # type: ignore[dict-item]
+    )
+
+    assert isinstance(model, OpenRouterResponsesLlm)
+    assert model.model == "meta/muse-spark-1.2-contributor"
+    assert model.reasoning_effort == "xhigh"
+
+
+def test_openrouter_provider_requires_a_key_and_fixed_endpoint() -> None:
+    with pytest.raises(ValidationError, match="requires an api_key"):
+        ModelConfig(provider="openrouter", name="meta/muse-spark-1.2-contributor")
+    with pytest.raises(ValidationError, match="fixed API endpoint"):
+        ModelConfig(
+            provider="openrouter",
+            name="meta/muse-spark-1.2-contributor",
+            base_url="https://example.com/v1",
+            api_key=SecretRef(env="OPENROUTER_API_KEY"),
+        )
+
+
 @pytest.mark.parametrize(
     "base_url",
     [
@@ -92,3 +128,9 @@ def test_provider_registry_is_closed_and_deterministic() -> None:
         registry.get("untrusted")
     with pytest.raises(ValueError, match="already registered"):
         registry.register(GoogleAdkModelProvider())
+
+    assert default_adk_model_provider_registry().available() == (
+        "google_adk",
+        "openai_codex",
+        "openrouter",
+    )

@@ -62,6 +62,14 @@ def test_eval_run_prints_and_persists_one_versioned_result(
             str(state),
             "--task-id",
             "smoke-read",
+            "--provider",
+            "openrouter",
+            "--model",
+            "meta/muse-spark-1.2-contributor",
+            "--reasoning",
+            "xhigh",
+            "--api-key-env",
+            "EVAL_OPENROUTER_KEY",
             "Inspect the fixture",
         ]
     )
@@ -71,8 +79,10 @@ def test_eval_run_prints_and_persists_one_versioned_result(
     assert len(lines) == 1
     assert json.loads(lines[0])["schema_version"] == "skein-eval-run-v1"
     assert json.loads((state / "evaluation" / "result.json").read_text()) == json.loads(lines[0])
-    assert observed[0].model == "gpt-5.6-luna"
-    assert observed[0].reasoning == "max"
+    assert observed[0].provider == "openrouter"
+    assert observed[0].model == "meta/muse-spark-1.2-contributor"
+    assert observed[0].reasoning == "xhigh"
+    assert observed[0].api_key_env == "EVAL_OPENROUTER_KEY"
 
 
 def test_prepare_run_sets_workspace_identity_environment(tmp_path: Path) -> None:

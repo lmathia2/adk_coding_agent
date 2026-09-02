@@ -5,6 +5,7 @@ from .providers import (
     ClosedAdkModelProviderRegistry,
     GoogleAdkModelProvider,
     OpenAiCodexModelProvider,
+    OpenRouterModelProvider,
     default_adk_model_provider_registry,
 )
 
@@ -14,5 +15,6 @@ __all__ = [
     "ClosedAdkModelProviderRegistry",
     "GoogleAdkModelProvider",
     "OpenAiCodexModelProvider",
+    "OpenRouterModelProvider",
     "default_adk_model_provider_registry",
 ]
