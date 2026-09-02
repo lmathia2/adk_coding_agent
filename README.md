@@ -4,24 +4,28 @@
   <img src="docs/assets/skein-logo.png" width="720" alt="Skein: threads of execution, woven memory, thought to action">
 </p>
 
-Skein is a trace-native coding agent built on Google ADK. Its defining notebook-PTC
-profile gives one coding worker one persistent `python` tool: intelligence writes
-programs, programs compose guarded capabilities, and every outcome becomes trace
-evidence. Versioned memory programs turn that evidence into bounded views; the harness
-stays minimal and keeps task state, approvals, policy, and verification deterministic.
+Skein is a trace-native coding agent built on Google ADK. It runs one coding worker
+inside a minimal deterministic harness for execution, memory, policy, and verification.
 
-The four-tool profile (`read`, `bash`, `edit`, and `write`) remains the default comparison
-baseline until the pending ablation justifies changing it. Notebook PTC and canonical
-memory are enabled explicitly with `--notebook-ptc` or YAML; JSONL is dependency-free,
-while DuckDB and LanceDB remain optional accelerators.
+## Key features
+
+- **One-tool PTC:** optional notebook mode exposes one persistent `python` tool that
+  composes guarded file, shell, CLI, and MCP capabilities.
+- **Memory as programs:** versioned programs derive bounded, reproducible views from
+  append-only traces; JSONL is dependency-free, with DuckDB and LanceDB optional.
+- **Replayable execution:** notebooks, events, receipts, approvals, steering, and
+  checkpoints preserve evidence across restarts.
+- **Verified completion:** task state, context budgets, safety policy, and verification
+  remain outside model control.
+
+The four-tool worker (`read`, `bash`, `edit`, and `write`) remains the default baseline;
+notebook PTC and canonical memory are opt-in.
 
 ## Why Skein
 
-**skein** (pronounced **“skayn.”** a loosely wound length of thread or yarn), provides the following features:
-- execution traces as continuous threads;
-- memory woven from programs;
-- one tool connecting thought to action;
-- a minimal harness that holds the thread without becoming the intelligence.
+A **skein** (pronounced **“skayn”**) is a loosely wound length of thread: execution
+traces are the threads, memory programs weave them, and the minimal harness connects
+thought to action.
 
 ## Quick start
 
