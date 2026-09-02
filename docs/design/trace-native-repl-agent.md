@@ -1,6 +1,6 @@
 # Trace-Native Notebook PTC Agent
 
-Status: proposed architecture with an experimental Phase 0 implementation
+Status: target architecture with an experimental opt-in local implementation
 
 Audience: harness, runtime, storage, safety, and evaluation implementers
 
@@ -8,7 +8,7 @@ Current implementation: the supported default remains the four-tool architecture
 described in `docs/architecture.md`. A disabled-by-default local-only Phase 0 now
 provides the persistent CPython worker, one-tool broker path, append-only lifecycle
 events, deterministic notebook materialization, rich-output artifacts, and safe-cell
-state restoration. The branch also contains a DuckDB canonical-ledger shadow writer
+state restoration. The implementation also contains a DuckDB canonical-ledger shadow writer
 for task events, receipts, checkpoints, approvals, steering, metrics, public/run
 events, redacted ADK session lifecycle, and traces; deterministic seeded views and
 receipt-bearing prompt manifests; a gated relational-program lifecycle; and registered
@@ -32,6 +32,10 @@ that canonical source. A separate explicit erasure path now
 physically removes exact task rows and recognized operational records, JSONL, notebooks,
 unshared artifacts, and manifested segments; automated retention policy remains an
 operator decision rather than an implicit runtime behavior.
+
+Standalone executable examples under `examples/notebooks/` demonstrate the
+three-authority PTC contract, cache-aware compaction, and versioned database memory
+programs with mocked events and standard-library Python.
 
 ## 1. Executive decision
 
@@ -974,6 +978,25 @@ On resume, the harness first computes `execution.open`, `workspace.state`, and
 `verification.state`. It reconciles operations marked safe to inspect or repeat.
 External or effect-unknown writes are not replayed automatically. The model receives
 the unresolved limitation and the safe next action.
+
+### 12.5 Tunable compaction strategies
+
+The default is a deterministic structured handoff plus a recent exact event tail.
+Alternative strategies are ablations, not interchangeable prose settings:
+
+| Strategy | Retained context | Compressed context | Cache consequence |
+|---|---|---|---|
+| Deterministic handoff | Recent event count | Ledger-derived task/progress/open/verification fields | Intentional dynamic epoch reset; P0 stays byte-stable |
+| Pi-style incremental | Provider-valid recent token tail | Previous summary plus only newly aged-out history; deterministic file lists | New epoch at compaction, then append-prefix reuse resumes |
+| Codex-style local/remote | Bounded selected message tail | Local continuation summary or provider compaction item | Provider-dependent epoch reset |
+| Trace-view recomputation | Recent raw events | Versioned cached views plus optional semantic capsule | View cache keys reuse `(program, version, watermark, arguments)` |
+
+Every strategy must preserve goal, acceptance criteria, done/in-progress/blocked work,
+limitations, unknown effects, validation evidence, workspace identity, exact next safe
+action, and source boundaries. Score strategies on pass rate, cost per passed task,
+uncached input, cache-read ratio, tool calls, wall time, resume correctness, and lost
+failure/open-work evidence. See
+`examples/notebooks/02_cache_aware_compaction.ipynb` for an executable mock.
 
 ## 13. Notebook workbench and persistent CPython
 

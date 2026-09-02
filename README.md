@@ -338,6 +338,11 @@ depth, not a production sandbox. See [the implementation TODO](docs/TODO.md) for
 authoritative checklist and [the current status](docs/IMPLEMENTATION_STATUS.md) for
 the supported boundary.
 
+The standalone [design notebooks](examples/notebooks/README.md) use mocked events to
+demonstrate PTC state restoration, structured cache-aware compaction, versioned memory
+programs, and byte-stable prompt assembly without provider credentials or optional
+database dependencies.
+
 ## Removed features
 
 The simplification removes Magnitude and LiteLLM, remote/Kubernetes command
