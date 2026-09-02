@@ -148,6 +148,7 @@ def build_server_assembly(
     *,
     workspace: Path,
     state_root: Path,
+    auth_state_root: Path | None = None,
     config_path: Path = DEFAULT_COMPOSITION_PATH,
     production: bool = False,
     trust_project: bool = False,
@@ -156,6 +157,11 @@ def build_server_assembly(
 
     resolved_workspace = workspace.expanduser().resolve()
     resolved_state_root = state_root.expanduser().resolve()
+    resolved_auth_state_root = (
+        auth_state_root.expanduser().resolve()
+        if auth_state_root is not None
+        else resolved_state_root
+    )
     resolved_config = config_path.expanduser().resolve()
     if not resolved_workspace.is_dir():
         raise ValueError(f"workspace is not a directory: {resolved_workspace}")
@@ -177,7 +183,7 @@ def build_server_assembly(
     bindings = RuntimeBindings(
         workspace=resolved_workspace,
         state_root=resolved_state_root,
-        auth_state_root=resolved_state_root,
+        auth_state_root=resolved_auth_state_root,
         configuration_root=resolved_config.parent,
         source_repository=resolved_workspace,
         project_trusted=trust_project,
@@ -188,9 +194,11 @@ def build_server_assembly(
         if memory is not None and memory.enabled
         else None
     )
+    known_secrets = discover_known_secrets()
     session_redactor = SecretRedactor(
-        known_secrets=discover_known_secrets(), redact_high_entropy_values=True
+        known_secrets=known_secrets, redact_high_entropy_values=True
     )
+    public_redactor = SecretRedactor(known_secrets=known_secrets)
     services = build_service_bundle(
         settings_from_composition(
             composition.persistence,
@@ -208,7 +216,7 @@ def build_server_assembly(
         else None,
     )
     coordinator = RunCoordinator(
-        provider_controls=LocalProviderControls(resolved_state_root),
+        provider_controls=LocalProviderControls(resolved_auth_state_root),
         store=SqliteRunEventStore(
             resolved_state_root / "server" / "runs.db",
             run_sink=(
@@ -232,9 +240,10 @@ def build_server_assembly(
             services=services,
             startup_coding_model_status=_startup_coding_model_status(
                 composition,
-                resolved_state_root,
+                resolved_auth_state_root,
             ),
         ),
+        redactor=public_redactor,
         liveness=RunLivenessPolicy(
             first_event_timeout=composition.server.first_event_timeout_seconds,
             idle_timeout=composition.server.idle_timeout_seconds,

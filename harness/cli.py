@@ -228,6 +228,33 @@ def _parser() -> argparse.ArgumentParser:
         help="Resolve and print server settings without starting the network listener",
     )
 
+    evaluate = subparsers.add_parser(
+        "eval-run",
+        help="Run one evaluation task and print one versioned JSON result",
+    )
+    evaluate.add_argument("--workspace", type=Path, required=True)
+    evaluate.add_argument("--state-root", type=Path, required=True)
+    evaluate.add_argument(
+        "--auth-state-root",
+        type=Path,
+        default=_default_shared_state_root(),
+        help="Trusted host state containing the subscription credential",
+    )
+    evaluate.add_argument("--task-id", required=True)
+    evaluate.add_argument("--model", default="gpt-5.6-luna")
+    evaluate.add_argument(
+        "--reasoning",
+        choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
+        default="max",
+    )
+    evaluate.add_argument("--client-version")
+    evaluate.add_argument("--config", type=Path)
+    evaluate.add_argument("--max-iterations", type=int)
+    evaluate.add_argument("--max-task-input-tokens", type=int)
+    evaluate.add_argument("--wall-time-seconds", type=float, default=1_800)
+    evaluate.add_argument("--trust-project", action="store_true")
+    evaluate.add_argument("prompt")
+
     codex_serve = subparsers.add_parser(
         "serve-codex",
         help="Serve the harness with a ChatGPT subscription Codex model",
@@ -449,6 +476,73 @@ def _serve_codex(args: argparse.Namespace) -> int:
     return _serve(args)
 
 
+def _eval_run(args: argparse.Namespace) -> int:
+    from harness.config import DEFAULT_COMPOSITION_PATH
+    from harness.evals.runner import (
+        EvaluationArtifacts,
+        EvaluationError,
+        EvaluationRunRequest,
+        EvaluationRunResult,
+        run_evaluation_sync,
+        write_evaluation_result,
+    )
+
+    state_root = args.state_root.expanduser().resolve()
+    try:
+        request = EvaluationRunRequest(
+            workspace=args.workspace,
+            state_root=state_root,
+            auth_state_root=args.auth_state_root,
+            task_id=args.task_id,
+            prompt=args.prompt,
+            model=args.model,
+            reasoning=args.reasoning,
+            config_template=args.config or DEFAULT_COMPOSITION_PATH,
+            client_version=args.client_version,
+            max_iterations=args.max_iterations,
+            max_task_input_tokens=args.max_task_input_tokens,
+            wall_time_seconds=args.wall_time_seconds,
+            trust_project=args.trust_project,
+        )
+        result = run_evaluation_sync(request)
+    except KeyboardInterrupt:
+        result = EvaluationRunResult(
+            task_id=args.task_id,
+            status="cancelled",
+            wall_time_ms=0,
+            artifacts=EvaluationArtifacts(
+                state_root=state_root,
+                result=state_root / "evaluation" / "result.json",
+            ),
+            error=EvaluationError(code="interrupted", message="evaluation interrupted"),
+        )
+    except Exception as error:
+        result = EvaluationRunResult(
+            task_id=args.task_id,
+            status="failed",
+            wall_time_ms=0,
+            artifacts=EvaluationArtifacts(
+                state_root=state_root,
+                result=state_root / "evaluation" / "result.json",
+            ),
+            error=EvaluationError(
+                code="invalid_request",
+                message=f"invalid eval-run arguments ({type(error).__name__})",
+            ),
+        )
+    try:
+        write_evaluation_result(result)
+    except OSError as error:
+        result = result.model_copy(
+            update={
+                "status": "failed",
+                "error": EvaluationError(code="result_write_failed", message=str(error)[:4_096]),
+            }
+        )
+    print(result.model_dump_json())
+    return result.exit_code
+
+
 def _codex_command(args: argparse.Namespace) -> int:
     import time
 
@@ -642,6 +736,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _serve(args)
     if args.command == "serve-codex":
         return _serve_codex(args)
+    if args.command == "eval-run":
+        return _eval_run(args)
     if args.command == "codex":
         return _codex_command(args)
     if args.command == "hello":

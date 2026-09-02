@@ -28,6 +28,53 @@ def test_hello_command_prints_greeting(capsys) -> None:
     assert json.loads(capsys.readouterr().out) == {"message": "hello"}
 
 
+def test_eval_run_prints_and_persists_one_versioned_result(
+    tmp_path: Path, capsys, monkeypatch
+) -> None:
+    from harness.evals import runner
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state = tmp_path / "state"
+    observed = []
+
+    def run(request):
+        observed.append(request)
+        return runner.EvaluationRunResult(
+            task_id=request.task_id,
+            run_id="run-1",
+            status="answered",
+            wall_time_ms=12,
+            artifacts=runner.EvaluationArtifacts(
+                state_root=state,
+                result=state / "evaluation" / "result.json",
+            ),
+        )
+
+    monkeypatch.setattr(runner, "run_evaluation_sync", run)
+
+    exit_code = main(
+        [
+            "eval-run",
+            "--workspace",
+            str(workspace),
+            "--state-root",
+            str(state),
+            "--task-id",
+            "smoke-read",
+            "Inspect the fixture",
+        ]
+    )
+
+    lines = capsys.readouterr().out.splitlines()
+    assert exit_code == 0
+    assert len(lines) == 1
+    assert json.loads(lines[0])["schema_version"] == "skein-eval-run-v1"
+    assert json.loads((state / "evaluation" / "result.json").read_text()) == json.loads(lines[0])
+    assert observed[0].model == "gpt-5.6-luna"
+    assert observed[0].reasoning == "max"
+
+
 def test_prepare_run_sets_workspace_identity_environment(tmp_path: Path) -> None:
     repository = _repository(tmp_path / "repository")
     preparation = prepare_run(

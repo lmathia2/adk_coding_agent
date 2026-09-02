@@ -1,0 +1,94 @@
+{
+  "suite_id": "skein-smoke-v1",
+  "description": "Four tiny cases that qualify the harness before public benchmark integration.",
+  "cases": [
+    {
+      "case_id": "read-only-investigation",
+      "description": "Report two fixture-backed facts without changing the workspace.",
+      "fixture": "tests/fixtures/read_only_inventory",
+      "request": {
+        "goal": "Inspect inventory.json and report the API port and validation mode without modifying files.",
+        "acceptance_criteria": [
+          "The answer states the API port from inventory.json",
+          "The answer states the validation mode from inventory.json",
+          "The workspace remains unchanged"
+        ]
+      },
+      "expected_status": "answered",
+      "requires_verification": false,
+      "required_answer_fragments": ["4173", "strict"],
+      "budgets": {
+        "max_iterations": 8,
+        "max_uncached_input_tokens": 50000,
+        "max_wall_time_ms": 900000
+      },
+      "tags": ["read-only", "investigation"]
+    },
+    {
+      "case_id": "python-localized-bugfix",
+      "description": "Correct a localized arithmetic bug without changing tests.",
+      "fixture": "tests/fixtures/buggy_calculator",
+      "request": {
+        "goal": "Fix calculator.multiply so it returns the mathematical product of its two integer arguments.",
+        "acceptance_criteria": [
+          "multiply(6, 7) returns 42",
+          "multiply(-3, 4) returns -12",
+          "The public function signature is unchanged"
+        ]
+      },
+      "expected_changed_globs": ["calculator.py"],
+      "forbidden_changed_globs": ["test_*.py"],
+      "required_command_fragments": ["pytest", "git diff --check"],
+      "budgets": {
+        "max_iterations": 8,
+        "max_uncached_input_tokens": 50000,
+        "max_wall_time_ms": 900000
+      },
+      "tags": ["python", "localized", "fail-to-pass"]
+    },
+    {
+      "case_id": "python-multi-file-feature",
+      "description": "Implement and export a small text helper across two source files.",
+      "fixture": "tests/fixtures/multi_file_textkit",
+      "request": {
+        "goal": "Add textkit.slugify and export it from textkit. It must lowercase text, replace runs of non-alphanumeric characters with one dash, and strip outer dashes.",
+        "acceptance_criteria": [
+          "from textkit import slugify succeeds",
+          "The provided pytest suite passes",
+          "Only files under textkit may change"
+        ]
+      },
+      "expected_changed_globs": ["textkit/**"],
+      "forbidden_changed_globs": ["test_*.py"],
+      "required_command_fragments": ["pytest", "git diff --check"],
+      "budgets": {
+        "max_iterations": 8,
+        "max_uncached_input_tokens": 50000,
+        "max_wall_time_ms": 900000
+      },
+      "tags": ["python", "multi-file", "feature"]
+    },
+    {
+      "case_id": "python-verification-recovery",
+      "description": "Repair separator handling while preserving Unicode letters.",
+      "fixture": "tests/fixtures/verification_recovery",
+      "request": {
+        "goal": "Fix normalize_identifier so all tests pass. Preserve Unicode letters while collapsing runs of spaces, underscores, and dashes to one dash.",
+        "acceptance_criteria": [
+          "The provided pytest suite passes",
+          "Unicode letters are preserved",
+          "Tests are not modified"
+        ]
+      },
+      "expected_changed_globs": ["identifiers.py"],
+      "forbidden_changed_globs": ["test_*.py"],
+      "required_command_fragments": ["pytest", "git diff --check"],
+      "budgets": {
+        "max_iterations": 8,
+        "max_uncached_input_tokens": 50000,
+        "max_wall_time_ms": 900000
+      },
+      "tags": ["python", "verification-recovery", "fail-to-pass"]
+    }
+  ]
+}

@@ -39,6 +39,45 @@ task source and base revision, verification commands, allowed scope, provider an
 network policy, token/cache accounting, tool calls, latency, and failure traces.
 Never grade success from a model's natural-language completion claim.
 
+For one host-side trial, use the noninteractive runner. It reuses the server's
+production coordinator and writes a second copy of the single stdout result to
+`STATE/evaluation/result.json`:
+
+```bash
+skein eval-run \
+  --workspace /path/to/clean/task-repository \
+  --state-root /path/to/fresh/trial-state \
+  --task-id smoke-001 \
+  --model gpt-5.6-luna \
+  --reasoning max \
+  --wall-time-seconds 900 \
+  "Fix the task and verify the result."
+```
+
+Keep `--auth-state-root` on the trusted host and outside the fresh trial state.
+The command never copies credentials into the workspace or its result artifacts.
+
+### Subscription automation authorization gate
+
+Status on 2026-09-01: **blocked pending an authorized authentication path**.
+
+Official OpenAI documentation supports access tokens for trusted noninteractive
+Codex workflows only in ChatGPT Business and Enterprise workspaces. It describes
+API keys as the authentication method for programmatic Codex CLI workflows. It
+also limits non-human service accounts to pay-as-you-go plans:
+
+- [Codex access tokens](https://learn.chatgpt.com/docs/enterprise/access-tokens)
+- [Codex authentication](https://learn.chatgpt.com/docs/auth)
+- [Codex service accounts](https://learn.chatgpt.com/docs/enterprise/service-accounts)
+
+Those sources do not authorize using a personal ChatGPT subscription's browser
+device credential through this custom ADK provider for a batch benchmark. Do not
+start the live smoke queue with that credential. Unblock it only with written
+OpenAI confirmation, a supported Business/Enterprise Codex access token, a
+pay-as-you-go service account, or Platform API-key billing. This is a product
+authorization decision, not legal advice. The deterministic engineering gate and
+fixture preparation do not require provider access and may proceed.
+
 Compare one change at a time on the same tasks and model: context caps, search,
 directory skills, or compaction. Include failures and repeated runs. Measure
 behavioral correctness before claiming speed or token-efficiency improvements.

@@ -86,5 +86,23 @@ def test_server_assembly_maps_yaml_and_creates_durable_local_services(
     assert assembly.coordinator.descriptor.implementation == "skein_v1"
     assert (state_root / "server" / "runs.db").is_file()
     assert assembly.auth_token_path == state_root / "server" / "auth-token"
+    assert assembly.auth_token_path is not None
     assert assembly.auth_token_path.is_file()
     assert (state_root / "adk" / "sessions.db").parent.is_dir()
+
+
+def test_server_assembly_can_keep_auth_outside_fresh_run_state(tmp_path: Path) -> None:
+    state_root = tmp_path / "trial"
+    auth_state_root = tmp_path / "trusted-auth"
+
+    assembly = build_server_assembly(
+        workspace=tmp_path,
+        state_root=state_root,
+        auth_state_root=auth_state_root,
+    )
+
+    assert assembly.coordinator.provider_controls is not None
+    assert assembly.coordinator.provider_controls.store.path == (
+        auth_state_root / "auth" / "openai-codex.json"
+    )
+    assert assembly.auth_token_path == state_root / "server" / "auth-token"

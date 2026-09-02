@@ -47,7 +47,11 @@ from harness.repo import discover_instruction_files
 from harness.safety import ApprovalPolicy, SecretRedactor
 from harness.sandbox import create_configured_command_sandbox
 from harness.state import CheckpointStore, JsonlEventStore, SteeringQueue, rebuild_ledger
-from harness.telemetry.adk_plugin import HarnessMetricsPlugin, ModelPricing
+from harness.telemetry.adk_plugin import (
+    HarnessMetricsPlugin,
+    ModelPricing,
+    pricing_from_env,
+)
 from harness.tools.adk_adapter import create_adk_tools, discover_known_secrets
 from harness.tracing import CodingToolArtifactPlugin, HarnessTracePlugin, TraceContentMode
 from harness.verification import ManagedValidationExecutor
@@ -290,7 +294,7 @@ class SkeinHarnessFactory:
             allow_unknown=config.safety.allow_unknown_commands,
         )
         canonical_ledger: LedgerStore | None = (
-            open_ledger(bindings.auth_state_root or settings.state_root, config.memory.ledger)
+            open_ledger(settings.state_root, config.memory.ledger)
             if config.memory.enabled
             else None
         )
@@ -548,7 +552,12 @@ def default_harness_registry(
     model_providers: AdkModelProviderRegistry | None = None,
 ) -> HarnessRegistry:
     registry = HarnessRegistry()
-    registry.register(SkeinHarnessFactory(model_providers=model_providers))
+    registry.register(
+        SkeinHarnessFactory(
+            model_providers=model_providers,
+            pricing=pricing_from_env(),
+        )
+    )
     return registry
 
 

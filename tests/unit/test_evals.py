@@ -74,6 +74,34 @@ def test_suite_round_trip(tmp_path: Path) -> None:
     assert load_evaluation_suite(path) == suite
 
 
+def test_smoke_suite_expresses_all_four_harness_behaviors() -> None:
+    suite = load_evaluation_suite(Path("tests/eval/suites/smoke.json"))
+
+    assert [case.case_id for case in suite.cases] == [
+        "read-only-investigation",
+        "python-localized-bugfix",
+        "python-multi-file-feature",
+        "python-verification-recovery",
+    ]
+    assert suite.cases[0].expected_status == "answered"
+    assert suite.cases[0].requires_verification is False
+
+
+def test_grade_read_only_case_requires_facts_and_an_unchanged_workspace() -> None:
+    case = load_evaluation_suite(Path("tests/eval/suites/smoke.json")).cases[0]
+
+    result = grade_case(
+        case,
+        status="answered",
+        changed_paths=[],
+        verification=None,
+        final_answer="api_port=4173 validation_mode=strict",
+        metric_summary={"outcome_iterations": 1, "uncached_input_tokens": 10, "outcome_wall_time_ms": 1},
+    )
+
+    assert result.passed
+
+
 def test_grade_case_checks_evidence_scope_commands_and_budgets() -> None:
     result = grade_case(
         _case(),

@@ -56,3 +56,4 @@ ignore = ["E501"]
 pythonVersion = "3.11"
 typeCheckingMode = "standard"
 include = ["app", "harness", "tests"]
+exclude = ["tests/fixtures"]

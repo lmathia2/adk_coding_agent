@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +27,9 @@ class EvaluationCase(BaseModel):
     description: str
     fixture: str
     request: TaskRequest
+    expected_status: Literal["complete", "answered"] = "complete"
+    requires_verification: bool = True
+    required_answer_fragments: list[str] = Field(default_factory=list)
     expected_changed_globs: list[str] = Field(default_factory=list)
     forbidden_changed_globs: list[str] = Field(default_factory=list)
     required_command_fragments: list[str] = Field(default_factory=list)

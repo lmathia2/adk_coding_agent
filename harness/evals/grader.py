@@ -43,7 +43,8 @@ def grade_case(
     *,
     status: str,
     changed_paths: list[str],
-    verification: VerificationReport,
+    verification: VerificationReport | None,
+    final_answer: str = "",
     metric_summary: Mapping[str, Any] | None = None,
 ) -> EvaluationResult:
     metrics = dict(metric_summary or {})
@@ -52,20 +53,41 @@ def grade_case(
     checks.append(
         EvaluationCheck(
             name="completion_status",
-            passed=status == "complete",
+            passed=status == case.expected_status,
             details=f"status={status}",
         )
     )
-    checks.append(
-        EvaluationCheck(
-            name="deterministic_verification",
-            passed=verification.passed,
-            details=(
-                f"tests_passed={verification.tests_passed}, "
-                f"tests_failed={verification.tests_failed}"
-            ),
+    if case.requires_verification:
+        checks.append(
+            EvaluationCheck(
+                name="deterministic_verification",
+                passed=verification is not None and verification.passed,
+                details=(
+                    f"tests_passed={verification.tests_passed}, "
+                    f"tests_failed={verification.tests_failed}"
+                    if verification is not None
+                    else "verification=missing"
+                ),
+            )
         )
-    )
+    else:
+        checks.append(
+            EvaluationCheck(
+                name="workspace_unchanged",
+                passed=not changed_paths,
+                details="changed: " + (", ".join(changed_paths) or "none"),
+            )
+        )
+
+    folded_answer = final_answer.casefold()
+    for fragment in case.required_answer_fragments:
+        checks.append(
+            EvaluationCheck(
+                name=f"required_answer:{fragment}",
+                passed=fragment.casefold() in folded_answer,
+                details="present" if fragment.casefold() in folded_answer else "missing",
+            )
+        )
 
     for pattern in case.expected_changed_globs:
         matches = sorted(path for path in changed_paths if _matches(path, pattern))
@@ -86,7 +108,7 @@ def grade_case(
             )
         )
 
-    commands = verification.commands_run
+    commands = verification.commands_run if verification is not None else []
     for fragment in case.required_command_fragments:
         matched = [command for command in commands if fragment in command]
         checks.append(
