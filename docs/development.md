@@ -132,6 +132,20 @@ notebook is a deterministic projection of ledger events, not the source of truth
 Completed replay-safe cells can restore live Python state; incomplete or unknown-effect
 work remains explicit and is not replayed as successful work.
 
+Inspect a PTC workbench without starting Jupyter:
+
+```bash
+RUN_STATE="STATE_ROOT/runs/RUN_ID"
+adk-coding-agent notebook --state-root "$RUN_STATE" --task-id RUN_ID
+adk-coding-agent notebook --state-root "$RUN_STATE" --task-id RUN_ID --cell-index -1
+```
+
+The command delegates to `nb read --no-output` when the Jupyter `nb-cli` binary is on
+`PATH`; otherwise it emits the same cells with a compact standard-library renderer.
+It rematerializes the notebook from the event stream first. Do not run `nb execute`:
+the harness CPython worker, capability broker, and ledger terminal events are the
+execution authority.
+
 ## Search and skills
 
 The four tools remain `read`, `bash`, `edit`, and `write`. Search is a reserved

@@ -71,6 +71,13 @@ the supported boundary; the source guard is defense in depth, not a sandbox. An
 OS-isolated profile may be added when a concrete deployment requires it, but it is
 not a notebook-PTC activation or completion gate.
 
+PTC is a different model-facing composition surface, not a second implementation of
+the underlying tools. Python calls such as `agent.shell.run(...)` reach the same Bash
+adapter, command classifier, approval path, receipts, output bounds, and redaction as
+the default profile. A submitted cell is appended and materialized before execution;
+its terminal event and selected output are materialized afterward. `nb execute` is
+never used to resume or execute harness work.
+
 Managed file tools call the same atomic, confined primitives exercised by tests.
 Successful mutations have replay receipts; failed operations are never persisted
 as successful receipts. Shell output is redacted and bounded.
@@ -98,6 +105,20 @@ ADK traces. JSONL is the dependency-free local backend; DuckDB is an optional an
 backend. With canonical memory disabled, the factory uses the unchanged main task JSONL
 and SQLite stores. Other SQLite stores remain operational projections during measured
 migration. Artifacts use local files or memory.
+
+The ledger, notebook, and CPython worker deliberately have separate authority:
+
+- The append-only ledger records what happened, including open, failed, blocked,
+  timed-out, retried, and unknown-effect work.
+- The canonical notebook is a rebuildable workbench projection containing timestamped
+  task/message/steering/compaction Markdown, exact PTC programs, and selected outputs.
+- The worker owns only current live variables, imports, clients, and caches. Restart
+  restores completed replay-safe cells; it never infers success from notebook order.
+
+For a server run, operational notebooks and task events live under
+`STATE_ROOT/runs/RUN_ID`. `adk-coding-agent notebook --state-root RUN_STATE
+--task-id RUN_ID` rematerializes from events and uses `nb-cli` for compact reading when
+installed, with a standard-library renderer otherwise.
 
 When installed through the optional `memory-search` extra, LanceDB provides immutable
 hybrid-search projections over ledger events. Projection identity includes the exact

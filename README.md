@@ -150,14 +150,17 @@ the four-tool profile while retaining Python variables across calls. Use the def
 profile to measure the familiar direct-tool baseline; use PTC to compose and reuse
 multi-call programs.
 
-Inspect the durable session notebook by task ID. The command rematerializes from the
+Inspect the durable session notebook by run/task ID. Server runs keep operational
+state under `STATE_ROOT/runs/RUN_ID`, and the run ID is also the harness task ID. The
+command rematerializes from the
 append-only event stream, uses `nb read --no-output` when `nb-cli` is installed, and
 otherwise emits a compact stdlib-only cell stream:
 
 ```bash
-adk-coding-agent notebook --state-root ~/.local/state/adk-coding-agent-ptc
-adk-coding-agent notebook --state-root ~/.local/state/adk-coding-agent-ptc --task-id TASK_ID
-adk-coding-agent notebook --state-root ~/.local/state/adk-coding-agent-ptc --task-id TASK_ID --cell-index -1
+RUN_STATE="$HOME/.local/state/adk-coding-agent-ptc/runs/RUN_ID"
+adk-coding-agent notebook --state-root "$RUN_STATE"
+adk-coding-agent notebook --state-root "$RUN_STATE" --task-id RUN_ID
+adk-coding-agent notebook --state-root "$RUN_STATE" --task-id RUN_ID --cell-index -1
 ```
 
 The notebook interleaves task/user/assistant/compaction Markdown with PTC code and

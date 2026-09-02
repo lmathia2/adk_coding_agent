@@ -21,6 +21,18 @@ The design can be summarized as:
 
 > **Pi-like model interface, ADK-managed execution, event-sourced memory, compact explicit goal state, and machine-verified completion.**
 
+### Current implementation profile
+
+The four-tool surface described throughout this original design remains the default
+and compatibility baseline. The implemented, disabled-by-default notebook-PTC profile
+instead exposes one persistent `python` tool. Python composes the same confined file,
+Bash/CLI, and registered MCP capabilities through a broker; it does not bypass policy
+or verification. Its canonical notebook is a rebuildable, timestamped workbench over
+the append-only ledger, while the resident CPython worker alone owns current live
+variables. See [the trace-native REPL specification](trace-native-repl-agent.md) for
+the authority model, compaction views, recovery protocol, `nb-cli` boundary, and
+remaining ablation gate.
+
 ---
 
 ## 1. What should be copied from Pi

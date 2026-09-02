@@ -102,6 +102,12 @@ to display in full. Commands can contain redacted secrets. Existing non-interact
 clients retain immediate blocked results instead of entering invisible human waits.
 No additional network, destructive, publication or Git mutation permission is enabled.
 
+`nb-cli` is an operator/inspection surface, not an alternate execution authority.
+Local `nb read --no-output`, `nb search`, and `nb status` are classified as inspection.
+Remote server/token flags, `nb execute`, notebook mutation, and unrecognized `nb`
+subcommands remain approval-gated. The supported `adk-coding-agent notebook` command
+passes an argument vector without a shell and never executes notebook cells.
+
 ### Indexed-search branch
 
 Commands whose first token is the reserved word `search` are parsed before shell
