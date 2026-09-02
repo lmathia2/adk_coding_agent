@@ -104,11 +104,14 @@ async def test_verification_uses_same_wait_and_never_blocks_the_event_loop(tmp_p
             return SandboxResult(status="ok", exit_code=0, stdout="verified", stderr="", duration_ms=0)
     command = ValidationCommand(category="custom", command="command printf verification", source="fixture", strength="behavioral")
     monkeypatch.setattr("app.agent.workflow.discover_validation_plan", lambda *args, **kwargs: ValidationPlan(commands=[command], changed_paths=["test.py"]))
-    monkeypatch.setattr("app.agent.workflow.changed_paths", lambda *args: ["test.py"])
     state = tmp_path / "state"
     executor = ManagedValidationExecutor(tmp_path, state_root=state, task_id="task", sandbox=Sandbox())
     waiter = ApprovalWaiter(executor.approvals, "task")
-    deps = SimpleNamespace(settings=SimpleNamespace(workspace=tmp_path), approvals=waiter, validation_executor=lambda task: executor)
+    repository = SimpleNamespace(
+        manifest=lambda: SimpleNamespace(),
+        changed_paths=lambda base: ["test.py"],
+    )
+    deps = SimpleNamespace(settings=SimpleNamespace(workspace=tmp_path), repository=repository, approvals=waiter, validation_executor=lambda task: executor)
     running = asyncio.create_task(_verify_task(deps, None, {"request": {"goal": "verify"}, "ledger": {
         "task_id": "task", "goal": "verify", "acceptance_criteria": ["verified"], "base_revision": "base", "workspace_id": "workspace"}}))
     try:

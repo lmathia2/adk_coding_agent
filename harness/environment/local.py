@@ -11,6 +11,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from harness.models import CommandResult
 
@@ -31,6 +32,36 @@ class FileMutationResult:
     after_sha256: str
     diff: str
     already_applied: bool = False
+
+
+class WorkspaceEnvironment(Protocol):
+    """Synchronous file boundary used by the four coding tools."""
+
+    root: Path
+
+    def resolve(self, path: str | Path, *, must_exist: bool = False) -> Path: ...
+
+    def relative_path(self, path: Path) -> str: ...
+
+    def read_bytes(self, path: str | Path) -> bytes: ...
+
+    def atomic_write(
+        self,
+        path: str | Path,
+        content: bytes,
+        *,
+        expected_sha256: str | None = None,
+        expected_absent: bool = False,
+    ) -> FileMutationResult: ...
+
+    def replace_text(
+        self,
+        path: str | Path,
+        old_text: str,
+        new_text: str,
+        *,
+        expected_sha256: str | None = None,
+    ) -> FileMutationResult: ...
 
 
 _SAFE_ENV_KEYS = {

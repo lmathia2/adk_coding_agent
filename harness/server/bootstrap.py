@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from app.agent.factory import default_harness_registry
-from harness.agent import ModelReadiness, PublicModelStatus
+from harness.agent import HarnessRegistry, ModelReadiness, PublicModelStatus
 from harness.ai.codex_auth import CodexAuthenticationError, CodexCredentialStore
 from harness.ai.controls import LocalProviderControls
 from harness.config import (
@@ -152,6 +152,7 @@ def build_server_assembly(
     config_path: Path = DEFAULT_COMPOSITION_PATH,
     production: bool = False,
     trust_project: bool = False,
+    registry: HarnessRegistry | None = None,
 ) -> ServerAssembly:
     """Build the configured harness behind the protocol-only WebSocket app."""
 
@@ -165,7 +166,7 @@ def build_server_assembly(
     resolved_config = config_path.expanduser().resolve()
     if not resolved_workspace.is_dir():
         raise ValueError(f"workspace is not a directory: {resolved_workspace}")
-    registry = default_harness_registry()
+    registry = registry or default_harness_registry()
     composition = load_harness_composition(
         resolved_config,
         config_models=registry.config_models(),

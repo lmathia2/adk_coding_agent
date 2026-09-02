@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import subprocess
 import time
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ from google.adk.workflow import BaseNode, node
 
 from harness.approvals.waiting import ApprovalWaiter
 from harness.context import build_compaction_snapshot, estimate_tokens
+from harness.environment import RepositoryRuntime
 from harness.models import CompactionSnapshot
 from harness.models.agent_step import AgentStep
 from harness.models.checkpoint import Checkpoint
@@ -28,7 +28,6 @@ from harness.notebook import materialize_notebook, reduce_notebook
 from harness.orchestration import (
     HarnessRoute,
     build_work_packet,
-    changed_paths,
     create_initial_ledger,
     decide_route,
     parse_agent_step,
@@ -39,7 +38,6 @@ from harness.orchestration import (
     task_id_for,
 )
 from harness.orchestration.runtime import can_answer_directly
-from harness.repo import build_repository_manifest
 from harness.state import (
     CheckpointStore,
     EventKind,
@@ -73,6 +71,7 @@ class SkeinWorkflowDependencies:
     checkpoint_store: CheckpointStore
     metrics_store: MetricsStore
     workspace_manager: GitWorktreeManager | None
+    repository: RepositoryRuntime
     coding_worker: BaseAgent
     validation_executor: Callable[[str], ManagedValidationExecutor]
     static_prefix_hash: str
@@ -120,43 +119,11 @@ def _session_id(ctx: Context) -> str | None:
     return str(identifier) if identifier else None
 
 
-def _git_output(deps: SkeinWorkflowDependencies, *args: str) -> str:
-    completed = subprocess.run(
-        args,
-        cwd=deps.settings.workspace,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    return completed.stdout if completed.returncode == 0 else ""
-
-
-def _fallback_workspace_fingerprint(deps: SkeinWorkflowDependencies) -> str:
-    digest = hashlib.sha256()
-    digest.update(_git_output(deps, "git", "rev-parse", "HEAD").encode())
-    digest.update(_git_output(deps, "git", "diff", "--binary", "HEAD").encode())
-    untracked = _git_output(
-        deps,
-        "git",
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-        "-z",
-    )
-    for relative in sorted(path for path in untracked.split("\0") if path):
-        target = deps.settings.workspace / relative
-        digest.update(relative.encode())
-        if target.is_file():
-            digest.update(target.read_bytes())
-    return digest.hexdigest()
-
-
 def _workspace_fingerprint(deps: SkeinWorkflowDependencies, task_id: str) -> str:
     manager = deps.workspace_manager
     if manager is not None and manager.load(task_id) is not None:
         return manager.fingerprint(task_id)
-    return _fallback_workspace_fingerprint(deps)
+    return deps.repository.fingerprint()
 
 
 _LEDGER_DUPLICATE_EVENT_KINDS = {
@@ -497,8 +464,8 @@ async def _verify_task(
     request = TaskRequest.model_validate(node_input["request"])
     ledger = TaskLedger.model_validate(node_input["ledger"])
     claims = node_input.get("claims", [])
-    manifest = build_repository_manifest(deps.settings.workspace)
-    modified = changed_paths(deps.settings.workspace, ledger.base_revision)
+    manifest = deps.repository.manifest()
+    modified = deps.repository.changed_paths(ledger.base_revision)
     plan = discover_validation_plan(
         manifest,
         modified,
@@ -589,7 +556,7 @@ def _initialize_run(
             }
         )
 
-    manifest = build_repository_manifest(settings.workspace)
+    manifest = deps.repository.manifest()
     events = deps.event_store.read(task_id)
     if events:
         ledger = rebuild_ledger(events)
@@ -981,7 +948,7 @@ async def _orchestrate_owned(
                 idempotency_key=f"steering:{message.message_id}",
             )
 
-        manifest = build_repository_manifest(settings.workspace)
+        manifest = deps.repository.manifest()
         packet = build_work_packet(
             ledger,
             conversation=history,
@@ -1155,7 +1122,7 @@ async def _orchestrate_owned(
         ledger = _with_workspace_observations(
             ledger,
             step,
-            changed_paths(settings.workspace, ledger.base_revision),
+            deps.repository.changed_paths(ledger.base_revision),
             action_fingerprints,
             deps.progress_history_limit,
         )

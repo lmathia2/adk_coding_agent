@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -154,14 +154,26 @@ def _add_command(
 
 
 def _discover_build_commands(root: Path) -> tuple[list[str], list[BuildCommand]]:
+    names = {path.relative_to(root).as_posix() for path in _walk_files(root)}
+
+    def read_text(name: str) -> str:
+        return (root / name).read_text(encoding="utf-8", errors="replace")
+
+    return discover_build_commands(names, read_text)
+
+
+def discover_build_commands(
+    files: set[str], read_text: Callable[[str], str]
+) -> tuple[list[str], list[BuildCommand]]:
+    """Discover standard commands from a portable file-name/content snapshot."""
+
     systems: list[str] = []
     commands: list[BuildCommand] = []
 
-    pyproject = root / "pyproject.toml"
-    if pyproject.exists():
+    if "pyproject.toml" in files:
         systems.append("pyproject.toml")
-        text = pyproject.read_text(encoding="utf-8", errors="replace")
-        if "pytest" in text or (root / "tests").exists():
+        text = read_text("pyproject.toml")
+        if "pytest" in text or any(name.startswith("tests/") for name in files):
             _add_command(commands, "test", "uv run pytest", "pyproject.toml")
         if "ruff" in text:
             _add_command(commands, "lint", "uv run ruff check .", "pyproject.toml")
@@ -170,11 +182,10 @@ def _discover_build_commands(root: Path) -> tuple[list[str], list[BuildCommand]]
         elif "mypy" in text:
             _add_command(commands, "typecheck", "uv run mypy .", "pyproject.toml")
 
-    package_json = root / "package.json"
-    if package_json.exists():
+    if "package.json" in files:
         systems.append("package.json")
         try:
-            package = json.loads(package_json.read_text(encoding="utf-8"))
+            package = json.loads(read_text("package.json"))
         except (json.JSONDecodeError, OSError):
             package = {}
         scripts = package.get("scripts", {}) if isinstance(package, dict) else {}
@@ -188,24 +199,57 @@ def _discover_build_commands(root: Path) -> tuple[list[str], list[BuildCommand]]
                 if script in scripts:
                     _add_command(commands, kind, f"npm run {script}", "package.json")
 
-    if (root / "Cargo.toml").exists():
+    if "Cargo.toml" in files:
         systems.append("Cargo.toml")
         _add_command(commands, "test", "cargo test", "Cargo.toml")
         _add_command(commands, "lint", "cargo clippy --all-targets --all-features", "Cargo.toml")
-    if (root / "go.mod").exists():
+    if "go.mod" in files:
         systems.append("go.mod")
         _add_command(commands, "test", "go test ./...", "go.mod")
         _add_command(commands, "build", "go build ./...", "go.mod")
-    if (root / "pom.xml").exists():
+    if "pom.xml" in files:
         systems.append("pom.xml")
         _add_command(commands, "test", "mvn test", "pom.xml")
-    if (root / "gradlew").exists():
+    if "gradlew" in files:
         systems.append("gradle")
         _add_command(commands, "test", "./gradlew test", "gradlew")
-    if (root / "Makefile").exists():
+    if "Makefile" in files:
         systems.append("Makefile")
 
     return sorted(set(systems)), sorted(commands, key=lambda value: (value.kind, value.command))
+
+
+def repository_manifest_from_snapshot(
+    *,
+    root: Path,
+    files: Iterable[str],
+    read_text: Callable[[str], str],
+    base_revision: str | None = None,
+    branch: str | None = None,
+    dirty: bool = False,
+) -> RepositoryManifest:
+    """Build the compact manifest from an isolated environment snapshot."""
+
+    names = sorted(set(files))
+    systems, commands = discover_build_commands(set(names), read_text)
+    top_level = sorted(
+        {
+            name.split("/", 1)[0] + ("/" if "/" in name else "")
+            for name in names
+            if name.split("/", 1)[0] not in _EXCLUDED_DIRS
+        }
+    )[:80]
+    return RepositoryManifest(
+        root=root,
+        base_revision=base_revision,
+        branch=branch,
+        dirty=dirty,
+        languages=_detect_languages(root / name for name in names),
+        build_systems=systems,
+        commands=commands,
+        top_level=top_level,
+        tracked_file_count=len(names),
+    )
 
 
 def discover_instruction_files(root: Path, cwd: Path | None = None) -> list[Path]:

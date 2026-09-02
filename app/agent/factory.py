@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.apps.app import App, EventsCompactionConfig, ResumabilityConfig
@@ -34,6 +34,11 @@ from harness.config import (
     SkeinConfig,
 )
 from harness.context import prefix_hash
+from harness.environment import (
+    ExecutionRuntime,
+    LocalRepositoryRuntime,
+    LocalWorkspaceEnvironment,
+)
 from harness.ledger import LedgerBackedEventStore, LedgerStore, open_ledger
 from harness.ledger.importers import (
     import_approval,
@@ -58,12 +63,16 @@ from harness.verification import ManagedValidationExecutor
 from harness.workspace import GitWorktreeManager
 
 from .builders import build_coding_worker
-from .config import settings_from_composition
+from .config import HarnessSettings, settings_from_composition
 from .skills import build_skill_registry
 from .streaming import PublicReplies
 from .workflow import SkeinWorkflowDependencies, build_root_agent
 
 LOGGER = logging.getLogger(__name__)
+
+ExecutionRuntimeFactory = Callable[
+    [HarnessSettings, SkeinConfig, Sequence[str]], ExecutionRuntime
+]
 
 
 class _SkeinControlHooks:
@@ -141,9 +150,11 @@ class SkeinHarnessFactory:
         *,
         pricing: Mapping[str, ModelPricing] | None = None,
         model_providers: AdkModelProviderRegistry | None = None,
+        execution_runtime_factory: ExecutionRuntimeFactory | None = None,
     ) -> None:
         self._pricing = dict(pricing or {})
         self._model_providers = model_providers or default_adk_model_provider_registry()
+        self._execution_runtime_factory = execution_runtime_factory
         self._descriptor = HarnessDescriptor(
             implementation="skein_v1",
             api_version=1,
@@ -280,13 +291,22 @@ class SkeinHarnessFactory:
         settings = settings_from_composition(composition, bindings)
         settings.state_root.mkdir(parents=True, exist_ok=True)
         known_secrets = self._known_secrets(config)
-        sandbox = create_configured_command_sandbox(
-            settings.workspace,
-            settings.state_root,
-            config.sandbox,
-            max_output_bytes=config.tools.output.max_bytes,
-            known_secrets=known_secrets,
-        )
+        if self._execution_runtime_factory is None:
+            sandbox = create_configured_command_sandbox(
+                settings.workspace,
+                settings.state_root,
+                config.sandbox,
+                max_output_bytes=config.tools.output.max_bytes,
+                known_secrets=known_secrets,
+            )
+            execution = ExecutionRuntime(
+                files=LocalWorkspaceEnvironment(settings.workspace),
+                commands=sandbox,
+                repository=LocalRepositoryRuntime(settings.workspace),
+            )
+        else:
+            execution = self._execution_runtime_factory(settings, config, known_secrets)
+            sandbox = execution.commands
         policy = ApprovalPolicy(
             allow_dependency_install=config.safety.allow_dependency_install,
             allow_network=config.safety.allow_network,
@@ -302,6 +322,7 @@ class SkeinHarnessFactory:
             settings.workspace,
             state_root=settings.state_root,
             sandbox=sandbox,
+            environment=execution.files,
             search_mode=config.tools.search.backend,
             policy=policy,
             known_secrets=known_secrets,
@@ -411,6 +432,7 @@ class SkeinHarnessFactory:
         workspace_manager = (
             GitWorktreeManager(settings.source_repository, settings.state_root)
             if settings.source_repository is not None
+            and self._execution_runtime_factory is None
             else None
         )
         deps = SkeinWorkflowDependencies(
@@ -420,6 +442,7 @@ class SkeinHarnessFactory:
             checkpoint_store=checkpoints,
             metrics_store=metrics_plugin.store,
             workspace_manager=workspace_manager,
+            repository=execution.repository,
             coding_worker=worker.agent,
             replies=replies,
             validation_executor=lambda task_id: ManagedValidationExecutor(
@@ -550,12 +573,14 @@ class SkeinHarnessFactory:
 def default_harness_registry(
     *,
     model_providers: AdkModelProviderRegistry | None = None,
+    execution_runtime_factory: ExecutionRuntimeFactory | None = None,
 ) -> HarnessRegistry:
     registry = HarnessRegistry()
     registry.register(
         SkeinHarnessFactory(
             model_providers=model_providers,
             pricing=pricing_from_env(),
+            execution_runtime_factory=execution_runtime_factory,
         )
     )
     return registry

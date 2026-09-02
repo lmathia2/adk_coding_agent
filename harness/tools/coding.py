@@ -7,7 +7,7 @@ import time
 
 from harness.environment import (
     FileConflictError,
-    LocalWorkspaceEnvironment,
+    WorkspaceEnvironment,
     WorkspaceViolationError,
 )
 from harness.models import ToolEnvelope, ToolStatus
@@ -21,7 +21,7 @@ def _error(exc: Exception) -> ToolEnvelope:
 
 
 def execute_read(
-    environment: LocalWorkspaceEnvironment, path: str, offset: int = 1, limit: int = 400
+    environment: WorkspaceEnvironment, path: str, offset: int = 1, limit: int = 400
 ) -> ToolEnvelope:
     started = time.monotonic()
     try:
@@ -65,7 +65,7 @@ def execute_read(
 
 
 def execute_edit(
-    environment: LocalWorkspaceEnvironment,
+    environment: WorkspaceEnvironment,
     path: str,
     old_text: str,
     new_text: str,
@@ -97,7 +97,7 @@ def execute_edit(
 
 
 def execute_write(
-    environment: LocalWorkspaceEnvironment,
+    environment: WorkspaceEnvironment,
     path: str,
     content: str,
     expected_sha256: str | None = None,

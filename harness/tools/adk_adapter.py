@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from harness.approvals import ApprovalRequest, ApprovalStore
-from harness.environment import LocalWorkspaceEnvironment
+from harness.environment import LocalWorkspaceEnvironment, WorkspaceEnvironment
 from harness.models import ToolEnvelope
 from harness.repo import FffSearchService, SearchBackend, SearchError, SearchPage
 from harness.safety import ApprovalAction, ApprovalPolicy, SecretRedactor
@@ -220,6 +220,7 @@ class _ManagedTools:
         self,
         workspace: Path,
         *,
+        environment: WorkspaceEnvironment | None = None,
         state_root: Path | None = None,
         sandbox: CommandSandbox | None = None,
         search_backend: SearchBackend | None = None,
@@ -234,7 +235,7 @@ class _ManagedTools:
         approval_sink: Callable[[ApprovalRequest], object] | None = None,
     ) -> None:
         self.workspace = workspace.resolve()
-        self.environment = LocalWorkspaceEnvironment(self.workspace)
+        self.environment = environment or LocalWorkspaceEnvironment(self.workspace)
         state_root = (
             state_root.expanduser().resolve()
             if state_root is not None
@@ -324,15 +325,14 @@ class _ManagedTools:
         if suffix not in {".py", ".json"}:
             return None
         if content is None:
-            candidate = (self.workspace / path).resolve(strict=True)
-            candidate.relative_to(self.workspace)
-            if candidate.stat().st_size > 2_000_000:
+            encoded = self.environment.read_bytes(path)
+            if len(encoded) > 2_000_000:
                 return {
                     "check": "syntax",
                     "status": "skipped",
                     "message": "post-write syntax check skipped for file larger than 2 MB",
                 }
-            content = candidate.read_text(encoding="utf-8")
+            content = encoded.decode("utf-8")
         try:
             if suffix == ".py":
                 ast.parse(content, filename=path)
@@ -713,6 +713,7 @@ class _ManagedTools:
 def create_adk_tools(
     workspace: Path,
     *,
+    environment: WorkspaceEnvironment | None = None,
     state_root: Path | None = None,
     sandbox: CommandSandbox | None = None,
     search_backend: SearchBackend | None = None,
@@ -728,6 +729,7 @@ def create_adk_tools(
 ) -> AdkCodingTools:
     managed = _ManagedTools(
         workspace,
+        environment=environment,
         state_root=state_root,
         sandbox=sandbox,
         search_backend=search_backend,

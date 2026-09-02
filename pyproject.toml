@@ -21,6 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+eval = ["harbor==0.22.0; python_version >= '3.12'"]
 memory-duckdb = ["duckdb>=1.4,<2.0"]
 memory-search = ["duckdb>=1.4,<2.0", "lancedb>=0.38,<1.0"]
 

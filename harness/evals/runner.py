@@ -8,7 +8,7 @@ import os
 import subprocess
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from pathlib import Path
 from typing import Literal, cast
@@ -35,6 +35,7 @@ from harness.tools.adk_adapter import discover_known_secrets
 EVAL_RESULT_SCHEMA_VERSION = "skein-eval-run-v1"
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 EvaluationStatus = Literal["complete", "answered", "blocked", "failed", "cancelled"]
+AssemblyBuilder = Callable[..., ServerAssembly]
 
 
 class EvaluationRunRequest(BaseModel):
@@ -344,7 +345,12 @@ def _is_subscription_limit(message: str | None) -> bool:
     )
 
 
-async def run_evaluation(request: EvaluationRunRequest) -> EvaluationRunResult:
+async def run_evaluation(
+    request: EvaluationRunRequest,
+    *,
+    assembly_builder: AssemblyBuilder | None = None,
+    validate_workspace: bool = True,
+) -> EvaluationRunResult:
     """Run Skein once in place and return a fail-closed structured result."""
 
     started = time.monotonic()
@@ -355,9 +361,10 @@ async def run_evaluation(request: EvaluationRunRequest) -> EvaluationRunResult:
     assembly: ServerAssembly | None = None
     redactor = SecretRedactor(known_secrets=discover_known_secrets())
     try:
-        _validate_workspace(request.workspace)
+        if validate_workspace:
+            _validate_workspace(request.workspace)
         config_path, composition = prepare_evaluation_config(request)
-        assembly = build_server_assembly(
+        assembly = (assembly_builder or build_server_assembly)(
             workspace=request.workspace,
             state_root=state_root,
             auth_state_root=request.auth_state_root,
@@ -494,8 +501,19 @@ async def run_evaluation(request: EvaluationRunRequest) -> EvaluationRunResult:
             await assembly.coordinator.aclose()
 
 
-def run_evaluation_sync(request: EvaluationRunRequest) -> EvaluationRunResult:
-    return asyncio.run(run_evaluation(request))
+def run_evaluation_sync(
+    request: EvaluationRunRequest,
+    *,
+    assembly_builder: AssemblyBuilder | None = None,
+    validate_workspace: bool = True,
+) -> EvaluationRunResult:
+    return asyncio.run(
+        run_evaluation(
+            request,
+            assembly_builder=assembly_builder,
+            validate_workspace=validate_workspace,
+        )
+    )
 
 
 __all__ = [

@@ -39,6 +39,9 @@ task source and base revision, verification commands, allowed scope, provider an
 network policy, token/cache accounting, tool calls, latency, and failure traces.
 Never grade success from a model's natural-language completion claim.
 
+For Harbor/Pier benchmark execution, use the pinned host-side external-agent
+adapter and commands in [evaluation-harbor.md](evaluation-harbor.md).
+
 For one host-side trial, use the noninteractive runner. It reuses the server's
 production coordinator and writes a second copy of the single stdout result to
 `STATE/evaluation/result.json`:

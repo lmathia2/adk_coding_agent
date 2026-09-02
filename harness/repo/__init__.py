@@ -5,7 +5,9 @@ from .discovery import (
     RepositoryManifest,
     build_repository_manifest,
     collect_project_instructions,
+    discover_build_commands,
     discover_instruction_files,
+    repository_manifest_from_snapshot,
 )
 from .fff_search import (
     DEFAULT_SEARCH_LIMIT,
@@ -35,5 +37,7 @@ __all__ = [
     "SearchUnavailableError",
     "build_repository_manifest",
     "collect_project_instructions",
+    "discover_build_commands",
     "discover_instruction_files",
+    "repository_manifest_from_snapshot",
 ]
