@@ -3,23 +3,44 @@
 A small, configurable Google ADK coding harness with a Pi-style terminal client.
 One coding worker uses four tools by default: `read`, `bash`, `edit`, and `write`.
 The experimental local-only notebook PTC mode instead exposes one `python` tool;
-enable it with `harness.config.notebook_ptc.enabled: true`.
+the launcher enables it with `--notebook-ptc` and YAML enables it with
+`harness.config.notebook_ptc.enabled: true`.
 Canonical memory is independently configurable: the dependency-free local profile uses
 JSONL and lexical views, while DuckDB and LanceDB remain optional accelerators.
 The server owns task state, steering, approval requests, and deterministic verification.
 
-## 1. Install
+## Quick start
 
-For the notebook-PTC branch, the short path is:
+Install once, then start the default four-tool harness in any repository:
+
+```bash
+./install.sh
+./start.sh run --workspace /absolute/path/to/repository
+```
+
+Start notebook PTC instead:
 
 ```bash
 ./install-ptc.sh
 ./start-ptc.sh /absolute/path/to/repository
 ```
 
-The helper uses isolated state at `~/.local/state/adk-coding-agent-ptc`; enter
-`/login` in the terminal if needed. Set `ADK_CODING_AGENT_PTC_STATE_ROOT` to override
-that location. The commands below remain the general-purpose installation path.
+Both install helpers install the same application; `install-ptc.sh` is a memorable
+alias. `start-ptc.sh` selects the persistent CPython/notebook path, enables canonical
+JSONL memory, and keeps its state separate at
+`~/.local/state/adk-coding-agent-ptc`. Set `ADK_CODING_AGENT_PTC_STATE_ROOT` to
+override that location.
+
+In the terminal, run `/login` if prompted, `/model` to choose a model, and then enter
+a task. Add `--trust-project` only after reviewing the target repository's instructions
+and skills.
+
+| Mode | Start command | Model-visible tools | Durable history |
+| --- | --- | --- | --- |
+| Default | `./start.sh run --workspace DIR` | `read`, `bash`, `edit`, `write` | Existing JSONL/SQLite stores |
+| Notebook PTC | `./start-ptc.sh DIR` | One persistent `python` tool | Notebook transcript plus canonical JSONL ledger |
+
+## Install details
 
 On macOS, install [Homebrew](https://brew.sh) and make sure `brew` is on your PATH.
 Git is needed to clone the repository; if it is missing, run `brew install git` first.
@@ -30,7 +51,7 @@ For a new checkout:
 mkdir -p "$HOME/src"
 git clone https://github.com/lmathia2/adk_coding_agent.git "$HOME/src/adk_coding_agent"
 cd "$HOME/src/adk_coding_agent"
-./install.sh --bin-dir "$HOME/.local/bin"
+./install.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -39,7 +60,7 @@ reinstalling:
 
 ```bash
 cd "$HOME/src/adk_coding_agent"
-./install.sh --bin-dir "$HOME/.local/bin"
+./install.sh
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
@@ -74,7 +95,7 @@ Optional installer flags (choose only what you need):
 | `--minimal` | CLI only; skip the TUI |
 | `--bin-dir DIR` | Choose where the command links are placed |
 
-## 2. Start the coding agent
+## Start the coding agent
 
 Choose **one** of the following launch modes. The examples use the existing
 `$HOME/src/coding_tools` repository; replace that path with the repository you want
@@ -114,6 +135,14 @@ mode; press Ctrl+C in Terminal 1 to stop the server.
 From the harness checkout, `./start.sh run`, `./start.sh server`, and
 `./start.sh tui` are equivalent launcher commands (installed CLI/TUI commands must
 still be on PATH). `--server` and `--tui` are also accepted as mode aliases.
+
+Use `./start-ptc.sh /absolute/path/to/repository` for the one-tool PTC profile. It is
+equivalent to `./start.sh run --notebook-ptc --workspace DIR` with an isolated state
+root. Each Python call becomes a durable notebook cell; completed replay-safe cells
+restore CPython state after a worker restart. File, shell, CLI, and registered MCP
+capabilities still pass through the harness broker, policy, receipts, output bounds,
+and redaction. Failures, blocks, retries, exceptions, and timeouts remain ledger events
+rather than being rewritten as successes.
 
 ### First login and model selection
 
@@ -233,9 +262,18 @@ memory:
 ```
 
 Set `ledger: duckdb` for SQL-backed canonical history after installing the
-`memory-duckdb` extra. Lance projections remain an optional programmatic API until a
-live embedding provider is configured; `retrieval: lance` therefore fails closed at
-server startup instead of being silently ignored.
+`memory-duckdb` extra. The base install and `install-ptc.sh` deliberately use the
+dependency-free JSONL backend. Install an optional backend explicitly from the
+checkout when developing it:
+
+```bash
+uv sync --locked --extra memory-duckdb
+uv sync --locked --extra memory-search
+```
+
+Lance projections remain an optional programmatic API until a live embedding provider
+is configured; `retrieval: lance` therefore fails closed at server startup instead of
+being silently ignored.
 
 Skills are read from trusted directories, selected deterministically, and disclosed
 within a byte/token budget. Redacted interaction traces remain available:
@@ -274,6 +312,31 @@ npm test --prefix clients/terminal
 Deterministic tests use fake model streams and temporary repositories. They do not
 require cloud credentials. Live model quality/speed must be measured separately;
 old evaluation reports are not evidence for the simplified runtime.
+
+## Key capabilities and current limits
+
+- Deterministic, cache-stable context compilation and bounded tool output.
+- Resumable local sessions, steering, approvals, replay, and independent completion
+  verification.
+- Optional notebook-native PTC with persistent CPython state and a deterministic
+  nbformat workbench.
+- One append-only canonical event schema over JSONL or optional DuckDB, including
+  incomplete, failed, blocked, retried, and timed-out work.
+- Deterministic history, progress, open-execution, time, task-memory, and dream/failure
+  views; optional immutable Lance hybrid-search projections retain canonical event IDs.
+
+The remaining implementation gates are intentionally small and measurable:
+
+1. Wire an explicit versioned embedding provider before live Lance prompt retrieval.
+2. Ablate ledger-backed prompt/compaction readers for byte stability, cache behavior,
+   and correctness before cutting them into the live path.
+3. Run the paired four-tool versus notebook-PTC quality, token, latency, and cache-hit
+   evaluation before considering PTC as the default.
+
+Notebook PTC is for trusted local workspaces; its Python source guard is defense in
+depth, not a production sandbox. See [the implementation TODO](docs/TODO.md) for the
+authoritative checklist and [the current status](docs/IMPLEMENTATION_STATUS.md) for
+the supported boundary.
 
 ## Removed features
 

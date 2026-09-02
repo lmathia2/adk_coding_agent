@@ -1,5 +1,33 @@
 # Development
 
+## Fast path
+
+From this checkout:
+
+```bash
+./install.sh --dev
+./start.sh run --workspace /absolute/path/to/project
+```
+
+To exercise the notebook-native PTC path with isolated state:
+
+```bash
+./install-ptc.sh --dev
+./start-ptc.sh /absolute/path/to/project
+```
+
+The PTC launcher selects one persistent `python` tool and enables canonical JSONL
+memory. It does not install DuckDB or LanceDB. Those are optional development extras:
+
+```bash
+uv sync --locked --extra memory-duckdb
+uv sync --locked --extra memory-search
+```
+
+Use `./install.sh --plan` to inspect install paths without changing anything. The
+install scripts recreate only this checkout's `.venv`; runtime state and credentials
+live outside it.
+
 ## Pi terminal client
 
 The default installer builds the protocol-only Pi-toolkit client. For client work,
@@ -71,6 +99,26 @@ Do not run multiple server workers against one state directory. Back up local st
 before upgrading a behavior configuration; do not resume old runs across a behavior
 hash change.
 
+### Runtime profiles
+
+The supported profiles differ only at explicit configuration seams:
+
+| Profile | Configuration | Purpose |
+| --- | --- | --- |
+| Four-tool default | `notebook_ptc.enabled: false`, `memory.enabled: false` | Backward-compatible coding harness |
+| PTC + JSONL | `notebook_ptc.enabled: true`, `memory.enabled: true`, `ledger: jsonl` | Persistent CPython, notebook workbench, dependency-free canonical ledger |
+| PTC + DuckDB | PTC enabled, memory enabled, `ledger: duckdb` | Same authority model with SQL analytics |
+
+The Codex `--notebook-ptc` launcher generates the PTC + JSONL profile. For other
+combinations, copy `harness/config/default.yaml` and use
+`adk-coding-agent serve --config FILE`. `retrieval: lance` is rejected until a versioned embedding provider is
+wired; Lance is currently a tested disposable projection API, not a live prompt source.
+
+Per-run notebooks and canonical ledgers live below `STATE_ROOT/runs/RUN_ID/`. The
+notebook is a deterministic projection of ledger events, not the source of truth.
+Completed replay-safe cells can restore live Python state; incomplete or unknown-effect
+work remains explicit and is not replayed as successful work.
+
 ## Search and skills
 
 The four tools remain `read`, `bash`, `edit`, and `write`. Search is a reserved
@@ -122,3 +170,17 @@ deterministically and commit coherent, verified changes independently.
 Avoid adding a public configuration field until a running path consumes it.
 Prefer a direct primitive over a compatibility loader, parallel model schema,
 unused provider bridge, or speculative orchestration layer.
+
+## Remaining gates
+
+The unchecked entries in `docs/TODO.md` are the authoritative remaining work:
+
+1. Provide an explicit, versioned embedding provider for live Lance retrieval.
+2. Prove byte, cache, and correctness behavior before serving ledger views in live
+   prompt construction and compaction.
+3. Run a paired four-tool versus notebook-PTC quality, token, latency, and cache-hit
+   ablation before changing the default tool surface.
+
+Do not implement DuckLake, a Jupyter server, or another execution daemon without a
+measured requirement. DuckDB remains the canonical analytical backend, Lance remains
+a disposable search projection, and CPython remains the live executor.

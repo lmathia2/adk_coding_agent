@@ -17,7 +17,9 @@ historical feature checklist or book-rubric score.
   through the existing policy/approval adapters, appends lifecycle events, and
   deterministically materializes a durable nbformat transcript. Completed safe cells
   restore Python state after a worker restart; failures, timeouts, blocked calls, and
-  unknown effects remain explicit in the event history.
+  unknown effects remain explicit in the event history. `start-ptc.sh` enables this
+  path together with the dependency-free canonical JSONL ledger and an isolated state
+  root; the ordinary launcher retains the four-tool default.
 - Optional canonical memory now shadow-captures task events, tool-receipt transitions,
   checkpoints, approvals (including expiration), steering, metrics, public/run events,
   redacted ADK session lifecycle, and ADK trace spans into a configured JSONL or DuckDB
