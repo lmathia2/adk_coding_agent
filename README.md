@@ -12,16 +12,11 @@ The server owns task state, steering, approval requests, and deterministic verif
 
 ## Why Skein
 
-A **skein** is a loosely wound length of thread or yarn.
-
-As an agent name, it suggests:
-
+**skein** (pronounced **“skayn.”** a loosely wound length of thread or yarn), provides the following features:
 - execution traces as continuous threads;
 - memory woven from programs;
 - one tool connecting thought to action;
 - a minimal harness that holds the thread without becoming the intelligence.
-
-It’s pronounced **“skayn.”** Poetic and distinctive, though less immediately understandable than **Kernel** or **Monad**.
 
 ## Quick start
 
