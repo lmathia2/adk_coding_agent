@@ -3,7 +3,7 @@
 > **Status:** source-grounded implementation reference
 > **Repository:** `/Users/mathiasl/src/opencode`
 > **Revision:** `8e0f1c253b6b7292b419505af849d06747c0e049`
-> **Related:** [Pi](coding-harness-pi.md), [Codex](coding-harness-codex.md), [ADK Long Horizon](coding-harness-adk-long-horizon.md), [comparison](coding-harness-comparison.md)
+> **Related:** [Pi](coding-harness-pi.md), [Codex](coding-harness-codex.md), [ADK Long Horizon](coding-harness-adk-long-horizon.md), [comparison](coding-harness-comparison.md), [minimal ADK proposal](coding-harness-minimal-sota-extensions.md)
 
 > **Scope:** the local coding-agent harness at this revision, with the currently wired `packages/opencode` session path treated as the production/default path and the in-progress `packages/core` V2 runner called out separately.
 > **Method:** static, end-to-end source inspection at the stated revision. Test suites are mapped as contracts, but this document does not claim that every test was executed.

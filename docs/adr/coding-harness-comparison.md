@@ -1,8 +1,9 @@
-# Coding-harness comparison and a simplified ADK design
+# Coding-harness comparison
 
-> **Status:** source-grounded synthesis and design recommendation
+> **Status:** source-grounded cross-harness synthesis
 > **Compared revisions:** Pi `853a80d26c90a14c1886f0ebb8ffaae133ca2185`; OpenCode `8e0f1c253b6b7292b419505af849d06747c0e049`; Codex `986ff1cc7ced0081ec5014b700a376333d87f869`; ADK Long Horizon `cf7cadbc537cab9a6105a9b9adf5a2af2da43061`
 > **Standalone designs:** [Pi](coding-harness-pi.md), [OpenCode](coding-harness-opencode.md), [Codex](coding-harness-codex.md), [ADK Long Horizon](coding-harness-adk-long-horizon.md)
+> **ADK proposal:** [minimal SOTA extensions](coding-harness-minimal-sota-extensions.md)
 
 ## Executive result
 
@@ -19,7 +20,7 @@ Their centers of gravity differ:
 - **Codex** optimizes for a typed, deeply defended execution platform: provider/session separation, typed world state, rollout reconstruction, unified process control, dynamic/deferred tools, OS sandbox/approvals, goals, multi-agent threads, and host-side Code Mode.
 - **ADK Long Horizon** optimizes for multiple lifetimes on an ADK service substrate: cache-tiered prompts, resumable HITL, per-user environments/sandboxes, scoped secrets, process tools, child approval resurfacing, Memory Bank, review forks, and scheduled routines.
 
-No implementation is best on every axis. The best simplified ADK design is not their union. It is Pi's small default surface plus Codex/OpenCode's single-broker PTC and process semantics, Horizon's prompt tiers/HITL/environment/routine boundaries, and this repository's deterministic ledger/receipts/verification—while leaving multi-agent swarms, broad memory automation, and distributed scheduling out until a measured need appears.
+No implementation is best on every axis. This document compares the implementations without turning the comparison into a product plan. The separate [minimal SOTA extensions proposal](coding-harness-minimal-sota-extensions.md) applies these findings to the current ADK coding agent.
 
 ## Source and support-level discipline
 
@@ -74,12 +75,16 @@ Each has a different replay and deletion contract.
 | Compaction | local incremental structured summary + exact tail | summary + retained tail | local/remote strategies + retained user tail | ADK trigger + structured merge + retained events |
 | Durable pre-compaction evidence | original JSONL remains | DB/event state remains | rollout/review history remains | session backend; optional best-effort memory flush |
 | Branch/fork/rollback | branchable session tree | snapshots/revert/session operations | durable fork/rollback/worktrees | no equivalent general conversation branch primitive in sample |
-| Durable task goal | absent in core | plan/todo but no universal acceptance ledger | goal extension | absent in Horizon root |
+| Durable task goal | absent in core | plan/todo but no universal acceptance ledger | durable goal extension | absent in Horizon root |
+| Progress/control state | compaction summary; examples only | durable model-maintained todos + plan mode | durable goal + UI plan | model-maintained `plan.md` + guardrails |
+| Dropped/superseded work | no typed state | todo list replacement loses explicit reason unless preserved in prose | plan replacement; no typed dropped status | plan file rewrite; no typed dropped status |
 | Deterministic completion gate | absent | absent as universal primitive | review/verification workflow dependent | absent as universal primitive |
 | Foreground process | bash | shell | unified exec | bash |
 | Background process | absent core | implemented but live | unified exec, live | local live or sandbox-runtime-backed |
-| Blocking child | example only | task/agent | multi-agent thread | resumable delegate |
-| Background child | example only/no session | task lifecycle | multi-agent/app orchestration | process-live registry |
+| Blocking child | example only | task/agent | multi-agent thread with selectable history fork | resumable delegate |
+| Background child | example only/no session | task lifecycle | event-driven child mailbox/wait | process-live registry |
+| Clean-context delegation | example starts a fresh process | child session gets a scoped prompt | `fork_turns=none`; partial/full history also selectable | child instruction + task; no arbitrary history-fork selector |
+| Human input disposition | steer vs follow-up queues | serialized follow-up/abort; V2 evolving | steer queue, mailbox trigger/no-trigger, explicit interrupt | queued steering/cancellation, less explicit message routing |
 | Child HITL | none core | permission/task dependent | approvals/tool runtime | one approval/ask resurfaced into parent |
 | Scheduled unattended work | absent | external/integration dependent | app automation outside core | explicit routine + scheduler + fresh sandbox |
 | Cross-session memory | context files/extensions | storage/plugins | memory extension/state | Memory Bank + preload/review/profile |
@@ -157,12 +162,7 @@ Pi intentionally covers mostly the first. OpenCode and Codex cover more of the m
 
 Pi's default four tools minimize schema cost and policy ambiguity. OpenCode, Codex, and Horizon expose broader product capabilities. The broad approach improves discoverability but makes every turn pay in prompt tokens, tool-choice entropy, and guard complexity.
 
-The right lesson is not “four forever.” It is:
-
-- four high-frequency coding tools direct;
-- one progressive-disclosure path for everything else;
-- optional PTC as a different calling syntax over the same broker;
-- host/UI commands outside the model-visible tool list when possible.
+The right lesson is not a fixed tool count. It is the smallest compositional surface that preserves authority: one programmable code surface when it can broker every capability, or a few direct primitives while that path is still being validated. Everything uncommon should use progressive disclosure, and host/UI controls should remain outside the model-visible registry.
 
 ### Prompt philosophy
 
@@ -200,6 +200,54 @@ Pi's child support is an optional no-session subprocess example. OpenCode has ta
 
 None makes child output automatically trustworthy. A parent must verify a child's diff/evidence before reporting completion. Child lifecycle and workspace ownership are more important than a large agent taxonomy.
 
+### Human steering is a routing problem, not a single queue
+
+Pi distinguishes steering that enters the active run from follow-up work after the run, but both queues are process-live. Codex goes further: pending user input is drained only at safe sample boundaries, explicit interrupt cancels the active task, and inter-agent mailbox messages carry whether they should trigger a turn ([turn drain](/Users/mathiasl/src/codex/codex-rs/core/src/session/turn.rs:304), [input queue](/Users/mathiasl/src/codex/codex-rs/core/src/session/input_queue.rs:76), [interrupt](/Users/mathiasl/src/codex/codex-rs/core/src/session/mod.rs:4567)). Its V2 child API also makes the distinction concrete: `send_message` queues without triggering work, while `followup_task` queues and triggers an idle child ([send](/Users/mathiasl/src/codex/codex-rs/core/src/tools/handlers/multi_agents_v2/send_message.rs:28), [follow-up](/Users/mathiasl/src/codex/codex-rs/core/src/tools/handlers/multi_agents_v2/followup_task.rs:29)).
+
+The important primitive is explicit delivery intent:
+
+- **steer current work now:** request cooperative cancellation, then deliver at the next safe boundary;
+- **steer at the next boundary:** do not cancel the current model/tool step;
+- **follow up after the current outcome:** retain the message without polluting active context;
+- **unrelated inbox/new task:** never inject it into the current task.
+
+The host or human must choose this disposition. Inferring it from message text risks cancelling useful work or corrupting the active objective.
+
+### Goal control and progress are not ordinary memory
+
+A long-running coding harness needs a control projection that answers five different questions:
+
+1. What is the immutable or explicitly revised objective and acceptance contract?
+2. What approach is currently active?
+3. What environment-observed work and evidence are complete?
+4. What work was dropped or superseded, by whom, and why?
+5. What remains before the host may publish completion?
+
+The implementations cover this unevenly:
+
+| Harness | Original goal | Work done/in progress/remaining | Drop/supersede semantics | Completion authority |
+|---|---|---|---|---|
+| Pi | transcript + compaction `Goal` field | compaction `Done/In Progress/Blocked/Next Steps`; optional examples | prose or branch history only | model/user/extension |
+| OpenCode | user/session history | durable model-written todos and plan mode | list replacement or plan rewrite; no typed reason | model unless external checks |
+| Codex | durable goal extension | goal status plus model/UI `update_plan` | replacement; plan statuses omit dropped/superseded | goal policy/model; no universal test gate |
+| Horizon | user turn + project/plan files | model-maintained `plan.md`, counters, no-progress guardrails | plan-file rewrite | model unless task-specific check |
+| This ADK repository | typed `TaskLedger.goal`, acceptance criteria, constraints/non-goals | compact ledger projection, observed files/actions/validations, deterministic replan routing | no explicit dropped/superseded plan-step status yet | deterministic verifier |
+
+The crucial separation is **declared progress versus observed progress**. OpenCode todos, Codex plans, Horizon's plan file, and Pi summaries are useful working memory, but the model can mark them incorrectly. This ADK repository already resists that failure: repeated-action fingerprints drive no-progress routing independently of model prose ([progress reducer](/Users/mathiasl/src/adk_coding_agent/harness/state/progress.py:24)), workspace changes are observed before ledger reduction, and a `done` claim routes to verification ([workflow](/Users/mathiasl/src/adk_coding_agent/app/agent/workflow.py:1091)). Its remaining gap is lifecycle precision for replanning: `PlanStepStatus` has pending/active/complete/blocked but no dropped or superseded state ([task model](/Users/mathiasl/src/adk_coding_agent/harness/models/task.py:31)).
+
+### Delegation and context isolation
+
+Delegation has two independent benefits:
+
+- **context isolation:** a child reads noisy evidence or explores an alternative without filling the parent window;
+- **wall-clock parallelism:** independent work proceeds concurrently.
+
+Codex makes context inheritance explicit: V2 `fork_turns` accepts `none`, `all`, or the last N completed turns, so a parent can choose a clean worker, a narrow handoff, or a full-history fork ([spawn parser](/Users/mathiasl/src/codex/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs:280)). Children receive their own thread identity and mailbox; waiting is event-driven and wakes on child mail or new root steering ([wait](/Users/mathiasl/src/codex/codex-rs/core/src/tools/handlers/multi_agents_v2/wait.rs:39)). OpenCode creates durable child sessions and supports foreground/background execution. Pi's shipped example starts separate no-session processes, proving context isolation and parallel scheduling without making them a core durability promise. Horizon has blocking resumable delegates and process-live background children.
+
+For complex problem solving, clean-context delegation is high value when a subproblem has a crisp boundary and a large evidence footprint: repository mapping, independent failure diagnosis, reviewing a proposed diff, or analyzing several modules. It is not inherently better reasoning. It adds briefing loss, duplicated reads, cost, coordination, merge conflicts, and child-claim verification. Asynchronous children add value only when there is useful parent work that truly does not depend on their answers.
+
+A minimal SOTA harness should therefore provide bounded clean-context delegation, but invoke it selectively. The return path should be a small typed result plus trace/artifact references, not the child's transcript. Mutation should default to parent-owned or isolated workspaces. The parent remains responsible for integration and verification.
+
 ### Memory
 
 Pi largely uses session/context files; OpenCode leans on storage/plugins; Codex separates memory into extensions/state; Horizon integrates Memory Bank preload, capture, profile generation, and review forks.
@@ -225,16 +273,17 @@ The earlier three-harness report covered prompts, tools, PTC, compaction, sessio
 6. **Secret lifecycle.** Storage, name-only prompt exposure, just-in-time injection, child/routine scoping, rotation, and redaction must be specified together.
 7. **Headless policy.** Unattended work cannot reuse an interactive “ask” outcome; it needs explicit allow/deny semantics and smaller authority.
 8. **Prompt-cache placement.** Stable, contextual, and volatile state need an explicit ordering and fingerprint contract.
-9. **Compactor side effects.** A summarizer that starts memory agents introduces cost, races, and shutdown behavior outside the nominal compaction call.
-10. **Task-tree cancellation.** Cancelling a parent should define what happens to model streams, nested PTC calls, children, processes, verifiers, and routines.
-11. **Economic budget composition.** Root, compactor, child, reviewer, retrieval, and scheduled calls must roll up to one budget if budgets are promised.
-12. **Deletion and retention.** Transcript, ledger, memory, artifacts, snapshots, child state, and derived indexes need coherent erasure semantics.
-13. **Deployment trust profile.** Local policy enforcement, container isolation, and managed sandbox containment must not share one “sandboxed” label.
-14. **Control-plane availability.** A live child registry and a durable task store are different operational guarantees.
-15. **Instruction trust after compaction.** Summaries and retrieved memories must be explicitly background data, not silently promoted instructions.
-16. **Model-switch compatibility.** Window size is only one axis; tokenizer, tool grammar, system-prompt semantics, and compaction format can change.
-17. **Verification ownership.** “Agent finished” is not “acceptance passed”; the host needs deterministic evidence or an explicit unverified outcome.
-18. **Concurrency conflict policy.** Parallel reads are cheap; concurrent writes need workspace isolation, locks, or merge ownership.
+9. **Message disposition.** Active steering, next-boundary steering, after-current follow-up, and unrelated inbox work must not share an implicit delivery policy.
+10. **Compactor side effects.** A summarizer that starts memory agents introduces cost, races, and shutdown behavior outside the nominal compaction call.
+11. **Task-tree cancellation.** Cancelling a parent should define what happens to model streams, nested PTC calls, children, processes, verifiers, and routines.
+12. **Economic budget composition.** Root, compactor, child, reviewer, retrieval, and scheduled calls must roll up to one budget if budgets are promised.
+13. **Deletion and retention.** Transcript, ledger, memory, artifacts, snapshots, child state, and derived indexes need coherent erasure semantics.
+14. **Deployment trust profile.** Local policy enforcement, container isolation, and managed sandbox containment must not share one “sandboxed” label.
+15. **Control-plane availability.** A live child registry and a durable task store are different operational guarantees.
+16. **Instruction trust after compaction.** Summaries and retrieved memories must be explicitly background data, not silently promoted instructions.
+17. **Model-switch compatibility.** Window size is only one axis; tokenizer, tool grammar, system-prompt semantics, and compaction format can change.
+18. **Verification ownership.** “Agent finished” is not “acceptance passed”; the host needs deterministic evidence or an explicit unverified outcome.
+19. **Concurrency conflict policy.** Parallel reads are cheap; concurrent writes need workspace isolation, locks, or merge ownership.
 
 These dimensions are now included in each standalone dossier where the implementation has a real answer; absences are listed rather than inferred away.
 
@@ -279,284 +328,6 @@ The earlier report was right not to require every mature-system feature. For thi
 - automatic skill promotion into trusted instructions;
 - PTC enabled by default before the pending four-tool-versus-PTC ablation in [`TODO.md`](/Users/mathiasl/src/adk_coding_agent/docs/TODO.md:3).
 
-## Simplified best-of-breed on ADK
+## Separate ADK implementation proposal
 
-### Design thesis
-
-Use ADK for the model/event/callback/service substrate. Keep a small harness-owned deterministic control plane for task state, effects, and verification. Do not recreate an agent framework beside ADK.
-
-~~~text
-client
-  │  user turn / steer / approve / cancel / replay
-  ▼
-ADK Runner + resumable App
-  │
-  ├─ one coding Agent
-  │    ├─ stable static instruction
-  │    ├─ bounded project/task context callback
-  │    └─ volatile reminder tail
-  │
-  ├─ four direct tools: read, bash, edit, write
-  │                    │
-  │                    ▼
-  │             one EffectBroker
-  │          policy → approval → receipt
-  │          sandbox → bound output → event
-  │
-  ├─ optional python/PTC tool
-  │       └─ nested calls re-enter EffectBroker
-  │
-  └─ callbacks
-       ├─ compile prompt from durable task state
-       ├─ cheap prune / compaction projection
-       ├─ drain steering at safe boundaries
-       └─ verify before publishing coding completion
-
-durable task ledger + ADK events + artifacts + checkpoints
-         │
-         ├─ replay/reduce
-         ├─ exact recent context
-         ├─ summary at watermark
-         └─ deterministic completion evidence
-~~~
-
-### 1. One worker, one broker, four direct tools
-
-Keep `read`, `bash`, `edit`, and `write` as the direct model surface. They cover the common coding workload and match this repository's supported baseline. Do not add process, search, todo, memory, task, artifact, approval, or verification as separate model tools unless the model genuinely must choose them.
-
-- Search remains composable through `bash`/repository helpers.
-- Approvals are host/UI interrupts, not model decisions.
-- Verification is host-owned after the model claims completion.
-- Task state is compiled into context, not mutated through a todo tool.
-- Artifacts are an output spill mechanism, not necessarily a top-level tool.
-
-All direct, nested PTC, and verification calls use one `EffectBroker` equivalent: validate path/command, evaluate policy, await an exact task-scoped approval when necessary, append a started receipt, execute in the configured environment, redact/bound output, append terminal receipt/event.
-
-### 2. Three prompt tiers
-
-Adopt Horizon's placement discipline with Pi's content restraint:
-
-**Stable `static_instruction`**
-
-- identity and coding behavior;
-- four-tool routing rules;
-- read-before-edit and verification/completion contract;
-- security rule that fetched content is data;
-- concise output style;
-- constant serialization/version/hash.
-
-**Cacheable context tier**
-
-- selected project instruction chain;
-- compact repository manifest;
-- selected skill bodies only;
-- task goal, constraints, acceptance criteria, current plan, workspace identity;
-- deterministic ordering and per-section hashes.
-
-**Volatile trailing tier**
-
-- new steering;
-- pending approval/unknown-effect warning;
-- last error and remaining budget;
-- exact current environment/model/date only when relevant.
-
-Never put counters, current time, live process state, or secret values in the stable prefix.
-
-### 3. Durable task reducer, not transcript-as-state
-
-Retain the current typed `TaskLedger` and append-only events. The minimum authoritative task state is:
-
-- goal, constraints, non-goals, acceptance criteria;
-- plan steps and current next action;
-- files read/modified and workspace/base revision fingerprint;
-- decisions and blockers;
-- tool receipts including unknown effects;
-- approval decisions and expiration;
-- validation commands/results;
-- steering delivery/ack;
-- budget usage;
-- completion state: working, blocked, verified, failed, cancelled.
-
-ADK session events remain the conversational record. The task ledger remains the control record. Neither silently replaces the other.
-
-### 4. Context economy
-
-Use this order:
-
-1. Normalize and cap each tool result at creation; spill full bytes to a content-addressed artifact/overflow file.
-2. Before model call, replace stale large tool bodies with a marker only when the full result remains retrievable.
-3. Compile exact current task state from the ledger rather than asking an LLM to rediscover it from chat.
-4. When pressure crosses a model-relative threshold, create one structured continuation summary from ledger facts plus the recent conversational delta.
-5. Append a compaction event containing source watermark, selected event IDs, summary, artifact handles, and hashes.
-6. Project summary + exact recent tail into ADK; never delete source events solely because they left context.
-
-Avoid a pre-compaction memory agent in the minimal design. Durable user facts can be promoted synchronously from explicit user statements or by a later opt-in review; task continuity already lives in the ledger.
-
-### 5. Optional PTC, same authority
-
-Keep the existing notebook-native Python PTC disabled by default until the measured ablation passes. Its contract should remain:
-
-- no direct imports or raw file/process/network primitives;
-- eligible capabilities exposed through a small `tools`/broker object;
-- every nested call gets its own receipt, approval, bound output, and trace parent;
-- cell submitted/completed/failed/timed-out recorded durably;
-- safe completed cells may restore interpreter state after restart;
-- unsafe or unknown effects are never auto-replayed;
-- explicit time, call-count, output, and token budgets;
-- PTC is a calling syntax, not a new privilege tier.
-
-This keeps the useful part of OpenCode/Codex Code Mode without importing a second runtime architecture.
-
-### 6. Process lifetime
-
-Add no new process system unless the current managed shell path needs it. If background processes are required, specify the smallest correct contract:
-
-~~~text
-spawn -> running -> exited | failed | killed | unknown
-~~~
-
-Persist command identity, environment/workspace fingerprint, backend process ID, timestamps, bounded log artifact, and last observed state. On restart:
-
-- reattach only when the backend can prove identity;
-- otherwise mark `unknown`, do not rerun;
-- success claims require an explicit health/readiness check;
-- cancellation is idempotent.
-
-Do not call a process durable merely because its metadata is in SQLite.
-
-### 7. Child agents only when isolation pays
-
-Do not add a general swarm. If a concrete workload needs child contexts, add one `delegate` capability with:
-
-- a self-contained goal/context/success brief;
-- default read-only profile;
-- explicit tool allowlist, workspace ownership, time/call/cost budget;
-- no recursive delegation initially;
-- one parent-visible status/result envelope;
-- parent verification before accepting mutations;
-- resume the same child across HITL or halt; never silently rerun;
-- background mode only after durable task handles exist.
-
-Horizon's one-approval resurfacing is a good bounded first version. Codex's richer thread/worktree tree is justified only when concurrent repository mutation is a product requirement.
-
-### 8. Headless work as a separate profile
-
-Do not implement routines yet. Define the future contract now so interactive authority cannot leak into unattended work:
-
-- fresh task/run identity;
-- fresh isolated workspace or explicit immutable starting revision;
-- declared secret allowlist;
-- no interactive `ask`; undecidable operations fail closed;
-- hard time/cost/tool budgets;
-- idempotency key and retry policy;
-- deterministic verification and explicit delivery destination;
-- durable scheduler row separate from chat/session state.
-
-Add it only when there is a real scheduled coding workflow.
-
-### 9. Verification is the completion boundary
-
-The model may propose `done`; the host decides whether a coding task can be published as complete.
-
-1. Compile required checks from acceptance criteria and repository configuration.
-2. Run them through the same sandbox/policy/approval path.
-3. Attach exact command, exit status, bounded logs/artifacts, and workspace fingerprint.
-4. Mark verified only if deterministic predicates pass.
-5. If checks cannot run, return blocked/unverified—not success.
-
-This repository already implements the essential gate; preserve it rather than adding a judge agent.
-
-### 10. Budget and cancellation
-
-One task budget should roll up:
-
-- model input/output/cache tokens and cost;
-- compaction calls;
-- PTC cells and nested calls;
-- verification commands;
-- future child calls.
-
-Budget exhaustion should produce a structured handoff from deterministic ledger state, not another LLM call if no budget remains.
-
-Cancellation should propagate through one task tree: stop new model sampling, cancel active broker call where safe, terminate PTC cell, signal managed process/child, preserve terminal receipts, and leave scheduled routines separate unless explicitly targeted.
-
-### 11. Minimal memory
-
-Use canonical ledger views for task recall. Add cross-session learned memory only for durable non-code user facts and explicit decisions. Every injected item needs:
-
-- source event ID;
-- user/project/task scope;
-- observed and recorded timestamps;
-- freshness/expiry or version;
-- redaction classification.
-
-Derived search indexes remain rebuildable projections. The current JSONL/DuckDB authority and optional Lance projection already follow this rule; no Memory Bank fork is required for the minimal local harness.
-
-## ADK mapping
-
-| Required primitive | ADK substrate | Harness-owned piece |
-|---|---|---|
-| model loop/streaming | `Agent`, `Runner`, model adapters | provider registry and public-output policy |
-| resumable conversation/HITL | `App(ResumabilityConfig)`, session service, confirmations | receipt/idempotency and UI decision protocol |
-| stable prompt | `static_instruction` | versioned builder/hash |
-| dynamic context | before-model callback | deterministic compiler/reducer |
-| tool effects | ADK function tools/callbacks | one broker, sandbox, output bounds |
-| PTC | one optional Python tool | guarded interpreter + nested broker calls + notebook events |
-| compaction backstop | ADK event compaction | ledger-aware snapshot/watermark/projection |
-| artifacts | ADK artifact service or local store | content addressing, bounds, redaction |
-| durability | ADK session service | task ledger, receipts, steering, run registry |
-| verification | ordinary broker calls after agent | acceptance resolver and publication gate |
-| telemetry/evals | ADK events/evals + traces | deterministic contract tests and cost roll-up |
-
-## Minimal implementation order
-
-Most of this repository already exists, so the shortest safe path is refinement, not replacement:
-
-1. Keep the current four-tool default, ledger, receipts, approvals, steering, replay, and verifier.
-2. Make the stable/context/volatile prompt placement explicit and test prefix hashes across turns.
-3. Finish the pending four-tool-versus-PTC ablation before changing defaults.
-4. Cut canonical ledger views into live prompt/compaction only after existing byte/cache/correctness gates pass.
-5. Add a unified budget reducer if the product promises budget enforcement.
-6. Specify live-process recovery only when background process demand is concrete.
-7. Add bounded child delegation only when context isolation measurably helps a target workload.
-8. Add headless routines only for an actual scheduled use case.
-
-This intentionally does **not** recommend porting Horizon wholesale. ADK already supplies the substrate; the current repository already supplies stronger deterministic task/receipt/verification contracts than Horizon. The useful imports are the lifetime distinctions, prompt tiering, environment/secret boundaries, and nested HITL protocol.
-
-## Evaluation rubric for the simplified design
-
-Use deterministic tests for contracts and model evals for choices:
-
-### Deterministic
-
-- identical inputs produce identical static prefix, context manifest, reducer state, and compaction hash;
-- direct and PTC nested calls traverse identical policy/receipt logic;
-- crash after started-before-terminal effect produces `unknown`, never blind retry;
-- approval scope/expiration cannot cross task identity;
-- resume does not repeat completed side effects;
-- cancellation leaves terminal or unknown receipts for every active effect;
-- compaction source watermark and exact-tail selection are replayable;
-- verifier evidence matches the exact workspace fingerprint;
-- task erasure removes authorities and rebuildable projections without harming other tasks.
-
-### Behavioral
-
-- four direct tools versus PTC on quality, token use, latency, cache hits, and tool errors;
-- model obeys selected project instructions and ignores instruction-like tool data;
-- model diagnoses repeated failure and maintains progress after compaction;
-- model uses background process only for genuinely long commands and verifies readiness;
-- parent rejects or rechecks unsupported child claims;
-- budget reminders reduce waste without causing premature completion.
-
-## Final assessment
-
-The most important common primitive is **controlled continuity**: enough durable evidence and bounded state to continue after turns, compaction, interruption, and process loss without pretending that every live effect is replayable.
-
-The four harnesses teach complementary lessons:
-
-- Pi: keep the default loop and tool surface small.
-- OpenCode: product-grade session/workspace operations and brokered PTC matter.
-- Codex: type world state, preserve rollout evidence, and make authority/cancellation explicit.
-- Horizon: use ADK's resumability/cache/services, separate state lifetimes, scope secrets/headless work, and resume nested HITL in place.
-
-For this ADK repository, the simplified best-of-breed path is already mostly present. The highest-value remaining work is not more agents or tools; it is finishing the PTC ablation, making prompt/lifetime/budget contracts explicit, and only adding process, child, or scheduler machinery when a concrete workload proves the need.
+The source-grounded extension plan for `/Users/mathiasl/src/adk_coding_agent`—including one-tool Code Mode, one trace-native store, human message disposition, explicit goal control, and bounded clean-context delegation—is in [Minimal SOTA coding-agent extensions on ADK](coding-harness-minimal-sota-extensions.md).

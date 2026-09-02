@@ -3,7 +3,7 @@
 > **Status:** source-grounded implementation reference
 > **Repository:** `/Users/mathiasl/src/pi`
 > **Revision:** `853a80d26c90a14c1886f0ebb8ffaae133ca2185`
-> **Related:** [OpenCode](coding-harness-opencode.md), [Codex](coding-harness-codex.md), [ADK Long Horizon](coding-harness-adk-long-horizon.md), [comparison](coding-harness-comparison.md)
+> **Related:** [OpenCode](coding-harness-opencode.md), [Codex](coding-harness-codex.md), [ADK Long Horizon](coding-harness-adk-long-horizon.md), [comparison](coding-harness-comparison.md), [minimal ADK proposal](coding-harness-minimal-sota-extensions.md)
 
 > **Package version:** 0.84.4
 > **Inspection date:** 2026-09-01

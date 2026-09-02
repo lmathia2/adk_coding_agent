@@ -4,7 +4,7 @@
 > **Repository:** `/Users/mathiasl/src/adk-samples/core/python/long-horizon-harness`
 > **Revision:** `cf7cadbc537cab9a6105a9b9adf5a2af2da43061`
 > **Inspection date:** 2026-09-01
-> **Related:** [Pi](coding-harness-pi.md), [OpenCode](coding-harness-opencode.md), [Codex](coding-harness-codex.md), [comparison](coding-harness-comparison.md)
+> **Related:** [Pi](coding-harness-pi.md), [OpenCode](coding-harness-opencode.md), [Codex](coding-harness-codex.md), [comparison](coding-harness-comparison.md), [minimal ADK proposal](coding-harness-minimal-sota-extensions.md)
 
 ## Scope and evidence boundary
 
