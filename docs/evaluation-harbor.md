@@ -4,6 +4,10 @@ Skein runs as a host-side Harbor external agent. The ADK/model loop and provider
 credential stay in the host process; `read`, `bash`, `edit`, `write`, repository
 inspection, and verification execute through Harbor's task environment. Harbor
 does not receive the provider credential through agent or task environment variables.
+For this adapter only, dependency, network, unknown-command, and Git authority
+is delegated to Harbor's disposable task environment; its task policy and
+container boundary remain the enforcement layer. Local `skein eval-run` keeps
+the standard restrictive approval policy.
 
 ## Pinned contract
 
@@ -35,7 +39,7 @@ Use the checked-in external-agent import path and pass no provider secret to
 
 ```bash
 harbor run \
-  --dataset terminal-bench@2.1 \
+  --task terminal-bench/TASK_ID@TASK_ARTIFACT_SHA256 \
   --agent harness.evals.harbor:SkeinHarborAgent \
   --model gpt-5.6-luna \
   --agent-kwarg provider=openai_codex \
@@ -50,7 +54,7 @@ and reference its name only:
 
 ```bash
 harbor run \
-  --dataset terminal-bench@2.1 \
+  --task terminal-bench/TASK_ID@TASK_ARTIFACT_SHA256 \
   --agent harness.evals.harbor:SkeinHarborAgent \
   --model meta/muse-spark-1.2-contributor \
   --agent-kwarg provider=openrouter \

@@ -440,6 +440,7 @@ class SkeinHarborAgent(BaseAgent):
             max_iterations=self.max_iterations,
             max_task_input_tokens=self.max_task_input_tokens,
             wall_time_seconds=self.wall_time_seconds,
+            isolated_environment_authority=True,
         )
         context.metadata = {
             "skein": {

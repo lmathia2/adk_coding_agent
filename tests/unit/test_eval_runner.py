@@ -49,6 +49,25 @@ def test_evaluation_config_pins_luna_max_without_auth_state(tmp_path: Path) -> N
     assert model.reasoning == "max"
     assert composition.behavior_sha256 == loaded.behavior_sha256
     assert str(request.auth_state_root) not in path.read_text(encoding="utf-8")
+    assert not config.safety.allow_network
+    assert not config.safety.allow_unknown_commands
+
+
+def test_isolated_evaluation_delegates_authority_to_the_task_environment(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path, tmp_path).model_copy(
+        update={"isolated_environment_authority": True}
+    )
+
+    _, composition = runner.prepare_evaluation_config(request)
+    config = composition.harness.config
+
+    assert isinstance(config, SkeinConfig)
+    assert config.safety.allow_dependency_install
+    assert config.safety.allow_network
+    assert config.safety.allow_git_history_mutation
+    assert config.safety.allow_unknown_commands
 
 
 def test_evaluation_config_pins_openrouter_model_and_secret_reference(tmp_path: Path) -> None:
