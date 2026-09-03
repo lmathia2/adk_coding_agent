@@ -32,6 +32,28 @@ project environment:
 uv tool install datacurve-pier==0.3.1
 ```
 
+## Resumable suite runner
+
+The checked-in CLI runs the frozen samples sequentially and keeps the complete
+Harbor job tree, Skein traces, events, metrics, verifier results, command
+artifacts, stdout/stderr, run metadata, and SHA-256 file inventory:
+
+```bash
+python scripts/run_harbor_eval.py --suite smoke --plan
+python scripts/run_harbor_eval.py --suite smoke --task-id modernize-scientific-stack
+python scripts/run_harbor_eval.py --suite smoke
+python scripts/run_harbor_eval.py --suite broader
+python scripts/run_harbor_eval.py --suite full
+```
+
+Rerun the same command after an interruption. Completed task keys are skipped,
+an incomplete Harbor job is resumed with `harbor job resume`, and a finished
+infrastructure error gets a separate attempt directory. A result written before
+a wrapper crash is recovered from disk without rerunning the task.
+Ordinary verifier failures are completed results and are not retried. The CLI
+rejects a jobs directory whose fixed model, reasoning, sample, configuration,
+attempt count, or Git revision differs from its original run contract.
+
 ## Local Harbor run
 
 Use the checked-in external-agent import path and pass no provider secret to

@@ -366,6 +366,22 @@ Structured requests can specify `goal`, `acceptance_criteria`, and
 `verification_requirements`. Executable changes require behavioral checks by
 default; `verification_level: syntax` is an explicit weaker contract.
 
+## Harbor evaluations
+
+The Harbor runner executes the frozen samples sequentially and preserves each full job directory: raw agent trajectories, Skein events and traces, command artifacts, verifier output, stdout/stderr, metadata, and file hashes. Completed task keys are skipped on restart; interrupted jobs use Harbor job resume; failed jobs get separate retry directories.
+
+    .venv/bin/python scripts/run_harbor_eval.py --suite smoke --plan
+    .venv/bin/python scripts/run_harbor_eval.py --suite smoke --task-id modernize-scientific-stack
+    .venv/bin/python scripts/run_harbor_eval.py --suite smoke
+    .venv/bin/python scripts/run_harbor_eval.py --suite broader
+    .venv/bin/python scripts/run_harbor_eval.py --suite full
+
+Use `--task-id` or `--limit` for a preflight, `--jobs-dir` to choose persistent
+artifacts, `--retries 0` to disable retries, or `--stop-on-error` to halt. A
+watchdog allows the manifest runtime plus 30 minutes by default; override it
+with `--timeout-seconds`. Reusing a jobs directory with a changed model,
+reasoning setting, harness configuration, sample, or Git revision is rejected.
+
 ## Development
 
 ```bash

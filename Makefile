@@ -1,4 +1,4 @@
-.PHONY: install test lint format typecheck run eval sync-skills
+.PHONY: install test lint format typecheck run eval eval-harbor sync-skills
 
 install:
 	uv sync --all-groups --extra eval
@@ -20,6 +20,9 @@ run:
 
 eval:
 	agents-cli eval run
+
+eval-harbor:
+	.venv/bin/python scripts/run_harbor_eval.py
 
 sync-skills:
 	uv run python scripts/sync_agents_cli_skills.py

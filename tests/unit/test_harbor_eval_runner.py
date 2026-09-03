@@ -1,0 +1,96 @@
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = ROOT / "scripts/run_harbor_eval.py"
+
+
+def load_runner():
+    spec = importlib.util.spec_from_file_location("run_harbor_eval", SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize(
+    ("suite", "count", "attempts"),
+    [("smoke", 6, 1), ("broader", 10, 1), ("full", 105, 2)],
+)
+def test_frozen_suite_plans(suite: str, count: int, attempts: int) -> None:
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT), "--suite", suite, "--plan"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    plan = json.loads(completed.stdout)
+    assert len(plan["tasks"]) == count
+    assert plan["attempts"] == attempts
+
+
+def test_metadata_rejects_changed_fixed_intelligence(tmp_path: Path) -> None:
+    runner = load_runner()
+    path = tmp_path / "run-metadata.json"
+    metadata = {name: "fixed" for name in runner.CONTRACT_FIELDS}
+    runner.write_or_validate_metadata(path, metadata)
+    metadata["model"] = "changed"
+    with pytest.raises(SystemExit, match="model changed"):
+        runner.write_or_validate_metadata(path, metadata)
+
+
+def test_watchdog_terminates_a_hung_job(tmp_path: Path) -> None:
+    runner = load_runner()
+    with (
+        (tmp_path / "stdout").open("w", encoding="utf-8") as stdout,
+        (tmp_path / "stderr").open("w", encoding="utf-8") as stderr,
+    ):
+        returncode, timed_out = runner.execute(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            cwd=ROOT,
+            env={},
+            stdout=stdout,
+            stderr=stderr,
+            timeout_seconds=1,
+        )
+    assert (returncode, timed_out) == (124, True)
+
+
+def test_targeted_preflight_selects_one_task() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--suite",
+            "smoke",
+            "--plan",
+            "--task-id",
+            "modernize-scientific-stack",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(completed.stdout)["tasks"] == ["modernize-scientific-stack"]
+
+
+def test_completed_harbor_job_is_recovered_without_rerun(tmp_path: Path) -> None:
+    runner = load_runner()
+    task_dir = tmp_path / "001-example-attempt-01"
+    job_dir = task_dir / "job"
+    job_dir.mkdir(parents=True)
+    (job_dir / "result.json").write_text(
+        json.dumps({"verifier_result": {"rewards": {"reward": 0}}}),
+        encoding="utf-8",
+    )
+    recovered = runner.completed_task(tmp_path, "001-example")
+    assert recovered is not None
+    assert recovered[0] == task_dir
+    assert recovered[2] == [0]
