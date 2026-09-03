@@ -39,7 +39,10 @@ historical feature checklist or book-rubric score.
   as timestamped Markdown cells alongside code and selected outputs. The `notebook`
   operator command rematerializes by task ID and delegates compact reading to `nb-cli`
   when available, with a dependency-free renderer otherwise. `nb execute` is not a
-  second execution path. `start-ptc.sh` enables this
+  second execution path. Clean PTC worker shutdown rematerializes the complete logical
+  notebook and records one immutable content-addressed `.ipynb` snapshot at its source
+  watermark; the ledger stays authoritative and the live heap is discarded.
+  `start-ptc.sh` enables this
   path together with the dependency-free canonical JSONL ledger and an isolated state
   root; the ordinary launcher retains the four-tool default.
 - Optional canonical memory now shadow-captures task events, tool-receipt transitions,

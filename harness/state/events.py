@@ -33,6 +33,7 @@ class EventKind(StrEnum):
     NOTEBOOK_CELL_DELETED = "notebook.cell_deleted"
     NOTEBOOK_CELL_REORDERED = "notebook.cell_reordered"
     NOTEBOOK_MATERIALIZED = "notebook.materialized"
+    NOTEBOOK_SNAPSHOTTED = "notebook.snapshotted"
     REPL_CELL_SUBMITTED = "repl.cell_submitted"
     REPL_CELL_COMPLETED = "repl.cell_completed"
     REPL_CELL_FAILED = "repl.cell_failed"

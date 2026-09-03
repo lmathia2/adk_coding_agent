@@ -25,6 +25,7 @@ from harness.notebook import (
     NotebookCell,
     externalize_mime_bundle,
     materialize_notebook,
+    put_artifact,
     reduce_notebook,
 )
 from harness.repl import PersistentPythonWorker
@@ -262,6 +263,7 @@ def build_coding_worker(
         else None
     )
     restored_kernel_epoch: str | None = None
+    active_notebooks: dict[str, str] = {}
 
     class _RestoreBroker:
         @staticmethod
@@ -501,6 +503,7 @@ def build_coding_worker(
         task_scope, invocation_id = _runtime_identity(tool_context)
         task_id = task_scope or "unscoped"
         notebook_id = hashlib.sha256(task_id.encode()).hexdigest()[:32]
+        active_notebooks[task_id] = notebook_id
         cell_id = uuid4().hex
         attempt_id = uuid4().hex
         kernel_epoch = await asyncio.to_thread(lambda: worker.kernel_epoch)
@@ -687,6 +690,38 @@ def build_coding_worker(
             "state_delta": list(result.state_delta),
         }
 
+    def close() -> None:
+        assert python_worker is not None
+        try:
+            for task_id, notebook_id in sorted(active_notebooks.items()):
+                notebook_state = reduce_notebook(active_event_store.read(task_id), notebook_id)
+                notebook_path = settings.state_root / "notebooks" / f"{notebook_id}.ipynb"
+                notebook_bytes = materialize_notebook(notebook_state, notebook_path)
+                artifact_uri = put_artifact(
+                    settings.state_root / "artifacts" / "sha256", notebook_bytes
+                )
+                payload: dict[str, Any] = {
+                    "notebook_id": notebook_id,
+                    "artifact_uri": artifact_uri,
+                    "notebook_sha256": hashlib.sha256(notebook_bytes).hexdigest(),
+                    "source_watermark": notebook_state.source_watermark,
+                }
+                code_cells = [
+                    cell for cell in notebook_state.cells if isinstance(cell, NotebookCell)
+                ]
+                if code_cells:
+                    payload["kernel_epoch"] = code_cells[-1].kernel_epoch
+                active_event_store.append(
+                    task_id,
+                    EventKind.NOTEBOOK_SNAPSHOTTED,
+                    payload,
+                    idempotency_key=(
+                        f"notebook-snapshot:{notebook_id}:{notebook_state.source_watermark}"
+                    ),
+                )
+        finally:
+            python_worker.close()
+
     model_tools: list[Any] = (
         [python] if active_ptc_config.enabled else [read, bash, edit, write]
     )
@@ -740,7 +775,7 @@ def build_coding_worker(
         edit=edit,
         write=write,
         python=python if active_ptc_config.enabled else None,
-        close=python_worker.close if python_worker is not None else None,
+        close=close if python_worker is not None else None,
     )
 
 

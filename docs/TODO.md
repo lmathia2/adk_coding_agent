@@ -40,6 +40,9 @@
 - [x] Add standalone executable notebooks for PTC state, cache-aware compaction, and versioned trace-memory programs.
 - [x] Project task, public message, steering, and compaction events into timestamped notebook Markdown cells.
 - [x] Add task-scoped notebook rematerialization and compact `nb-cli` inspection with a stdlib fallback.
+- [x] Snapshot the complete logical notebook as one immutable content-addressed
+  artifact when its PTC worker closes; keep the ledger authoritative and the live
+  Python heap ephemeral.
 - [x] Classify only non-externalizing local `nb-cli` reads as automatic; keep notebook execution and mutation approval-gated.
 - [x] Make failed PTC cells transactional by discarding the dirty kernel epoch;
   restore only previously committed cells before accepting more work.

@@ -506,10 +506,12 @@ encryption key reference, task/session ownership, creation event, retention poli
 and optional structural summary. Artifact bytes are not part of the prompt unless a
 view deliberately selects and bounds them.
 
-Notebook files are named workbench projections, not artifact bodies. At checkpoint,
-handoff, branch, or explicit export, the canonical notebook bytes MAY also be stored
-as an artifact. The corresponding snapshot event records its digest, source
-watermark, renderer version, notebook ID, lane, and workspace fingerprint.
+Notebook files are named workbench projections, not artifact bodies. Clean worker
+shutdown stores the canonical notebook bytes as one immutable artifact and appends an
+idempotent snapshot event; checkpoint, handoff, branch, or explicit export MAY create
+additional snapshots. The corresponding event records its digest, source watermark,
+notebook ID, and the last cell kernel epoch when available. Richer deployments may
+also record renderer version, lane, and workspace fingerprint.
 
 ## 9. Sessions, tasks, lanes, and checkpoints
 

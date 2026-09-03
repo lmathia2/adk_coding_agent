@@ -93,6 +93,8 @@ def reduce_notebook(events: Iterable[HarnessEvent], notebook_id: str) -> Noteboo
             continue
         if payload.get("notebook_id") != notebook_id:
             continue
+        if event.kind == EventKind.NOTEBOOK_SNAPSHOTTED:
+            continue
         watermark = max(watermark, event.sequence)
         cell_id = payload.get("cell_id")
         if event.kind == EventKind.NOTEBOOK_CELL_ADDED:

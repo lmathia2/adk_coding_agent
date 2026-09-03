@@ -21,7 +21,9 @@ def _encoded(value: Any) -> tuple[bytes, Any]:
     return content, value
 
 
-def _put_once(root: Path, content: bytes) -> str:
+def put_artifact(root: Path, content: bytes) -> str:
+    """Store immutable bytes once and return their content-addressed URI."""
+
     digest = hashlib.sha256(content).hexdigest()
     target = root / digest
     if target.exists():
@@ -57,7 +59,7 @@ def externalize_mime_bundle(
         if len(content) <= max_inline_bytes:
             rendered[media_type] = inline
             continue
-        uri = _put_once(artifact_root, content)
+        uri = put_artifact(artifact_root, content)
         refs.append(uri)
         externalized.append(
             {"artifact_uri": uri, "byte_size": len(content), "media_type": media_type}
@@ -67,4 +69,4 @@ def externalize_mime_bundle(
     return rendered, refs
 
 
-__all__ = ["externalize_mime_bundle"]
+__all__ = ["externalize_mime_bundle", "put_artifact"]

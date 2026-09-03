@@ -118,6 +118,9 @@ The ledger, notebook, and CPython worker deliberately have separate authority:
   timed-out, retried, and unknown-effect work.
 - The canonical notebook is a rebuildable workbench projection containing timestamped
   task/message/steering/compaction Markdown, exact PTC programs, and selected outputs.
+- Clean worker shutdown rematerializes that complete projection, stores its canonical
+  bytes once under `artifacts/sha256`, and appends an idempotent
+  `notebook.snapshotted` event with the source watermark and last cell kernel epoch.
 - The worker owns only current live variables, imports, clients, and caches. Restart
   restores only completed self-contained data cells; it never infers success from
   notebook order. Failed cells discard the dirty kernel epoch before more work is

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import cast
@@ -228,8 +229,64 @@ async def test_notebook_native_ptc_is_one_tool_and_persists_code_state_and_effec
     assert kinds.count(EventKind.NOTEBOOK_CELL_ADDED) == 3
     assert EventKind.CAPABILITY_REQUESTED in kinds
     assert EventKind.CAPABILITY_COMPLETED in kinds
-    assert kinds[-1] == EventKind.NOTEBOOK_MATERIALIZED
+    assert kinds[-1] == EventKind.NOTEBOOK_SNAPSHOTTED
     assert '"tools":["python"]' in settings.static_prefix
+
+
+@pytest.mark.asyncio
+async def test_worker_close_snapshots_complete_notebook_once(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+    composition = _enabled_composition()
+    config = cast(SkeinConfig, composition.harness.config)
+    settings = settings_from_composition(
+        composition,
+        RuntimeBindings(
+            workspace=workspace,
+            state_root=state_root,
+            task_id="task-snapshot",
+        ),
+    )
+    events = JsonlEventStore(state_root / "events")
+    worker = build_coding_worker(
+        settings,
+        cast(BaseLlm, "test-model"),
+        tools=create_adk_tools(
+            workspace, state_root=state_root, task_scope="task-snapshot"
+        ),
+        ptc_config=config.notebook_ptc,
+        event_store=events,
+    )
+    assert worker.python is not None
+    result = await worker.python("answer = 42")
+    message = events.append(
+        "task-snapshot",
+        EventKind.MESSAGE_RECORDED,
+        {"role": "assistant", "content": "Final answer."},
+    )
+    assert worker.close is not None
+    worker.close()
+    worker.close()
+
+    snapshots = [
+        event
+        for event in events.read("task-snapshot")
+        if event.kind == EventKind.NOTEBOOK_SNAPSHOTTED
+    ]
+    assert len(snapshots) == 1
+    payload = snapshots[0].payload
+    assert payload["source_watermark"] == message.sequence
+    assert payload["kernel_epoch"] == result["kernel_epoch"]
+    digest = payload["notebook_sha256"]
+    assert payload["artifact_uri"] == f"artifact://sha256/{digest}"
+    artifact = state_root / "artifacts" / "sha256" / digest
+    notebook = Path(result["notebook_path"])
+    assert artifact.read_bytes() == notebook.read_bytes()
+    assert hashlib.sha256(artifact.read_bytes()).hexdigest() == digest
+    document = json.loads(artifact.read_bytes())
+    assert [cell["cell_type"] for cell in document["cells"]] == ["code", "markdown"]
+    assert "Final answer." in "".join(document["cells"][1]["source"])
 
 
 @pytest.mark.asyncio
