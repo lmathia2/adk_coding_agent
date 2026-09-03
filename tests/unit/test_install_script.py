@@ -59,6 +59,9 @@ def test_install_script_is_executable_and_has_valid_help() -> None:
     assert "--minimal" in completed.stdout
     assert "--plan" in completed.stdout
     assert "--tui" in completed.stdout
+    script_text = (root / "install.sh").read_text(encoding="utf-8")
+    assert "--extra eval" in script_text
+    assert "python '>=3.12'" in script_text
 
 
 def test_install_script_reports_platform_aware_plan_without_installing() -> None:

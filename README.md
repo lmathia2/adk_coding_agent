@@ -83,7 +83,8 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 The installer detects macOS, installs missing uv/Git/Node.js through Homebrew, creates
-Python 3.11+ in this checkout's `.venv`, syncs the locked dependencies, and builds
+Python 3.12+ in this checkout's `.venv`, syncs the locked dependencies plus Harbor 0.22
+for evaluations, and builds
 the Pi-toolkit terminal **by default**. It links `skein`, `skein-tui`, and
 `skein-start` into the specified command directory. You do not need to activate
 the virtual environment, install Pi or Magnitude, or pass a workspace to installation.

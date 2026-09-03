@@ -1,7 +1,7 @@
 .PHONY: install test lint format typecheck run eval sync-skills
 
 install:
-	uv sync --all-groups
+	uv sync --all-groups --extra eval
 
 test:
 	uv run pytest

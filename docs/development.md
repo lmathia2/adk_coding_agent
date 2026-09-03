@@ -78,7 +78,7 @@ Follow [installation and TUI startup](../README.md). Development setup:
 npm test --prefix clients/terminal
 ```
 
-Python 3.11+, uv, Git, and Node.js 22.19+ are required for the full developer stack.
+Python 3.12+, uv, Git, and Node.js 22.19+ are required for the full developer stack.
 Tests do not need cloud credentials. Live behavior requires separately authorized
 provider access. Do not interpret deterministic smoke tests as model benchmarks.
 

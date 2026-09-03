@@ -15,6 +15,7 @@ Usage: ./install.sh [options]
 
 macOS: missing uv, Git, and Node.js are installed with Homebrew.
 Other platforms: install uv, Git, and Node.js 22.19+ first.
+The evaluation extra installs Harbor 0.22 and requires Python 3.12+.
 Each install recreates only this checkout's .venv. No workspace is selected.
 EOF
 }
@@ -48,6 +49,7 @@ if [ "$print_plan" -eq 1 ]; then
     "  Python environment: $venv_path" \
     '  Environment policy: remove and recreate on every installation' \
     "  Pi-style terminal: $include_tui" "  Development tools: $include_dev" \
+    '  Evaluation tools: Harbor 0.22' \
     "  Command directory: $bin_dir" "  Runtime launcher: $bin_dir/skein-start" \
     '  Launch workspace: selected at runtime'
   exit 0
@@ -88,12 +90,12 @@ printf 'Creating fresh uv environment at %s\n' "$venv_path"
 # Ignore external uv project-environment overrides: this checkout owns its environment.
 UV_PROJECT_ENVIRONMENT=$venv_path
 export UV_PROJECT_ENVIRONMENT
-uv venv --python '>=3.11' "$venv_path"
+uv venv --python '>=3.12' "$venv_path"
 groups=--no-default-groups
 [ "$include_dev" -eq 0 ] || groups=--all-groups
-uv sync --project "$project_root" --locked "$groups"
-"$venv_path/bin/python" -c 'import fastapi, fff, google.adk, httpx, pydantic, uvicorn, yaml'
-for name in skein; do
+uv sync --project "$project_root" --locked "$groups" --extra eval
+"$venv_path/bin/python" -c 'import fastapi, fff, google.adk, harbor, httpx, pydantic, uvicorn, yaml'
+for name in skein harbor; do
   [ -x "$venv_path/bin/$name" ] || die "missing installed command: $name"
 done
 if [ "$include_dev" -eq 1 ]; then
