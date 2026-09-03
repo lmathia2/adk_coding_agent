@@ -37,9 +37,9 @@ historical feature checklist or book-rubric score.
   unknown effects remain explicit in the event history. Task contracts, public
   user/assistant messages, steering, and structured compaction handoffs are projected
   as timestamped Markdown cells alongside code and selected outputs. The `notebook`
-  operator command rematerializes by task ID and delegates compact reading to `nb-cli`
-  when available, with a dependency-free renderer otherwise. `nb execute` is not a
-  second execution path. Clean PTC worker shutdown rematerializes the complete logical
+  operator command rematerializes by task ID and delegates compact reading to the
+  required `nb-cli`; Skein does not parse notebook JSON as a browsing fallback.
+  `nb execute` is not a second execution path. Clean PTC worker shutdown rematerializes the complete logical
   notebook and records one immutable content-addressed `.ipynb` snapshot at its source
   watermark; the ledger stays authoritative and the live heap is discarded.
   `start-ptc.sh` enables this

@@ -54,6 +54,7 @@ def test_factory_exposes_only_python_when_notebook_ptc_is_enabled(tmp_path: Path
     }
     assert tool_names == {"python"}
     assert assembly.build_info.tool_names == ("python",)
+    assert "never parse notebook JSON" in worker.static_instruction
     resources = registry.resources(
         composition,
         RuntimeBindings(workspace=workspace, state_root=tmp_path / "state", task_id="task"),

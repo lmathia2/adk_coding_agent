@@ -61,6 +61,11 @@ def test_install_script_is_executable_and_has_valid_help() -> None:
     assert "--tui" in completed.stdout
     script_text = (root / "install.sh").read_text(encoding="utf-8")
     assert "--extra eval" in script_text
+    assert 'commands="skein skein-start nb"' in script_text
+    assert "for name in skein harbor nb" in script_text
+    assert "pynb-cli==0.0.10" in (root / "pyproject.toml").read_text(
+        encoding="utf-8"
+    )
     assert "python '>=3.12'" in script_text
 
 
@@ -77,6 +82,7 @@ def test_install_script_reports_platform_aware_plan_without_installing() -> None
     assert "Installation plan:" in completed.stdout
     assert f"Python environment: {root}/.venv" in completed.stdout
     assert "remove and recreate on every installation" in completed.stdout
+    assert "Notebook CLI: pynb-cli 0.0.10 (required)" in completed.stdout
     assert "Runtime launcher:" in completed.stdout
     assert "Launch workspace: selected at runtime" in completed.stdout
 

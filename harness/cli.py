@@ -170,7 +170,7 @@ def _parser() -> argparse.ArgumentParser:
 
     notebook = subparsers.add_parser(
         "notebook",
-        help="List or render canonical task notebooks (uses nb-cli when installed)",
+        help="List or render canonical task notebooks with nb-cli",
     )
     notebook.add_argument("--state-root", type=Path, required=True)
     notebook.add_argument("--task-id")
@@ -382,38 +382,19 @@ def _notebook_command(args: argparse.Namespace) -> int:
         return 1
     notebook_id = hashlib.sha256(args.task_id.encode()).hexdigest()[:32]
     path = notebook_root / f"{notebook_id}.ipynb"
-    content = materialize_notebook(reduce_notebook(events, notebook_id), path)
+    materialize_notebook(reduce_notebook(events, notebook_id), path)
 
     nb = shutil.which("nb")
-    if nb is not None:
-        command = [nb, "read", path.as_posix(), "--no-output"]
-        if args.cell_index is not None:
-            command.extend(("--cell-index", str(args.cell_index)))
-        return subprocess.run(command, check=False).returncode
-
-    document = json.loads(content)
-    cells = document["cells"]
-    indices = range(len(cells))
+    if nb is None:
+        print(
+            "error: nb-cli is required for notebook inspection; reinstall Skein dependencies",
+            file=sys.stderr,
+        )
+        return 1
+    command = [nb, "read", path.as_posix(), "--no-output"]
     if args.cell_index is not None:
-        index = args.cell_index if args.cell_index >= 0 else len(cells) + args.cell_index
-        if not 0 <= index < len(cells):
-            print(f"error: cell index {args.cell_index} is out of range", file=sys.stderr)
-            return 1
-        indices = (index,)
-    print(f"@@notebook {json.dumps({'path': path.as_posix()}, sort_keys=True)}")
-    for index in indices:
-        cell = cells[index]
-        header = {
-            "cell_type": cell["cell_type"],
-            "id": cell["id"],
-            "index": index,
-            "metadata": cell.get("metadata", {}),
-        }
-        print(f"@@cell {json.dumps(header, sort_keys=True, separators=(',', ':'))}")
-        print("".join(cell.get("source", [])), end="")
-        if cell.get("source") and not "".join(cell["source"]).endswith("\n"):
-            print()
-    return 0
+        command.extend(("--cell-index", str(args.cell_index)))
+    return subprocess.run(command, check=False).returncode
 
 
 def _serve(args: argparse.Namespace) -> int:

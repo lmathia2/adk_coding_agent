@@ -63,6 +63,7 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert config.memory.retrieval == "lexical"
     assert "tui" not in type(composition.server).model_fields
     assert config.models["coding"].provider == "google_adk"
+    assert "never parse notebook JSON" in config.agents["coding_worker"].instruction
 
 
 @pytest.mark.parametrize(
@@ -87,6 +88,7 @@ def test_annotated_standard_profiles_are_complete_and_strict(
     assert config.notebook_ptc.enabled is ptc_enabled
     assert config.memory.enabled is memory_enabled
     assert config.memory.ledger == ledger
+    assert "never parse notebook JSON" in config.agents["coding_worker"].instruction
     annotations = path.read_text(encoding="utf-8")
     assert "Primary learnable" in annotations
     assert "optimizer-owned" in annotations

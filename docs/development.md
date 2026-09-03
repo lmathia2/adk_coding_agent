@@ -140,9 +140,9 @@ skein notebook --state-root "$RUN_STATE" --task-id RUN_ID
 skein notebook --state-root "$RUN_STATE" --task-id RUN_ID --cell-index -1
 ```
 
-The command delegates to `nb read --no-output` when the Jupyter `nb-cli` binary is on
-`PATH`; otherwise it emits the same cells with a compact standard-library renderer.
-It rematerializes the notebook from the event stream first. Do not run `nb execute`:
+The command rematerializes the notebook from the event stream first, then delegates all
+notebook document reads to the required `nb-cli` binary via `nb read --no-output`.
+Skein does not parse `.ipynb` JSON as a browsing fallback. Do not run `nb execute`:
 the harness CPython worker, capability broker, and ledger terminal events are the
 execution authority.
 

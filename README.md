@@ -84,9 +84,9 @@ export PATH="$HOME/.local/bin:$PATH"
 
 The installer detects macOS, installs missing uv/Git/Node.js through Homebrew, creates
 Python 3.12+ in this checkout's `.venv`, syncs the locked dependencies plus Harbor 0.22
-for evaluations, and builds
-the Pi-toolkit terminal **by default**. It links `skein`, `skein-tui`, and
-`skein-start` into the specified command directory. You do not need to activate
+for evaluations, installs the pinned `pynb-cli` notebook browser, and builds the
+Pi-toolkit terminal **by default**. It links `skein`, `skein-tui`, `skein-start`, and
+`nb` into the specified command directory. You do not need to activate
 the virtual environment, install Pi or Magnitude, or pass a workspace to installation.
 Indexed search comes from the pinned `fff-search` dependency; no separate rg/fd
 installation is needed for that search backend.
@@ -170,10 +170,9 @@ profile to measure the familiar direct-tool baseline; use PTC to compose and reu
 multi-call programs.
 
 Inspect the durable session notebook by run/task ID. Server runs keep operational
-state under `STATE_ROOT/runs/RUN_ID`, and the run ID is also the harness task ID. The
-command rematerializes from the
-append-only event stream, uses `nb read --no-output` when `nb-cli` is installed, and
-otherwise emits a compact stdlib-only cell stream:
+state under `STATE_ROOT/runs/RUN_ID`, and the run ID is also the harness task ID.
+The command rematerializes from the append-only event stream, then delegates notebook
+document browsing to the required `nb-cli` command via `nb read --no-output`:
 
 ```bash
 RUN_STATE="$HOME/.local/state/skein-ptc/runs/RUN_ID"
@@ -404,7 +403,8 @@ old evaluation reports are not evidence for the simplified runtime.
   verification.
 - Optional notebook-native PTC with persistent CPython state and a deterministic
   nbformat workbench containing message, compaction, code, output, timestamp, and
-  ledger-provenance cells; optional `nb-cli` inspection has a stdlib fallback.
+  ledger-provenance cells; required `nb-cli` inspection replaces direct `.ipynb` JSON
+  parsing.
 - One append-only canonical event schema over JSONL or optional DuckDB, including
   incomplete, failed, blocked, retried, and timed-out work.
 - Deterministic history, progress, open-execution, time, task-memory, and dream/failure

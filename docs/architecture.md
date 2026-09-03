@@ -130,8 +130,8 @@ The ledger, notebook, and CPython worker deliberately have separate authority:
 
 For a server run, operational notebooks and task events live under
 `STATE_ROOT/runs/RUN_ID`. `skein notebook --state-root RUN_STATE
---task-id RUN_ID` rematerializes from events and uses `nb-cli` for compact reading when
-installed, with a standard-library renderer otherwise.
+--task-id RUN_ID` rematerializes from events and uses the required `nb-cli` for compact
+reading. Skein does not parse `.ipynb` JSON as a browsing fallback.
 
 This means current PTC continuity is run-scoped. A later run in the same conversation
 does not yet share the prior run's notebook recovery stream. Moving that boundary to a

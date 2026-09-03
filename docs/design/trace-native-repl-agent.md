@@ -1294,11 +1294,11 @@ The production harness does not delegate cell execution to `nb execute`:
 - remote execution makes Jupyter Server session state another live dependency;
 - notebook output persistence is not a substitute for ledger terminal events.
 
-The first implementation uses a small nbformat 4.5 serializer/materializer in the
-harness and golden-tests it against `nb-cli` read/write behavior. `nb-cli` remains
-the supported CLI for inspecting, exporting, and explicitly importing notebooks.
-If maintaining two serializers becomes measurable maintenance debt, extract or
-embed the `nb-cli` serialization library; do not introduce a daemon or FFI layer
+The harness uses a small nbformat 4.5 serializer/materializer only to write the
+deterministic ledger-derived projection and golden-tests its output against `nb-cli`
+read/write behavior. The required `nb-cli` remains the supported interface for
+inspecting, exporting, and explicitly importing notebooks. If maintaining two
+serializers becomes measurable maintenance debt, extract or embed the `nb-cli` serialization library; do not introduce a daemon or FFI layer
 speculatively.
 
 The implemented operator path is:
@@ -1308,11 +1308,10 @@ skein notebook --state-root STATE_ROOT [--task-id TASK_ID] [--cell-index N]
 ```
 
 Without a task ID it lists materialized notebooks. With a task ID it first rebuilds
-the canonical notebook from the append-only task events, then calls
-`nb read --no-output` when available. A compact standard-library renderer preserves
-the same read-only workflow when `nb-cli` is absent. Model-authored `nb read
---no-output`, local `nb search`, and `nb status` classify as inspection; `nb execute`,
-cell/output mutation, remote server flags, and other modes remain approval-gated.
+the canonical notebook from the append-only task events, then calls the required
+`nb read --no-output`. Skein does not parse notebook JSON as a browsing fallback.
+Model-authored `nb read --no-output`, local `nb search`, and `nb status` classify as
+inspection; `nb execute`, cell/output mutation, remote server flags, and other modes remain approval-gated.
 
 ## 14. Phase- and query-specific memory
 

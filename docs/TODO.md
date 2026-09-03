@@ -39,7 +39,8 @@
 - [x] Define notebook PTC's supported execution boundary as trusted local workspaces; production/adversarial isolation is an optional future deployment profile, not an activation gate.
 - [x] Add standalone executable notebooks for PTC state, cache-aware compaction, and versioned trace-memory programs.
 - [x] Project task, public message, steering, and compaction events into timestamped notebook Markdown cells.
-- [x] Add task-scoped notebook rematerialization and compact `nb-cli` inspection with a stdlib fallback.
+- [x] Add task-scoped notebook rematerialization and compact required `nb-cli`
+  inspection without a notebook-JSON parsing fallback.
 - [x] Snapshot the complete logical notebook as one immutable content-addressed
   artifact when its PTC worker closes; keep the ledger authoritative and the live
   Python heap ephemeral.

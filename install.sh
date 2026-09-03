@@ -49,6 +49,7 @@ if [ "$print_plan" -eq 1 ]; then
     "  Python environment: $venv_path" \
     '  Environment policy: remove and recreate on every installation' \
     "  Pi-style terminal: $include_tui" "  Development tools: $include_dev" \
+    '  Notebook CLI: pynb-cli 0.0.10 (required)' \
     '  Evaluation tools: Harbor 0.22' \
     "  Command directory: $bin_dir" "  Runtime launcher: $bin_dir/skein-start" \
     '  Launch workspace: selected at runtime'
@@ -74,7 +75,7 @@ if [ "$include_tui" -eq 1 ]; then
   fi
 fi
 
-commands="skein skein-start"
+commands="skein skein-start nb"
 [ "$include_tui" -eq 0 ] || commands="$commands skein-tui"
 mkdir -p "$bin_dir"
 for name in $commands; do
@@ -95,7 +96,7 @@ groups=--no-default-groups
 [ "$include_dev" -eq 0 ] || groups=--all-groups
 uv sync --project "$project_root" --locked "$groups" --extra eval
 "$venv_path/bin/python" -c 'import fastapi, fff, google.adk, harbor, httpx, pydantic, uvicorn, yaml'
-for name in skein harbor; do
+for name in skein harbor nb; do
   [ -x "$venv_path/bin/$name" ] || die "missing installed command: $name"
 done
 if [ "$include_dev" -eq 1 ]; then

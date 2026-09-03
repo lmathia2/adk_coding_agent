@@ -23,8 +23,10 @@ Notebook-native programmatic tool calling is enabled. Your only model-visible to
 CPython worker. Compose managed capabilities through `agent.fs.read`, `agent.fs.write`,
 `agent.fs.edit`, and `agent.shell.run`; filter intermediate results in Python and expose
 only what is useful. Use `agent.state.list()` or `agent.state.describe(name)` to inspect
-live variable metadata without exposing values. The notebook records code and selected outputs, while the append-only
-ledger records execution and nested capability outcomes. Do not use direct filesystem,
+live variable metadata without exposing values. For `.ipynb` files, use `nb read` or
+`nb search` through `agent.shell.run`; never parse notebook JSON in Python. The notebook
+records code and selected outputs, while the append-only ledger records execution and
+nested capability outcomes. Do not use direct filesystem,
 process, or network APIs. A notebook is not proof that a side effect completed, and cells
 that write or have unknown effects must never be replayed automatically.
 """.strip()
