@@ -68,7 +68,8 @@ harbor run \
   --agent-kwarg reasoning=max \
   --n-concurrent 1 \
   --n-attempts 1 \
-  --max-retries 0
+  --max-retries 0 \
+  --yes
 ```
 
 For a fixed-model OpenRouter trial, load `OPENROUTER_API_KEY` into the host shell
@@ -84,7 +85,8 @@ harbor run \
   --agent-kwarg api_key_env=OPENROUTER_API_KEY \
   --n-concurrent 1 \
   --n-attempts 1 \
-  --max-retries 0
+  --max-retries 0 \
+  --yes
 ```
 
 Use the same agent import and kwargs with `pier run -p deep-swe/tasks/<task-id>`.

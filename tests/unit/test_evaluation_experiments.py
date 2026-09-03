@@ -46,6 +46,7 @@ def test_next_trial_command_is_single_task_digest_pinned_and_host_authenticated(
     assert task_path.name == assignment.task_artifact_sha256
     assert command.count("--n-concurrent") == 1
     assert "--agent-env" not in command
+    assert "--yes" in command
 
 
 def test_paired_analysis_uses_tasks_not_attempts() -> None:

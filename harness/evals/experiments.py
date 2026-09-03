@@ -92,9 +92,7 @@ class HarnessCandidate(BaseModel):
 class ExperimentSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["skein-fixed-intelligence-experiment-v1"] = (
-        EXPERIMENT_SCHEMA_VERSION
-    )
+    schema_version: Literal["skein-fixed-intelligence-experiment-v1"] = EXPERIMENT_SCHEMA_VERSION
     name: str = Field(pattern=r"^evaluation-(ablation|pilot|confirm)-v[0-9]+$")
     status: Literal["planning", "frozen"] = "planning"
     manifest_path: Path
@@ -506,7 +504,8 @@ def trial_record_from_harbor_result(
         status=status,
         official_reward=reward,
         metrics=trial_metrics,
-        error_code=error_code or (result.exception_info.exception_type if result.exception_info else None),
+        error_code=error_code
+        or (result.exception_info.exception_type if result.exception_info else None),
     )
 
 
@@ -534,7 +533,9 @@ def _scores(records: list[TrialRecord]) -> tuple[dict[Benchmark, float], float]:
             by_task[(record.benchmark, record.task_id)].append(record.official_reward)
     scores: dict[Benchmark, float] = {}
     for benchmark in BENCHMARKS:
-        tasks = [sum(values) / len(values) for (kind, _), values in by_task.items() if kind == benchmark]
+        tasks = [
+            sum(values) / len(values) for (kind, _), values in by_task.items() if kind == benchmark
+        ]
         if not tasks:
             raise ValueError(f"no scored {benchmark} tasks")
         scores[benchmark] = sum(tasks) / len(tasks)
@@ -599,9 +600,7 @@ def _bootstrap(
                 task_id = rng.choice(tasks)
                 attempts = paired[benchmark][task_id]
                 resampled = [rng.choice(attempts) for _ in attempts]
-                sampled.append(
-                    sum(left - right for left, right in resampled) / len(resampled)
-                )
+                sampled.append(sum(left - right for left, right in resampled) / len(resampled))
             benchmark_differences.append(sum(sampled) / len(sampled))
         differences.append(sum(benchmark_differences) / len(BENCHMARKS))
     return (_percentile(differences, 0.025), _percentile(differences, 0.975))
@@ -781,6 +780,7 @@ def harbor_command(assignment: TrialAssignment, model: FixedModelContract) -> tu
         "1",
         "--job-name",
         assignment.trial_key,
+        "--yes",
     ]
     for name, value in sorted(assignment.agent_kwargs.items()):
         command.extend(("--agent-kwarg", f"{name}={value}"))

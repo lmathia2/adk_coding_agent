@@ -241,6 +241,7 @@ def run_command(
         str(attempts),
         "--max-retries",
         "0",
+        "--yes",
         "--job-name",
         job_dir.name,
         "--jobs-dir",
