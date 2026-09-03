@@ -60,6 +60,7 @@ def test_openrouter_request_uses_portable_responses_fields() -> None:
     assert body["stream"] is True
     assert body["tools"][0]["name"] == "read"
     assert "include" not in body
+    assert "parallel_tool_calls" not in body
     assert "text" not in body
 
 

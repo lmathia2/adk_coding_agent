@@ -35,6 +35,7 @@ def build_openrouter_request_body(
         reasoning_effort=reasoning_effort,
     )
     body.pop("include", None)
+    body.pop("parallel_tool_calls", None)
     text = body.get("text")
     if isinstance(text, dict):
         text.pop("verbosity", None)

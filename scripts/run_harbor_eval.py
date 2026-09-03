@@ -36,6 +36,7 @@ CONTRACT_FIELDS = (
     "provider",
     "reasoning",
     "config",
+    "max_output_tokens",
     "attempts",
     "concurrency",
     "harbor_retries",
@@ -94,6 +95,13 @@ def result_summary(root: Path) -> tuple[list[str], list[int], list[str]]:
             exception = payload.get("exception_info")
             if isinstance(exception, dict):
                 errors.append(str(exception.get("exception_type") or "exception"))
+            if (
+                payload.get("schema_version") == "skein-eval-run-v1"
+                and payload.get("status") not in {"complete", "answered"}
+            ):
+                error = payload.get("error")
+                code = error.get("code") if isinstance(error, dict) else None
+                errors.append(f"skein:{code or payload.get('status', 'failed')}")
             reward = payload.get("verifier_result", {}).get("rewards", {}).get("reward")
             if reward in (0, 1):
                 rewards.append(int(reward))
@@ -156,6 +164,13 @@ def docker_ready() -> None:
     )
     if compose.returncode:
         raise SystemExit("Docker Compose v2 is required by Harbor")
+    buildx = subprocess.run(
+        ["docker", "buildx", "version"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if buildx.returncode:
+        raise SystemExit("Docker Buildx is required by Harbor")
 
 
 def execute(
@@ -234,6 +249,8 @@ def run_command(
         "--agent-kwarg",
         "max_task_input_tokens=2000000",
         "--agent-kwarg",
+        f"max_output_tokens={args.max_output_tokens}",
+        "--agent-kwarg",
         "wall_time_seconds=1800",
         "--n-concurrent",
         "1",
@@ -241,6 +258,7 @@ def run_command(
         str(attempts),
         "--max-retries",
         "0",
+        "--quiet",
         "--yes",
         "--job-name",
         job_dir.name,
@@ -292,6 +310,7 @@ def main() -> int:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--task-id", action="append", default=[])
     parser.add_argument("--timeout-seconds", type=int)
+    parser.add_argument("--max-output-tokens", type=int, default=16_384)
     parser.add_argument("--jobs-dir", type=Path)
     parser.add_argument("--dotenv", type=Path, default=Path.home() / ".env")
     parser.add_argument("--api-key-env", default="OPENROUTER_API_KEY")
@@ -304,6 +323,8 @@ def main() -> int:
         parser.error("--limit must be positive")
     if args.timeout_seconds is not None and args.timeout_seconds < 1:
         parser.error("--timeout-seconds must be positive")
+    if not 256 <= args.max_output_tokens <= 131_072:
+        parser.error("--max-output-tokens must be between 256 and 131072")
     manifest_name, limit = MANIFESTS[args.suite]
     manifest_path = ROOT / "tests/eval/manifests" / manifest_name
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -330,6 +351,7 @@ def main() -> int:
                     "attempts": attempts,
                     "retries": args.retries,
                     "timeout_seconds": args.timeout_seconds,
+                    "max_output_tokens": args.max_output_tokens,
                 }
             )
         )
@@ -366,6 +388,7 @@ def main() -> int:
         "provider": args.provider,
         "reasoning": args.reasoning,
         "config": args.config,
+        "max_output_tokens": args.max_output_tokens,
         "attempts": attempts,
         "retries": args.retries,
         "concurrency": 1,

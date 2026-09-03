@@ -36,7 +36,9 @@ def _request(tmp_path: Path, workspace: Path) -> runner.EvaluationRunRequest:
 
 
 def test_evaluation_config_pins_luna_max_without_auth_state(tmp_path: Path) -> None:
-    request = _request(tmp_path, tmp_path)
+    request = _request(tmp_path, tmp_path).model_copy(
+        update={"max_output_tokens": 16_384}
+    )
 
     path, composition = runner.prepare_evaluation_config(request)
     loaded = load_harness_composition(path)
@@ -47,6 +49,7 @@ def test_evaluation_config_pins_luna_max_without_auth_state(tmp_path: Path) -> N
     assert model.provider == "openai_codex"
     assert model.name == "gpt-5.6-luna"
     assert model.reasoning == "max"
+    assert config.agents["coding_worker"].generation.max_output_tokens == 16_384
     assert composition.behavior_sha256 == loaded.behavior_sha256
     assert str(request.auth_state_root) not in path.read_text(encoding="utf-8")
     assert not config.safety.allow_network

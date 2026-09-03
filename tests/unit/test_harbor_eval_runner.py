@@ -35,6 +35,10 @@ def test_frozen_suite_plans(suite: str, count: int, attempts: int) -> None:
     assert plan["attempts"] == attempts
 
 
+def test_harbor_runs_without_interactive_progress() -> None:
+    assert '"--quiet"' in SCRIPT.read_text(encoding="utf-8")
+
+
 def test_metadata_rejects_changed_fixed_intelligence(tmp_path: Path) -> None:
     runner = load_runner()
     path = tmp_path / "run-metadata.json"
@@ -94,6 +98,27 @@ def test_completed_harbor_job_is_recovered_without_rerun(tmp_path: Path) -> None
     assert recovered is not None
     assert recovered[0] == task_dir
     assert recovered[2] == [0]
+
+
+def test_failed_skein_result_is_not_treated_as_a_completed_harbor_job(
+    tmp_path: Path,
+) -> None:
+    task_dir = tmp_path / "001-example-attempt-01"
+    result = task_dir / "job" / "trial" / "agent" / "skein-state" / "evaluation"
+    result.mkdir(parents=True)
+    (task_dir / "job" / "result.json").write_text("{}", encoding="utf-8")
+    (result / "result.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "skein-eval-run-v1",
+                "status": "failed",
+                "error": {"code": "runtime_failed"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert load_runner().completed_task(tmp_path, "001-example") is None
 
 
 def test_next_attempt_directory_survives_process_restart(tmp_path: Path) -> None:

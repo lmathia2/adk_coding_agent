@@ -59,6 +59,7 @@ class EvaluationRunRequest(BaseModel):
     client_version: str | None = None
     max_iterations: int | None = Field(default=None, ge=1, le=1_000)
     max_task_input_tokens: int | None = Field(default=None, ge=8_000, le=20_000_000)
+    max_output_tokens: int | None = Field(default=None, ge=256, le=131_072)
     wall_time_seconds: float = Field(default=1_800, gt=0, le=86_400)
     trust_project: bool = False
     isolated_environment_authority: bool = False
@@ -190,6 +191,10 @@ def prepare_evaluation_config(request: EvaluationRunRequest) -> tuple[Path, Harn
         config["workflow"]["max_iterations"] = request.max_iterations
     if request.max_task_input_tokens is not None:
         config["context"]["max_task_input_tokens"] = request.max_task_input_tokens
+    if request.max_output_tokens is not None:
+        agents["coding_worker"]["generation"]["max_output_tokens"] = (
+            request.max_output_tokens
+        )
     if request.isolated_environment_authority:
         safety = config["safety"]
         assert isinstance(safety, dict)

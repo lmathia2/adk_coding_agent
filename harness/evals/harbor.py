@@ -353,6 +353,7 @@ class SkeinHarborAgent(BaseAgent):
         config: str | Path = DEFAULT_COMPOSITION_PATH,
         max_iterations: int = 24,
         max_task_input_tokens: int = 2_000_000,
+        max_output_tokens: int = 16_384,
         wall_time_seconds: float = 1_800,
         **kwargs: Any,
     ) -> None:
@@ -366,6 +367,7 @@ class SkeinHarborAgent(BaseAgent):
         self.config = Path(config).expanduser().resolve()
         self.max_iterations = max_iterations
         self.max_task_input_tokens = max_task_input_tokens
+        self.max_output_tokens = max_output_tokens
         self.wall_time_seconds = wall_time_seconds
         self._workspace: str | None = None
 
@@ -399,8 +401,14 @@ class SkeinHarborAgent(BaseAgent):
         assert self._workspace is not None
         loop = asyncio.get_running_loop()
         bridge = _AsyncBridge(loop)
+        self.logger.info("Initializing Skein Harbor runtime for %s", self._workspace)
         files = HarborWorkspaceEnvironment(environment, bridge, self._workspace)
-        repository = HarborRepositoryRuntime(environment, bridge, files)
+        repository = await asyncio.to_thread(
+            HarborRepositoryRuntime,
+            environment,
+            bridge,
+            files,
+        )
         state_root = self.logs_dir / "skein-state"
         shadow = self.logs_dir / "workspace"
         shadow.mkdir(parents=True, exist_ok=True)
@@ -421,6 +429,7 @@ class SkeinHarborAgent(BaseAgent):
             )
             return ExecutionRuntime(files=files, commands=commands, repository=repository)
 
+        self.logger.info("Skein Harbor repository snapshot initialized")
         registry = default_harness_registry(execution_runtime_factory=runtime_factory)
 
         def assembly_builder(**kwargs: Any):
@@ -439,6 +448,7 @@ class SkeinHarborAgent(BaseAgent):
             config_template=self.config,
             max_iterations=self.max_iterations,
             max_task_input_tokens=self.max_task_input_tokens,
+            max_output_tokens=self.max_output_tokens,
             wall_time_seconds=self.wall_time_seconds,
             isolated_environment_authority=True,
         )
@@ -449,12 +459,14 @@ class SkeinHarborAgent(BaseAgent):
                 "task_id": task_id,
             }
         }
+        self.logger.info("Starting Skein evaluation loop for task %s", task_id)
         result = await asyncio.to_thread(
             run_evaluation_sync,
             request,
             assembly_builder=assembly_builder,
             validate_workspace=False,
         )
+        self.logger.info("Skein evaluation loop finished with status %s", result.status)
         write_evaluation_result(result)
         self._populate_context(context, result)
 
