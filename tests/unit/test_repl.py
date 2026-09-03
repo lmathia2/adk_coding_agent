@@ -88,6 +88,27 @@ def test_worker_returns_mime_bundle_as_rich_display() -> None:
     assert result.display_data == {"image/png": b"png-bytes", "text/plain": "plot"}
 
 
+def test_worker_exposes_bounded_state_metadata_without_values() -> None:
+    marker = "raw-value-must-not-leak"
+    with PersistentPythonWorker() as worker:
+        assigned = worker.execute(
+            f"payload = {marker!r} * 1000",
+            _Broker(),
+            5,
+            cell_id="cell-1",
+            replay_policy="requires_reconciliation",
+        )
+        catalog = worker.execute("agent.state.list()", _Broker(), 5)
+
+    assert assigned.state_count == 1
+    assert assigned.state_delta == ("payload",)
+    assert catalog.status == "ok"
+    assert "'name': 'payload'" in (catalog.value_repr or "")
+    assert "'size': 23000" in (catalog.value_repr or "")
+    assert "'cell_id': 'cell-1'" in (catalog.value_repr or "")
+    assert marker not in (catalog.value_repr or "")
+
+
 def test_worker_reports_errors_without_losing_prior_state() -> None:
     broker = _Broker()
     with PersistentPythonWorker() as worker:

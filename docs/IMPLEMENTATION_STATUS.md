@@ -27,8 +27,13 @@ historical feature checklist or book-rubric score.
 - Experimental, disabled-by-default notebook-native PTC mode for the local sandbox:
   the worker exposes one persistent `python` tool, routes nested file and shell calls
   through the existing policy/approval adapters, appends lifecycle events, and
-  deterministically materializes a durable nbformat transcript. Completed safe cells
-  restore Python state after a worker restart; failures, timeouts, blocked calls, and
+  deterministically materializes a durable nbformat transcript. Only self-contained
+  data-construction cells restore automatically; calls, imports, definitions,
+  attribute/subscript access, loaded-name dependencies, and broker use require
+  reconciliation or are never replayed. A failed cell discards its kernel epoch so
+  partial assignments cannot survive while disappearing on restart. Python exposes
+  bounded `agent.state.list()` and `agent.state.describe(name)` metadata without
+  returning stored values. Failures, timeouts, blocked calls, and
   unknown effects remain explicit in the event history. Task contracts, public
   user/assistant messages, steering, and structured compaction handoffs are projected
   as timestamped Markdown cells alongside code and selected outputs. The `notebook`
@@ -148,6 +153,10 @@ not a model-quality benchmark.
 
 Remaining limitations include the host-local trust boundary, single-process state
 ownership, experimental ADK APIs, and the still-complex server run controller.
+The live CPython heap and notebook recovery stream are still scoped to one server run,
+not a stable conversation identity. State metadata is available on demand but is not
+yet injected into ADK compaction handoffs, and provider-request capture has not yet
+proven bounded growth across hundreds of PTC cells.
 Notebook-native PTC supports trusted local workspaces. Its source guard
 blocks direct imports, file/process/network primitives, dunder traversal, and common
 introspection bypasses, but it is not a security sandbox. Production or adversarial

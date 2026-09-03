@@ -119,12 +119,21 @@ The ledger, notebook, and CPython worker deliberately have separate authority:
 - The canonical notebook is a rebuildable workbench projection containing timestamped
   task/message/steering/compaction Markdown, exact PTC programs, and selected outputs.
 - The worker owns only current live variables, imports, clients, and caches. Restart
-  restores completed replay-safe cells; it never infers success from notebook order.
+  restores only completed self-contained data cells; it never infers success from
+  notebook order. Failed cells discard the dirty kernel epoch before more work is
+  accepted. `agent.state.list()` and `agent.state.describe(name)` expose only bounded
+  name/type/size/provenance/replay metadata, so values remain inside Python until code
+  explicitly selects them.
 
 For a server run, operational notebooks and task events live under
 `STATE_ROOT/runs/RUN_ID`. `skein notebook --state-root RUN_STATE
 --task-id RUN_ID` rematerializes from events and uses `nb-cli` for compact reading when
 installed, with a standard-library renderer otherwise.
+
+This means current PTC continuity is run-scoped. A later run in the same conversation
+does not yet share the prior run's notebook recovery stream. Moving that boundary to a
+stable owned conversation identity requires an explicit concurrency and lifecycle
+contract; ADK session resumability alone does not make the CPython heap durable.
 
 When installed through the optional `memory-search` extra, LanceDB provides immutable
 hybrid-search projections over ledger events. Projection identity includes the exact

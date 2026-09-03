@@ -7,8 +7,9 @@ Audience: harness, runtime, storage, safety, and evaluation implementers
 Current implementation: the supported default remains the four-tool architecture
 described in `docs/architecture.md`. A disabled-by-default local-only Phase 0 now
 provides the persistent CPython worker, one-tool broker path, append-only lifecycle
-events, deterministic notebook materialization, rich-output artifacts, and safe-cell
-state restoration. The implementation also contains a DuckDB canonical-ledger shadow writer
+events, deterministic notebook materialization, rich-output artifacts, transactional
+failed-cell rollback, conservative self-contained-cell restoration, and metadata-only
+live-state inspection. The implementation also contains a DuckDB canonical-ledger shadow writer
 for task events, receipts, checkpoints, approvals, steering, metrics, public/run
 events, redacted ADK session lifecycle, and traces; deterministic seeded views and
 receipt-bearing prompt manifests; a gated relational-program lifecycle; and registered
@@ -2188,6 +2189,38 @@ decision.
 
 No rating above research prototype is allowed without all hard gates.
 
+### 24.6 PTC long-session checklist
+
+Score each question `0` when absent, `0.5` when implemented but not demonstrated, and
+`1` only when the named deterministic or captured-request evidence passes. A release
+candidate needs at least 85/100 and every hard gate above.
+
+| Area | Weight | Question | Required evidence | Current status |
+|---|---:|---|---|---|
+| Model boundary | 15 | Which exact nested-result and heap bytes reach the model? | Captured provider requests for high-fanout and 100-cell sessions. | Broker result isolation has a deterministic envelope regression; provider capture pending. |
+| State identity | 10 | Is state owned by run, task, conversation, workspace, and user unambiguously? | Same-conversation restart plus concurrent-owner rejection. | Run-scoped only. |
+| State discovery | 10 | Can the model rediscover names, types, sizes, provenance, and replay class without reading values? | Bounded catalog test with a large secret-marker value. | `agent.state.list/describe` implemented; compaction injection pending. |
+| Durable recovery | 15 | Can committed state be reconstructed without executing an effect twice? | Process/server crash and state-hash equality at every interruption boundary. | Conservative local replay implemented; cross-run recovery pending. |
+| Failure semantics | 10 | Can an exception, timeout, or lost response leave undocumented partial state or effects? | Partial-assignment rollback and unknown-effect reconciliation tests. | Failed-cell rollback and timeout uncertainty implemented; broker crash matrix pending. |
+| Ledger provenance | 10 | Are intent, attempt, causal parent, time, terminal state, effects, and references recorded? | Gap-free replay and open-execution view equality. | Implemented for current cell/capability lifecycle. |
+| Compaction/cache | 10 | Does compaction use actual request size and retain goal, progress, verification, open work, and state handles without changing P0? | Pre/post request bytes and continuation eval. | Stable P0 implemented; state-aware ADK handoff and request accounting pending. |
+| Capability execution | 8 | Are return shapes, retry safety, idempotency, cancellation, and allowed concurrency explicit? | Contract and fan-out fault tests. | Sequential broker and receipts implemented; parallel orchestration pending. |
+| Isolation | 7 | What protects filesystem, network, secrets, CPU, memory, and processes for the declared trust profile? | Profile-specific escape/resource tests. | Trusted-local profile only; source guard is defense in depth. |
+| Evaluation | 5 | Is PTC better than four tools at equal model, tasks, policy, and verification? | Paired pass-rate, cost-per-pass, cache, latency, and duplicate-effect ablation. | Pending. |
+
+The notebook is evidence and executable narrative, not a serialized heap. The minimal
+durability path is therefore replay of proven self-contained data cells plus
+content-addressed values for everything else; arbitrary pickle or marshal persistence
+does not satisfy this checklist.
+
+The local `llmvm` precursor informed two deliberately retained ergonomics: thread-local
+variables should be reusable by name, and a model should be able to request a compact
+locals inventory or explicitly select a result. Skein keeps those ideas through
+metadata-only `agent.state` queries and final-expression egress. It does not copy
+`llmvm`'s marshalled-function persistence, process-only object cache, or reinsertion of
+full helper results into continuation messages because those weaken portability,
+durability, or PTC context isolation.
+
 ## 25. Initial acceptance tests
 
 The first end-to-end acceptance fixture should:
@@ -2263,6 +2296,10 @@ depends on it.
   Language Agents*
 - Anthropic, [*Advanced Tool Use*](https://www.anthropic.com/engineering/advanced-tool-use)
   and the [Programmatic Tool Calling cookbook](https://github.com/anthropics/claude-cookbooks/blob/main/tool_use/programmatic_tool_calling_ptc.ipynb)
+- [`llmvm`](https://github.com/9600dev/llmvm): predecessor patterns for interleaved
+  Python continuation, named locals, explicit result egress, and bounded locals
+  inspection; its serialization and message-reinsertion choices are comparison inputs,
+  not adopted durability contracts.
 - [`nb-cli`](https://github.com/jupyter-ai-contrib/nb-cli): stable notebook cell
   operations, AI-oriented rendering, rich outputs, externalization, and atomic local
   persistence; its execution backends are interoperability references, not the

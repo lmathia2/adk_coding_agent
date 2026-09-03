@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import cast
 
@@ -262,8 +263,99 @@ async def test_python_routes_registered_mcp_capability_and_blocks_unknown(
     assert worker.close is not None
     worker.close()
 
+
 @pytest.mark.asyncio
-async def test_failed_cell_is_materialized_without_destroying_warm_state(tmp_path: Path) -> None:
+async def test_nested_result_remains_in_python_state_until_explicitly_selected(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+    composition = _enabled_composition()
+    config = cast(SkeinConfig, composition.harness.config)
+    settings = settings_from_composition(
+        composition,
+        RuntimeBindings(workspace=workspace, state_root=state_root, task_id="task-isolation"),
+    )
+    marker = "nested-payload-must-not-enter-model-result"
+    worker = build_coding_worker(
+        settings,
+        cast(BaseLlm, "test-model"),
+        tools=create_adk_tools(workspace, state_root=state_root, task_scope="task-isolation"),
+        ptc_config=config.notebook_ptc,
+        capabilities={"bulk.read": lambda _arguments: {"status": "ok", "items": [marker] * 2000}},
+    )
+    assert worker.python is not None
+    try:
+        selected = await worker.python(
+            "records = agent.mcp.call('bulk.read', {})['items']\nlen(records)"
+        )
+        catalog = await worker.python("agent.state.describe('records')")
+        reused = await worker.python("len(records)")
+    finally:
+        assert worker.close is not None
+        worker.close()
+
+    assert selected["model_text"] == "2000"
+    assert reused["model_text"] == "2000"
+    assert marker not in json.dumps(selected, sort_keys=True)
+    assert marker not in json.dumps(catalog, sort_keys=True)
+    assert "'size': 2000" in catalog["model_text"]
+
+
+@pytest.mark.asyncio
+async def test_restart_replays_only_self_contained_data_cells(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    state_root = tmp_path / "state"
+    composition = _enabled_composition()
+    config = cast(SkeinConfig, composition.harness.config)
+    settings = settings_from_composition(
+        composition,
+        RuntimeBindings(workspace=workspace, state_root=state_root, task_id="task-replay"),
+    )
+    events = JsonlEventStore(state_root / "events")
+    worker = build_coding_worker(
+        settings,
+        cast(BaseLlm, "test-model"),
+        tools=create_adk_tools(workspace, state_root=state_root, task_scope="task-replay"),
+        ptc_config=config.notebook_ptc,
+        event_store=events,
+    )
+    assert worker.python is not None
+    await worker.python("literal = {'value': 7}")
+    await worker.python("derived = len(literal)")
+    assert worker.close is not None
+    worker.close()
+
+    policies = [
+        event.payload["replay_policy"]
+        for event in events.read("task-replay")
+        if event.kind == EventKind.NOTEBOOK_CELL_ADDED
+    ]
+    assert policies == ["safe", "requires_reconciliation"]
+
+    replacement = build_coding_worker(
+        settings,
+        cast(BaseLlm, "test-model"),
+        tools=create_adk_tools(workspace, state_root=state_root, task_scope="task-replay"),
+        ptc_config=config.notebook_ptc,
+        event_store=events,
+    )
+    assert replacement.python is not None
+    try:
+        restored = await replacement.python("literal")
+        missing = await replacement.python("derived")
+    finally:
+        assert replacement.close is not None
+        replacement.close()
+
+    assert restored["model_text"] == "{'value': 7}"
+    assert missing["status"] == "error"
+    assert "NameError" in missing["model_text"]
+
+@pytest.mark.asyncio
+async def test_failed_cell_rolls_back_partial_namespace_mutation(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     state_root = tmp_path / "state"
@@ -286,7 +378,7 @@ async def test_failed_cell_is_materialized_without_destroying_warm_state(tmp_pat
 
     try:
         await python_tool("value = 9\nmarker = 'agent.'")
-        failed = await python_tool("1 / 0")
+        failed = await python_tool("value = 99\n1 / 0")
         restored = await python_tool("value")
     finally:
         assert worker.close is not None

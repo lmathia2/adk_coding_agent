@@ -64,6 +64,8 @@ class PythonExecutionResult:
     duration_ms: int = 0
     effect_unknown: bool = False
     output_truncated: bool = False
+    state_count: int = 0
+    state_delta: tuple[str, ...] = ()
 
 
 class _BoundedText(io.TextIOBase):
@@ -193,7 +195,69 @@ class _RemoteOperation:
         return response.get("result")
 
 
-def _agent_proxy(connection: Connection) -> SimpleNamespace:
+_RESERVED_NAMES = frozenset({"agent"})
+
+
+def _binding_description(
+    name: str,
+    value: Any,
+    metadata: Mapping[str, Mapping[str, str]],
+) -> dict[str, Any]:
+    value_type = type(value)
+    item: dict[str, Any] = {
+        "name": name,
+        "type": value_type.__name__,
+        "module": value_type.__module__,
+        "cell_id": metadata.get(name, {}).get("cell_id", "unknown"),
+        "replay": metadata.get(name, {}).get("replay", "transient"),
+    }
+    if value_type in {str, bytes, list, tuple, dict, set, frozenset}:
+        item["size"] = len(value)
+    return item
+
+
+def _state_manifest(
+    namespace: Mapping[str, Any],
+    metadata: Mapping[str, Mapping[str, str]],
+) -> list[dict[str, Any]]:
+    return [
+        _binding_description(name, namespace[name], metadata)
+        for name in sorted(namespace)
+        if not name.startswith("__") and name not in _RESERVED_NAMES
+    ]
+
+
+class _StateProxy:
+    def __init__(
+        self,
+        namespace: Mapping[str, Any],
+        metadata: Mapping[str, Mapping[str, str]],
+    ) -> None:
+        self._namespace = namespace
+        self._metadata = metadata
+
+    def list(self) -> list[dict[str, Any]]:
+        """Return metadata for live bindings without exposing their values."""
+
+        return _state_manifest(self._namespace, self._metadata)
+
+    def describe(self, name: str) -> dict[str, Any]:
+        """Describe one live binding without exposing its value."""
+
+        if not isinstance(name, str) or name.startswith("__") or name in _RESERVED_NAMES:
+            raise KeyError("unknown state binding")
+        try:
+            value = self._namespace[name]
+        except KeyError as error:
+            raise KeyError(f"unknown state binding: {name}") from error
+        return _binding_description(name, value, self._metadata)
+
+
+def _agent_proxy(
+    connection: Connection,
+    namespace: Mapping[str, Any],
+    metadata: Mapping[str, Mapping[str, str]],
+) -> SimpleNamespace:
     return SimpleNamespace(
         fs=SimpleNamespace(
             read=_RemoteOperation(connection, "fs.read"),
@@ -202,7 +266,21 @@ def _agent_proxy(connection: Connection) -> SimpleNamespace:
         ),
         shell=SimpleNamespace(run=_RemoteOperation(connection, "shell.run")),
         mcp=SimpleNamespace(call=_RemoteOperation(connection, "mcp.call")),
+        state=_StateProxy(namespace, metadata),
     )
+
+
+def _bound_names(tree: ast.AST) -> set[str]:
+    names = {
+        node.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del))
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                names.add(alias.asname or alias.name.split(".", 1)[0])
+    return names
 
 
 def _execute_cell(
@@ -210,12 +288,16 @@ def _execute_cell(
     namespace: dict[str, Any],
     *,
     max_output_bytes: int,
+    cell_id: str = "unknown",
+    replay_policy: str = "transient",
+    state_metadata: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     stdout = _BoundedText(max_output_bytes)
     stderr = _BoundedText(max_output_bytes)
     try:
         tree = ast.parse(code, filename="<agent-cell>", mode="exec")
         _validate_source(tree)
+        touched_names = _bound_names(tree)
         final_expression: ast.expr | None = None
         if tree.body:
             last_statement = tree.body[-1]
@@ -241,6 +323,13 @@ def _execute_cell(
         if value_repr is not None and len(value_repr.encode()) > max_output_bytes:
             value_repr = value_repr.encode()[:max_output_bytes].decode(errors="ignore")
             stdout.truncated = True
+        metadata = state_metadata if state_metadata is not None else {}
+        for name in touched_names:
+            if name in namespace and not name.startswith("__") and name not in _RESERVED_NAMES:
+                metadata[name] = {"cell_id": cell_id, "replay": replay_policy}
+            else:
+                metadata.pop(name, None)
+        manifest = _state_manifest(namespace, metadata)
         return {
             "status": "ok",
             "stdout": stdout.getvalue(),
@@ -248,6 +337,8 @@ def _execute_cell(
             "value_repr": value_repr,
             "display_data": display_data,
             "output_truncated": stdout.truncated or stderr.truncated,
+            "state_count": len(manifest),
+            "state_delta": sorted(touched_names),
         }
     except BaseException as error:
         return {
@@ -265,8 +356,9 @@ def _worker_main(connection: Connection, max_output_bytes: int) -> None:
     namespace: dict[str, Any] = {
         "__builtins__": _safe_builtins(),
         "__name__": "__agent_repl__",
-        "agent": _agent_proxy(connection),
     }
+    state_metadata: dict[str, dict[str, str]] = {}
+    namespace["agent"] = _agent_proxy(connection, namespace, state_metadata)
     while True:
         try:
             request = connection.recv()
@@ -280,6 +372,9 @@ def _worker_main(connection: Connection, max_output_bytes: int) -> None:
             str(request.get("code", "")),
             namespace,
             max_output_bytes=max_output_bytes,
+            cell_id=str(request.get("cell_id", "unknown")),
+            replay_policy=str(request.get("replay_policy", "transient")),
+            state_metadata=state_metadata,
         )
         connection.send({"type": "execution_result", "id": request.get("id"), **result})
 
@@ -357,6 +452,9 @@ class PersistentPythonWorker:
         code: str,
         broker: ReplBroker,
         timeout_seconds: float = 120,
+        *,
+        cell_id: str = "unknown",
+        replay_policy: str = "transient",
     ) -> PythonExecutionResult:
         if not isinstance(code, str):
             raise TypeError("code must be a string")
@@ -369,7 +467,15 @@ class PersistentPythonWorker:
             assert self._connection is not None
             request_id = uuid4().hex
             try:
-                self._connection.send({"type": "execute", "id": request_id, "code": code})
+                self._connection.send(
+                    {
+                        "type": "execute",
+                        "id": request_id,
+                        "code": code,
+                        "cell_id": cell_id,
+                        "replay_policy": replay_policy,
+                    }
+                )
                 while True:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0 or not self._connection.poll(min(remaining, 0.05)):
@@ -421,6 +527,8 @@ class PersistentPythonWorker:
                         traceback=tuple(response.get("traceback", ())),
                         duration_ms=int((time.monotonic() - started) * 1_000),
                         output_truncated=bool(response.get("output_truncated", False)),
+                        state_count=int(response.get("state_count", 0)),
+                        state_delta=tuple(str(name) for name in response.get("state_delta", ())),
                     )
             except (EOFError, BrokenPipeError, OSError) as error:
                 self._discard()
@@ -440,6 +548,12 @@ class PersistentPythonWorker:
                     self._process.join(timeout=1)
                 except (BrokenPipeError, OSError):
                     pass
+            self._discard()
+
+    def reset(self) -> None:
+        """Discard the current namespace after an uncommitted cell failure."""
+
+        with self._lock:
             self._discard()
 
     def __enter__(self) -> PersistentPythonWorker:

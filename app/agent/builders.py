@@ -45,10 +45,38 @@ def _replay_policy(code: str) -> str:
         tree = ast.parse(code)
     except SyntaxError:
         return "safe"  # Failed cells are never restored.
-    uses_agent = any(
-        isinstance(node, ast.Name) and node.id == "agent" for node in ast.walk(tree)
+    nodes = tuple(ast.walk(tree))
+    if any(isinstance(node, ast.Name) and node.id == "agent" for node in nodes):
+        return "never"
+    # Replay only self-contained data construction. Calls, imports, definitions,
+    # attribute/subscript access, and loaded names can depend on external or skipped
+    # state, including user-defined magic methods with effects.
+    unsafe = (
+        ast.AsyncFunctionDef,
+        ast.AsyncWith,
+        ast.Attribute,
+        ast.Await,
+        ast.Call,
+        ast.ClassDef,
+        ast.Delete,
+        ast.FunctionDef,
+        ast.Global,
+        ast.Import,
+        ast.ImportFrom,
+        ast.Lambda,
+        ast.Nonlocal,
+        ast.Raise,
+        ast.Subscript,
+        ast.Try,
+        ast.With,
+        ast.Yield,
+        ast.YieldFrom,
     )
-    return "never" if uses_agent else "safe"
+    if any(isinstance(node, unsafe) for node in nodes):
+        return "requires_reconciliation"
+    if any(isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) for node in nodes):
+        return "requires_reconciliation"
+    return "safe"
 
 
 @dataclass(frozen=True, slots=True)
@@ -489,6 +517,8 @@ def build_coding_worker(
                     prior_cell.source,
                     _RestoreBroker(),
                     min(timeout_seconds, active_ptc_config.default_timeout_seconds),
+                    cell_id=prior_cell.cell_id,
+                    replay_policy=prior_cell.replay_policy,
                 )
                 if restored.status != "ok":
                     return {
@@ -550,7 +580,13 @@ def build_coding_worker(
             code,
             broker,
             timeout_seconds,
+            cell_id=cell_id,
+            replay_policy=replay_policy,
         )
+        if result.status == "error":
+            # A Python exception may follow successful assignments. Discard the
+            # epoch so the next cell restores only previously committed safe cells.
+            await asyncio.to_thread(worker.reset)
         if result.status == "ok":
             terminal_kind = EventKind.REPL_CELL_COMPLETED
         elif result.status == "timeout":
@@ -575,6 +611,10 @@ def build_coding_worker(
             "stdout": result.stdout,
             "stderr": result.stderr,
             "artifact_refs": sorted(broker.artifact_refs),
+            "state": {
+                "count": result.state_count,
+                "delta": list(result.state_delta),
+            },
         }
         if display_data is not None:
             terminal_payload["display"] = display_data
@@ -643,6 +683,8 @@ def build_coding_worker(
             "duration_ms": result.duration_ms,
             "truncated": result.output_truncated or bounded.truncated,
             "omitted_bytes": bounded.omitted_bytes,
+            "state_count": result.state_count,
+            "state_delta": list(result.state_delta),
         }
 
     model_tools: list[Any] = (
