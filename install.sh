@@ -8,6 +8,7 @@ Install Skein and its Pi-style terminal from this checkout.
 Usage: ./install.sh [options]
   --bin-dir DIR  Command links (default: ~/.local/bin)
   --dev          Include tests, lint, and type-check tools
+  --eval         Include Harbor evaluation dependencies
   --minimal      Python CLI only; skip the TUI
   --tui          Build the terminal (default; requires Node.js 22.19+)
   --plan         Print the installation plan without making changes
@@ -15,7 +16,7 @@ Usage: ./install.sh [options]
 
 macOS: missing uv, Git, and Node.js are installed with Homebrew.
 Other platforms: install uv, Git, and Node.js 22.19+ first.
-The evaluation extra installs Harbor 0.22 and requires Python 3.12+.
+Harbor 0.22 is optional; pass --eval to install evaluation dependencies.
 Each install recreates only this checkout's .venv. No workspace is selected.
 EOF
 }
@@ -26,12 +27,14 @@ project_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 bin_dir=${UV_TOOL_BIN_DIR:-${HOME}/.local/bin}
 platform=$(uname -s)
 include_dev=0
+include_eval=0
 include_tui=1
 print_plan=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --bin-dir) [ "$#" -ge 2 ] || die '--bin-dir requires a directory'; bin_dir=$2; shift 2 ;;
     --dev) include_dev=1; shift ;;
+    --eval) include_eval=1; shift ;;
     --minimal) include_tui=0; shift ;;
     --tui) include_tui=1; shift ;;
     --plan) print_plan=1; shift ;;
@@ -50,7 +53,7 @@ if [ "$print_plan" -eq 1 ]; then
     '  Environment policy: remove and recreate on every installation' \
     "  Pi-style terminal: $include_tui" "  Development tools: $include_dev" \
     '  Notebook CLI: pynb-cli 0.0.10 (required)' \
-    '  Evaluation tools: Harbor 0.22' \
+    "  Harbor evaluations: $include_eval" \
     "  Command directory: $bin_dir" "  Runtime launcher: $bin_dir/skein-start" \
     '  Launch workspace: selected at runtime'
   exit 0
@@ -94,11 +97,17 @@ export UV_PROJECT_ENVIRONMENT
 uv venv --python '>=3.12' "$venv_path"
 groups=--no-default-groups
 [ "$include_dev" -eq 0 ] || groups=--all-groups
-uv sync --project "$project_root" --locked "$groups" --extra eval
-"$venv_path/bin/python" -c 'import fastapi, fff, google.adk, harbor, httpx, pydantic, uvicorn, yaml'
-for name in skein harbor nb; do
+eval_extra=
+[ "$include_eval" -eq 0 ] || eval_extra="--extra eval"
+uv sync --project "$project_root" --locked "$groups" $eval_extra
+"$venv_path/bin/python" -c 'import fastapi, fff, google.adk, httpx, pydantic, uvicorn, yaml'
+for name in skein nb; do
   [ -x "$venv_path/bin/$name" ] || die "missing installed command: $name"
 done
+if [ "$include_eval" -eq 1 ]; then
+  "$venv_path/bin/python" -c 'import harbor'
+  [ -x "$venv_path/bin/harbor" ] || die "missing installed command: harbor"
+fi
 if [ "$include_dev" -eq 1 ]; then
   for name in pytest pyright ruff; do
     [ -x "$venv_path/bin/$name" ] || die "missing development command: $name"

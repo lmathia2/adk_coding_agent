@@ -83,8 +83,8 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 The installer detects macOS, installs missing uv/Git/Node.js through Homebrew, creates
-Python 3.12+ in this checkout's `.venv`, syncs the locked dependencies plus Harbor 0.22
-for evaluations, installs the pinned `pynb-cli` notebook browser, and builds the
+Python 3.12+ in this checkout's `.venv`, syncs the locked default dependencies,
+installs the pinned `pynb-cli` notebook browser, and builds the
 Pi-toolkit terminal **by default**. It links `skein`, `skein-tui`, `skein-start`, and
 `nb` into the specified command directory. You do not need to activate
 the virtual environment, install Pi or Magnitude, or pass a workspace to installation.
@@ -111,6 +111,7 @@ Optional installer flags (choose only what you need):
 | --- | --- |
 | `--plan` | Show paths and the plan without installing |
 | `--dev` | Also install pytest, Ruff, and Pyright |
+| `--eval` | Also install Harbor 0.22 evaluation dependencies |
 | `--minimal` | CLI only; skip the TUI |
 | `--bin-dir DIR` | Choose where the command links are placed |
 
@@ -366,6 +367,10 @@ Structured requests can specify `goal`, `acceptance_criteria`, and
 default; `verification_level: syntax` is an explicit weaker contract.
 
 ## Harbor evaluations
+
+Install the optional evaluation dependencies first:
+
+    ./install.sh --dev --eval
 
 The Harbor runner executes the frozen samples sequentially and preserves each full job directory: raw agent trajectories, Skein events and traces, command artifacts, verifier output, stdout/stderr, metadata, and file hashes. Completed task keys are skipped on restart; interrupted jobs use Harbor job resume; failed jobs get separate retry directories.
 

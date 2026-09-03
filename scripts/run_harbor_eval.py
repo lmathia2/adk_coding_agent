@@ -139,7 +139,7 @@ def write_or_validate_metadata(path: Path, value: dict[str, Any]) -> None:
 def harbor_binary() -> str:
     path = shutil.which("harbor") or str(ROOT / ".venv/bin/harbor")
     if not Path(path).is_file():
-        raise SystemExit("Harbor is not installed; run ./install.sh --minimal --dev")
+        raise SystemExit("Harbor is not installed; run ./install.sh --minimal --dev --eval")
     return path
 
 

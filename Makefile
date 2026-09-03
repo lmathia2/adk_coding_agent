@@ -1,6 +1,9 @@
-.PHONY: install test lint format typecheck run eval eval-harbor sync-skills
+.PHONY: install install-eval test lint format typecheck run eval eval-harbor sync-skills
 
 install:
+	uv sync --all-groups
+
+install-eval:
 	uv sync --all-groups --extra eval
 
 test:
