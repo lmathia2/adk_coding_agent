@@ -205,9 +205,6 @@ def test_default_skein_factory_builds_from_composition_without_credentials(
                         update={
                             "models": models,
                             "workflow": skein_config.workflow.model_copy(update={"max_iterations": 7}),
-                            "context": skein_config.context.model_copy(
-                                update={"compact_at_tokens": 12_345}
-                            ),
                         }
                     )
                 }
@@ -227,7 +224,6 @@ def test_default_skein_factory_builds_from_composition_without_credentials(
     assert settings.app_name == "configured_app"
     assert settings.model == configured_model
     assert settings.max_iterations == 7
-    assert settings.compact_at_tokens == 12_345
     assert settings.state_root == bindings.state_root.resolve()
     assert isinstance(assembly, AdkHarnessAssembly)
     assert isinstance(assembly.app, App)
@@ -238,7 +234,6 @@ def test_default_skein_factory_builds_from_composition_without_credentials(
     assert assembly.build_info.model_providers["coding"] == "google_adk"
     assert assembly.build_info.tool_names == ("read", "bash", "edit", "write")
     assert assembly.build_info.max_iterations == 7
-    assert assembly.build_info.compact_at_tokens == 12_345
     assert "environment-model-must-not-win" not in assembly.build_info.models.values()
     assert registry.available() == ("skein_v1",)
     assert not environment_state.exists()

@@ -555,7 +555,6 @@ class SkeinHarnessFactory:
                 },
                 tool_names=("python",) if config.notebook_ptc.enabled else FOUR_CODING_TOOLS,
                 max_iterations=config.workflow.max_iterations,
-                compact_at_tokens=config.context.compact_at_tokens,
             ),
             agents=agents,
             explicit_public_messages=True,

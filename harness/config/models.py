@@ -194,7 +194,6 @@ class MemoryConfig(FrozenModel):
 
 
 class ContextConfig(FrozenModel):
-    compact_at_tokens: int = Field(default=80_000, ge=4_096, le=2_000_000)
     work_packet_tokens: int = Field(default=20_000, ge=2_000, le=256_000)
     max_task_input_tokens: int = Field(default=200_000, ge=8_000, le=20_000_000)
     recent_event_limit: int = Field(default=12, ge=1, le=100)

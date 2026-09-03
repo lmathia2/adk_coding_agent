@@ -76,7 +76,6 @@ harness:
       retrieval: lexical  # Lance is not a live prompt reader.
 
     context:
-      compact_at_tokens: 80000  # Coding-aware compaction trigger.
       work_packet_tokens: 20000  # Total dynamic suffix budget per model call.
       max_task_input_tokens: 200000  # Cumulative task input budget.
       recent_event_limit: 12  # Event-count prefilter before token bounding.

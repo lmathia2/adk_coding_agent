@@ -181,7 +181,6 @@ def tuning_spec(composition: HarnessComposition) -> TuningSpec:
 
     context = config.context
     context_parameters = (
-        ("compact_at_tokens", "Tokens before coding-aware compaction", 4_096, 2_000_000),
         ("work_packet_tokens", "Total dynamic work-packet budget", 2_000, 256_000),
         ("max_task_input_tokens", "Cumulative task input-token budget", 8_000, 20_000_000),
         ("recent_event_limit", "Maximum recent events considered", 1, 100),

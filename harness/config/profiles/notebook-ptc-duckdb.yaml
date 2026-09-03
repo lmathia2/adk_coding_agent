@@ -77,7 +77,6 @@ harness:
       retrieval: lexical  # Lance remains a disposable, non-live projection.
 
     context:
-      compact_at_tokens: 80000  # Coding-aware compaction trigger.
       work_packet_tokens: 20000  # Total dynamic suffix budget per model call.
       max_task_input_tokens: 200000  # Cumulative task input budget.
       recent_event_limit: 12

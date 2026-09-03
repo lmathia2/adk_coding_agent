@@ -15,7 +15,6 @@ from harness.state.progress import ProgressRoute, route_for_progress
 
 class HarnessRoute(StrEnum):
     CONTINUE = "continue"
-    COMPACT = "compact"
     REPLAN = "replan"
     BLOCKED = "blocked"
     VERIFY = "verify"
@@ -89,7 +88,6 @@ def decide_route(
     ledger: TaskLedger,
     step: AgentStep,
     *,
-    should_compact: bool = False,
     pending_steering: bool = False,
     replan_after_no_progress: int = 2,
     block_after_no_progress: int = 4,
@@ -109,8 +107,6 @@ def decide_route(
         return HarnessRoute.BLOCKED
     if progress_route == ProgressRoute.REPLAN:
         return HarnessRoute.REPLAN
-    if should_compact:
-        return HarnessRoute.COMPACT
     return HarnessRoute.CONTINUE
 
 

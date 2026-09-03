@@ -73,7 +73,6 @@ harness:
       retrieval: lexical
 
     context:
-      compact_at_tokens: 80000
       work_packet_tokens: 20000
       max_task_input_tokens: 200000
       recent_event_limit: 12

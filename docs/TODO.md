@@ -71,6 +71,7 @@ See `docs/design/pi-terminal-migration.md` for delivery gates.
 - [x] Remove Magnitude, LiteLLM integration, and installer/launcher branches; retain Codex and native ADK provider seams.
 - [x] Replace shadowed legacy tools with the tested atomic file primitives and remove unwired adapters.
 - [x] Reduce fixed-graph configuration and optional orchestration layers without weakening verification or approvals.
+- [x] Remove the unreachable coding-aware compaction trigger and keep ADK's token-threshold compactor as the sole live overflow path.
 - [x] Verify retained paths and report source-line and McCabe-complexity changes.
 
 Each checked item is committed independently.

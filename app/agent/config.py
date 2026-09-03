@@ -42,7 +42,6 @@ class HarnessSettings:
     worker_id: str
     task_lease_seconds: int
     max_iterations: int
-    compact_at_tokens: int
     recent_event_limit: int
     static_instruction: str
     static_prefix: str
@@ -188,7 +187,6 @@ def settings_from_composition(
         worker_id=worker_id,
         task_lease_seconds=config.steering.lease_seconds,
         max_iterations=config.workflow.max_iterations,
-        compact_at_tokens=config.context.compact_at_tokens,
         recent_event_limit=config.context.recent_event_limit,
         static_instruction=instruction,
         static_prefix=build_static_prefix(

@@ -25,13 +25,10 @@ _MODEL_CONTEXT_REDACTOR = SecretRedactor()
 
 
 class CompactionPolicy(BaseModel):
-    """Policy used before ADK's generic event-compaction safety net."""
+    """Bounds for deterministic legacy compaction snapshots."""
 
     model_config = ConfigDict(extra="forbid")
 
-    context_window: int = Field(default=128_000, ge=8_000)
-    completion_reserve: int = Field(default=16_000, ge=1_000)
-    trigger_fraction: float = Field(default=0.80, gt=0.1, le=1.0)
     retain_recent_events: int = Field(default=20, ge=1)
     max_event_chars: int = Field(default=2_000, ge=200)
     max_summary_tokens: int = Field(default=4_000, ge=512, le=32_000)
@@ -39,15 +36,6 @@ class CompactionPolicy(BaseModel):
     max_summarized_event_tokens: int = Field(default=1_600, ge=128, le=16_000)
     max_artifact_references: int = Field(default=12, ge=0, le=64)
     max_artifact_uri_chars: int = Field(default=512, ge=64, le=2_048)
-
-    @property
-    def trigger_tokens(self) -> int:
-        usable = self.context_window - self.completion_reserve
-        return int(usable * self.trigger_fraction)
-
-    def should_compact(self, estimated_prompt_tokens: int) -> bool:
-        return estimated_prompt_tokens >= self.trigger_tokens
-
 
 def _bullets(items: Sequence[str], *, empty: str = "- None") -> str:
     values = [item.strip() for item in items if item.strip()]

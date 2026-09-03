@@ -246,7 +246,6 @@ The coding model should be invoked as one bounded worker inside a programmatic A
 
 - Continue implementation.
 - Update the repository index.
-- Compact context.
 - Replan.
 - Run verification.
 - Ask for human input.
@@ -255,6 +254,10 @@ The coding model should be invoked as one bounded worker inside a programmatic A
 A coding model should not be asked on every step to choose among planner, coder, reviewer, tester, and memory agents. Those are control-flow choices the harness can often make deterministically.
 
 A specialized reviewer may be added later, but it should receive only the task, final diff, and verification evidence, not a duplicate of the entire coding transcript.
+
+The supported implementation delegates overflow compaction to ADK's configured
+token-threshold event compactor. The earlier separate coding-aware threshold was
+unreachable under the smaller hard work-packet budget and has been removed.
 
 ---
 

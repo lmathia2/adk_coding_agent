@@ -22,7 +22,8 @@ historical feature checklist or book-rubric score.
   and ADK model-provider registries.
 - One ADK coding worker with four tools; bounded context, a fail-closed byte-stable
   provider prefix, deterministic prefix identities and Codex cache routing keys,
-  compact repository manifests, and native FFF discovery.
+  compact repository manifests, native FFF discovery, and ADK-owned token-threshold
+  event compaction.
 - Experimental, disabled-by-default notebook-native PTC mode for the local sandbox:
   the worker exposes one persistent `python` tool, routes nested file and shell calls
   through the existing policy/approval adapters, appends lifecycle events, and

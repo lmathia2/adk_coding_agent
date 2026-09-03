@@ -68,7 +68,6 @@ class HarnessBuildInfo(FrozenModel):
     model_providers: dict[str, str] = Field(default_factory=dict)
     tool_names: tuple[str, ...] = ()
     max_iterations: int | None = Field(default=None, ge=1)
-    compact_at_tokens: int | None = Field(default=None, ge=1)
 
 
 class SteeringCommand(FrozenModel):

@@ -64,17 +64,6 @@ def test_compaction_snapshot_preserves_goal_files_and_validation() -> None:
     assert snapshot.estimated_tokens_after > 0
 
 
-def test_compaction_policy_uses_reserved_window() -> None:
-    policy = CompactionPolicy(
-        context_window=10_000,
-        completion_reserve=2_000,
-        trigger_fraction=0.75,
-    )
-    assert policy.trigger_tokens == 6_000
-    assert policy.should_compact(5_999) is False
-    assert policy.should_compact(6_000) is True
-
-
 def test_compaction_snapshot_accepts_state_events_without_volatile_metadata() -> None:
     summarized = HarnessEvent(
         event_id="random-event-id",

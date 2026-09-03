@@ -50,7 +50,8 @@ safe optimization subset; change topology by registering another factory.
 
 The workflow initializes/replays a task ledger, builds a bounded work packet,
 runs the coding worker, and reduces its typed result. Deterministic routes continue,
-compact, replan, verify, block, or finish. Model prose cannot mark a task verified.
+replan, verify, block, or finish. ADK owns token-threshold event compaction; model
+prose cannot mark a task verified.
 
 The static instruction excludes volatile task/session data. Dynamic packets hold the
 ledger, repository manifest, selected skills, recent events, compaction snapshot, and
