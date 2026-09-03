@@ -11,6 +11,7 @@ from harness.evals.experiments import (
     append_trial_record,
     build_matrix_from_file,
     harbor_command,
+    harbor_task_path,
     next_assignment,
     trial_record_from_harbor_result,
 )
@@ -40,7 +41,9 @@ def test_next_trial_command_is_single_task_digest_pinned_and_host_authenticated(
     assert assignment is not None
     command = harbor_command(assignment, matrix.model)
     assert command[:2] == ("harbor", "run")
-    assert f"{assignment.harbor_task}@{assignment.task_artifact_sha256}" in command
+    task_path = harbor_task_path(assignment.harbor_task, assignment.task_artifact_sha256)
+    assert command[command.index("--path") + 1] == str(task_path)
+    assert task_path.name == assignment.task_artifact_sha256
     assert command.count("--n-concurrent") == 1
     assert "--agent-env" not in command
 

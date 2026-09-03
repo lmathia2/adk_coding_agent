@@ -17,6 +17,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from harness.evals.experiments import harbor_task_path
+
 ROOT = Path(__file__).resolve().parents[1]
 MANIFESTS = {
     "smoke": ("evaluation-smoke-v1.json", 6),
@@ -183,14 +185,33 @@ def execute(
         return 124, True
 
 
+def cached_task(task: dict[str, Any]) -> Path:
+    path = harbor_task_path(task["harbor_task"], task["artifact_sha256"])
+    if path.is_dir():
+        return path
+    download = subprocess.run(
+        [harbor_binary(), "tasks", "download", task["harbor_task"], "--cache"]
+    )
+    if download.returncode or not path.is_dir():
+        raise SystemExit(
+            f"downloaded {task['harbor_task']} does not match frozen digest "
+            f"{task['artifact_sha256']}"
+        )
+    return path
+
+
 def run_command(
-    task: dict[str, Any], args: argparse.Namespace, attempts: int, job_dir: Path
+    task: dict[str, Any],
+    args: argparse.Namespace,
+    attempts: int,
+    job_dir: Path,
+    task_path: Path,
 ) -> list[str]:
     command = [
         harbor_binary(),
         "run",
-        "--task",
-        f"{task['harbor_task']}@{task['artifact_sha256']}",
+        "--path",
+        str(task_path),
         "--agent",
         "harness.evals.harbor:SkeinHarborAgent",
         "--model",
@@ -381,7 +402,7 @@ def main() -> int:
             else:
                 task_dir = output / f"{prefix}-attempt-{retry + 1:02d}"
                 task_dir.mkdir(parents=True, exist_ok=True)
-                command = run_command(task, args, attempts, task_dir)
+                command = run_command(task, args, attempts, task_dir, cached_task(task))
             append_row(
                 task_dir / "commands.jsonl",
                 {

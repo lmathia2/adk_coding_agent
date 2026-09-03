@@ -38,8 +38,11 @@ writes it. Rebuilding the pinned inputs produces the same manifest hashes.
 ## Freeze and oracle gate
 
 `manifest_sha256` covers canonical JSON excluding only that hash field. Any
-task or metadata edit invalidates the file. The selected task ref for Harbor is
-`<harbor_task>@<artifact_sha256>`; never use `latest` for a scored run.
+task or metadata edit invalidates the file. Each task is fetched by registry name
+only when its expected artifact is absent,
+then executed from Harbor's content-addressed cache with `--path`. The cache
+directory must equal `<harbor_task>/<artifact_sha256>`; never score a mismatched
+download.
 
 Before the first agent comparison, run the official oracle on every selected
 task and store its result beside the experiment ledger. SWE-Atlas's verifier

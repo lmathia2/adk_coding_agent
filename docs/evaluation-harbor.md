@@ -61,7 +61,7 @@ Use the checked-in external-agent import path and pass no provider secret to
 
 ```bash
 harbor run \
-  --task terminal-bench/TASK_ID@TASK_ARTIFACT_SHA256 \
+  --path "$HOME/.cache/harbor/tasks/packages/terminal-bench/TASK_ID/TASK_ARTIFACT_SHA256" \
   --agent harness.evals.harbor:SkeinHarborAgent \
   --model gpt-5.6-luna \
   --agent-kwarg provider=openai_codex \
@@ -76,7 +76,7 @@ and reference its name only:
 
 ```bash
 harbor run \
-  --task terminal-bench/TASK_ID@TASK_ARTIFACT_SHA256 \
+  --path "$HOME/.cache/harbor/tasks/packages/terminal-bench/TASK_ID/TASK_ARTIFACT_SHA256" \
   --agent harness.evals.harbor:SkeinHarborAgent \
   --model meta/muse-spark-1.2-contributor \
   --agent-kwarg provider=openrouter \

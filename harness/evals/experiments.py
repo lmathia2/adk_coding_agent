@@ -749,14 +749,24 @@ def next_assignment(
     )
 
 
+def harbor_task_path(
+    harbor_task: str, artifact_sha256: str, cache_root: Path | None = None
+) -> Path:
+    """Resolve a manifest digest to Harbor's content-addressed task cache."""
+
+    org, name = harbor_task.split("/", 1)
+    root = cache_root or Path.home() / ".cache/harbor/tasks/packages"
+    return root / org / name / artifact_sha256
+
+
 def harbor_command(assignment: TrialAssignment, model: FixedModelContract) -> tuple[str, ...]:
     """Return argv for one trial; credentials stay in the host's normal Skein state."""
 
     command = [
         "harbor",
         "run",
-        "--task",
-        f"{assignment.harbor_task}@{assignment.task_artifact_sha256}",
+        "--path",
+        str(harbor_task_path(assignment.harbor_task, assignment.task_artifact_sha256)),
         "--agent",
         assignment.adapter,
         "--model",
