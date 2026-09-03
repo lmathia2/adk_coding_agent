@@ -94,3 +94,10 @@ def test_completed_harbor_job_is_recovered_without_rerun(tmp_path: Path) -> None
     assert recovered is not None
     assert recovered[0] == task_dir
     assert recovered[2] == [0]
+
+
+def test_next_attempt_directory_survives_process_restart(tmp_path: Path) -> None:
+    runner = load_runner()
+    (tmp_path / "001-example-attempt-01").mkdir()
+    (tmp_path / "001-example-attempt-03").mkdir()
+    assert runner.next_attempt_dir(tmp_path, "001-example").name.endswith("attempt-04")

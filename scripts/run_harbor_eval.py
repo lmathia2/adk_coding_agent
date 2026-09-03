@@ -149,6 +149,13 @@ def docker_ready() -> None:
     check = subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if check.returncode:
         raise SystemExit("Docker daemon is not reachable; start Docker Desktop or Colima first")
+    compose = subprocess.run(
+        ["docker", "compose", "version"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if compose.returncode:
+        raise SystemExit("Docker Compose v2 is required by Harbor")
 
 
 def execute(
@@ -251,6 +258,16 @@ def completed_task(output: Path, prefix: str) -> tuple[Path, list[str], list[int
             if paths and not errors:
                 return task_dir, paths, rewards
     return None
+
+
+def next_attempt_dir(output: Path, prefix: str) -> Path:
+    numbers = []
+    for path in output.glob(f"{prefix}-attempt-*"):
+        try:
+            numbers.append(int(path.name.rsplit("-", 1)[1]))
+        except ValueError:
+            continue
+    return output / f"{prefix}-attempt-{max(numbers, default=0) + 1:02d}"
 
 
 def incomplete_job(output: Path, prefix: str) -> Path | None:
@@ -400,7 +417,7 @@ def main() -> int:
                 task_dir = resumed.parent
                 command = [harbor_binary(), "job", "resume", "--job-path", str(resumed)]
             else:
-                task_dir = output / f"{prefix}-attempt-{retry + 1:02d}"
+                task_dir = next_attempt_dir(output, prefix)
                 task_dir.mkdir(parents=True, exist_ok=True)
                 command = run_command(task, args, attempts, task_dir, cached_task(task))
             append_row(
