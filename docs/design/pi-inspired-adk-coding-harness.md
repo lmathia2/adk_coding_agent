@@ -225,6 +225,21 @@ prefix_mutation_reason
 
 The goal is not merely low total tokens. It is a high proportion of reusable prefix tokens.
 
+The executable boundary is the provider request, not the diagnostic
+`static_prefix_hash`. The assembled worker snapshots its model, system instruction,
+full tool declarations, and tool configuration on the first request and rejects any
+later mutation. Codex/OpenResponses routing keys hash the same stable request inputs
+(plus structured-output format) while excluding conversation input. Dynamic work
+packets therefore cannot change the routing key.
+
+This matches the Google design's stable-context-before-dynamic-query rule. Unlike
+the local Codex and Pi implementations, Skein reconstructs a bounded task packet on
+each worker step rather than replaying an append-only transcript, so only the system,
+tools, and trusted project instructions are guaranteed reusable across every step.
+ADK may extend an explicit Gemini cache through unchanged leading contents. Expanding
+the guaranteed prefix with a repository snapshot or changing to append-only replay
+remains an evaluation-gated context-policy change, not a caching prerequisite.
+
 ### 5.3 One main agent, deterministic outer loop
 
 The coding model should be invoked as one bounded worker inside a programmatic ADK workflow. The outer workflow decides whether to:

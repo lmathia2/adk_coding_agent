@@ -14,6 +14,8 @@ import pytest
 from google.adk.agents import LlmAgent
 from google.adk.apps import App
 from google.adk.models import BaseLlm
+from google.adk.models.llm_request import LlmRequest
+from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agent.builders import build_coding_worker
@@ -416,6 +418,26 @@ async def test_model_tool_input_error_is_recoverable_instead_of_crashing_adk(
 
     assert result["status"] == "blocked"
     assert "Path leaves workspace" in result["model_text"]
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_cache_stable_request_prefix_mutation(tmp_path: Path) -> None:
+    settings = settings_from_composition(
+        load_harness_composition(),
+        RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state"),
+    )
+    worker = build_coding_worker(settings, cast(BaseLlm, "test-model"))
+    callback = worker.agent.canonical_before_model_callbacks[0]
+    request = LlmRequest(
+        model="test-model",
+        config=types.GenerateContentConfig(system_instruction="stable"),
+    )
+
+    await callback(callback_context=cast(Any, None), llm_request=request)
+    request.config.system_instruction = "changed"
+
+    with pytest.raises(RuntimeError, match="cache-stable request prefix changed"):
+        await callback(callback_context=cast(Any, None), llm_request=request)
 
 
 def test_worker_passes_generation_settings_through_adk(tmp_path: Path) -> None:

@@ -135,6 +135,7 @@ class StreamingModel(ScriptedModel):
                 yield item
             return
         self._calls += 1
+        self._requests.append(llm_request.model_dump_json())
         for chunk in self._chunks:
             yield LlmResponse(partial=True, content=types.Content(role="model", parts=[types.Part(text=chunk)]))
         if self._released is not None:
@@ -227,6 +228,9 @@ async def test_steering_during_public_stream_runs_next_batch_without_duplicating
     events, _, _ = await run_fixture(tmp_path, model, "hello", observe=observe, max_iterations=2)
     assert model._calls == 2
     assert "steering-marker-742" in model._requests[-1]
+    first_request, second_request = map(json.loads, model._requests)
+    assert second_request["config"]["system_instruction"] == first_request["config"]["system_instruction"]
+    assert second_request["config"]["tools"] == first_request["config"]["tools"]
     assert "".join(e.delta for e in events if e.type == AgUiEventType.TEXT_MESSAGE_CONTENT) == "First streamed reply.\nReply after steering"
     assert sum(e.type == AgUiEventType.TEXT_MESSAGE_START for e in events) == 2
     assert next(e.value for e in events if e.name == "coding.workflow.output")["status"] == "answered"

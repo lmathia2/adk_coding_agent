@@ -28,6 +28,10 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert module.app.root_agent is module.root_agent
     application = importlib.import_module("app.agent.application")
     assert module.coding_worker is application._ASSEMBLY.agents["coding_worker"]
+    assert module.app.context_cache_config is not None
+    assert module.app.context_cache_config.min_tokens == 4_096
+    assert module.app.context_cache_config.ttl_seconds == 1_800
+    assert module.app.context_cache_config.cache_intervals == 10
     assert module.app.events_compaction_config.compaction_interval is None
     assert module.app.events_compaction_config.overlap_size is None
     assert module.app.events_compaction_config.token_threshold == 96_000

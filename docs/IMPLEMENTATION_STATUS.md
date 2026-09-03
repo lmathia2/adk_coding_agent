@@ -20,7 +20,8 @@ historical feature checklist or book-rubric score.
   PTC with canonical JSONL, and PTC with canonical DuckDB.
 - Strict YAML behavior, explicit workspace/state/trust identity, closed harness
   and ADK model-provider registries.
-- One ADK coding worker with four tools; bounded context, stable prefix hashes,
+- One ADK coding worker with four tools; bounded context, a fail-closed byte-stable
+  provider prefix, deterministic prefix identities and Codex cache routing keys,
   compact repository manifests, and native FFF discovery.
 - Experimental, disabled-by-default notebook-native PTC mode for the local sandbox:
   the worker exposes one persistent `python` tool, routes nested file and shell calls

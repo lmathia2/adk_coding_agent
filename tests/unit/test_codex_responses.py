@@ -82,6 +82,19 @@ def test_request_compiler_preserves_tools_history_and_stable_cache_prefix() -> N
     first = build_codex_request_body(request, model="gpt-test", reasoning_effort="low")
     second = build_codex_request_body(request, model="gpt-test", reasoning_effort="low")
 
+    request.contents.append(
+        types.Content(role="user", parts=[types.Part.from_text(text="Continue")])
+    )
+    extended = build_codex_request_body(request, model="gpt-test", reasoning_effort="low")
+
+    assert request.config.tools is not None
+    assert isinstance(request.config.tools[0], types.Tool)
+    assert request.config.tools[0].function_declarations is not None
+    request.config.tools[0].function_declarations[0].description = "Read one file"
+    changed_prefix = build_codex_request_body(
+        request, model="gpt-test", reasoning_effort="low"
+    )
+
     assert first == second
     assert first["store"] is False
     assert first["parallel_tool_calls"] is True
@@ -96,6 +109,9 @@ def test_request_compiler_preserves_tools_history_and_stable_cache_prefix() -> N
     assert first["input"][2]["type"] == "function_call_output"
     assert first["input"][2]["call_id"] == "call-1"
     assert len(first["prompt_cache_key"]) == 64
+    assert extended["input"][: len(first["input"])] == first["input"]
+    assert extended["prompt_cache_key"] == first["prompt_cache_key"]
+    assert changed_prefix["prompt_cache_key"] != first["prompt_cache_key"]
 
 
 @pytest.mark.asyncio

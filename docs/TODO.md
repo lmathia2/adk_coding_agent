@@ -11,6 +11,8 @@
   budgets; export the safe prompt/model/context/tool/cache surface with behavior-hash,
   outcome-metric, and redacted-trace contracts for external optimization loops; ship
   fully annotated four-tool, PTC+JSONL, and PTC+DuckDB standard configurations.
+- [x] Enforce byte-stable provider request prefixes across worker calls and derive
+  Codex/OpenResponses cache routing keys from the complete stable request shape.
 
 ## Trace-native notebook PTC
 

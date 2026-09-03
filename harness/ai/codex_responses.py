@@ -152,6 +152,22 @@ def build_codex_request_body(
     """Compile one deterministic Codex request from ADK's provider-neutral shape."""
 
     instruction = _system_instruction(request) or "You are a helpful coding assistant."
+    tools = _function_tools(request)
+    schema = _schema_dict(request.config.response_json_schema or request.config.response_schema)
+    text: dict[str, Any] = {"verbosity": "low"}
+    if schema is not None:
+        text["format"] = {
+            "type": "json_schema",
+            "name": "adk_response",
+            "schema": schema,
+            "strict": True,
+        }
+    cache_prefix = {
+        "model": model,
+        "instructions": instruction,
+        "tools": tools,
+        "text_format": text.get("format"),
+    }
     body: dict[str, Any] = {
         "model": model,
         "store": False,
@@ -164,23 +180,14 @@ def build_codex_request_body(
         ],
         "include": ["reasoning.encrypted_content"],
         "parallel_tool_calls": True,
-        "prompt_cache_key": hashlib.sha256(instruction.encode()).hexdigest(),
-        "text": {"verbosity": "low"},
+        "prompt_cache_key": hashlib.sha256(_json(cache_prefix).encode()).hexdigest(),
+        "text": text,
     }
-    tools = _function_tools(request)
     if tools:
         body["tools"] = tools
         body["tool_choice"] = "auto"
     if reasoning_effort is not None:
         body["reasoning"] = {"effort": reasoning_effort, "summary": "auto"}
-    schema = _schema_dict(request.config.response_json_schema or request.config.response_schema)
-    if schema is not None:
-        body["text"]["format"] = {
-            "type": "json_schema",
-            "name": "adk_response",
-            "schema": schema,
-            "strict": True,
-        }
     if request.config.temperature is not None:
         body["temperature"] = request.config.temperature
     if request.config.max_output_tokens is not None:

@@ -15,7 +15,7 @@ def build_static_prefix(
     tool_names: Iterable[str] = DEFAULT_TOOL_NAMES,
     instruction: str,
 ) -> str:
-    """Build the byte-stable prefix identity tracked alongside provider caching."""
+    """Build a deterministic behavior identity for the provider's stable prefix."""
 
     normalized_tools = sorted(set(tool_names))
     metadata = json.dumps(

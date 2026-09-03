@@ -54,8 +54,12 @@ compact, replan, verify, block, or finish. Model prose cannot mark a task verifi
 
 The static instruction excludes volatile task/session data. Dynamic packets hold the
 ledger, repository manifest, selected skills, recent events, compaction snapshot, and
-steering. Serialization and prefix hashes are deterministic. Even tiny context
-budgets are hard bounds.
+steering. Before every model call, the worker compares canonical bytes for the actual
+model, system instruction, tool declarations, and tool configuration with the first
+call and fails closed on mutation. Codex/OpenResponses cache keys cover those stable
+inputs and the output format, never the dynamic packet. Diagnostic prefix hashes are
+deterministic behavior identities rather than claims about provider serialization.
+Even tiny context budgets are hard bounds.
 
 Directory skills are trusted operator/project inputs. Project instructions and
 skills require explicit project trust; selected bodies are budgeted and hashed.

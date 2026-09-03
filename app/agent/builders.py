@@ -13,7 +13,9 @@ from typing import Any
 from uuid import uuid4
 
 from google.adk import Agent
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.models import BaseLlm
+from google.adk.models.llm_request import LlmRequest
 from google.adk.tools import ToolContext
 from google.genai import types
 
@@ -647,6 +649,31 @@ def build_coding_worker(
         [python] if active_ptc_config.enabled else [read, bash, edit, write]
     )
     generation = active_generation_config.model_dump(exclude_none=True)
+    stable_request_prefix: bytes | None = None
+
+    async def before_model(
+        callback_context: CallbackContext,
+        llm_request: LlmRequest,
+    ) -> None:
+        nonlocal stable_request_prefix
+        config = llm_request.config.model_dump(
+            mode="json",
+            include={"system_instruction", "tools", "tool_config"},
+            exclude_none=True,
+        )
+        current = json.dumps(
+            {"model": llm_request.model, "config": config},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        if stable_request_prefix is None:
+            stable_request_prefix = current
+        elif current != stable_request_prefix:
+            raise RuntimeError("The coding worker's cache-stable request prefix changed")
+        if replies is not None:
+            await replies.before_model(callback_context, llm_request)
+
     agent = Agent(
         name="coding_worker",
         model=model,
@@ -661,7 +688,7 @@ def build_coding_worker(
         generate_content_config=(
             types.GenerateContentConfig(**generation) if generation else None
         ),
-        before_model_callback=replies.before_model if replies is not None else None,
+        before_model_callback=before_model,
         after_model_callback=replies.after_model if replies is not None else None,
     )
     return CodingWorkerBundle(
