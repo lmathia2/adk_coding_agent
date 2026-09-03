@@ -187,3 +187,33 @@ async def test_openrouter_retries_transient_failures_and_redacts_api_key() -> No
     with pytest.raises(RuntimeError, match="<redacted>") as raised:
         await _collect(failing.generate_content_async(LlmRequest()))
     assert "openrouter-test-key" not in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_openrouter_retries_temporary_in_flight_budget_exhaustion() -> None:
+    attempts = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(
+                402,
+                json={"error": {"code": "in_flight_budget_exhausted"}},
+                headers={"Retry-After": "0"},
+            )
+        completed = {
+            "type": "response.completed",
+            "response": {"id": "response-3", "output": [], "usage": {}},
+        }
+        return httpx.Response(200, text=f"data: {json.dumps(completed)}\n\n")
+
+    model = OpenRouterResponsesLlm(
+        model="test-model",
+        api_key="openrouter-test-key",
+        retry_attempts=2,
+        client_factory=lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    assert len(await _collect(model.generate_content_async(LlmRequest()))) == 1
+    assert attempts == 2

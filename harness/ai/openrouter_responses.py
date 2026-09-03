@@ -107,12 +107,22 @@ class OpenRouterResponsesLlm(BaseLlm):
                     ) as response:
                         if not response.is_success:
                             raw = (await response.aread()).decode("utf-8", errors="replace")
+                            in_flight_budget_exhausted = (
+                                response.status_code == 402
+                                and "in_flight_budget_exhausted" in raw
+                            )
                             if (
-                                response.status_code in self.retry_statuses
+                                (
+                                    response.status_code in self.retry_statuses
+                                    or in_flight_budget_exhausted
+                                )
                                 and attempt + 1 < self.retry_attempts
                             ):
+                                delay = response.headers.get("Retry-After")
                                 await asyncio.sleep(
-                                    self.retry_initial_delay_seconds
+                                    float(delay)
+                                    if delay is not None
+                                    else self.retry_initial_delay_seconds
                                     * self.retry_exponential_base**attempt
                                 )
                                 continue
