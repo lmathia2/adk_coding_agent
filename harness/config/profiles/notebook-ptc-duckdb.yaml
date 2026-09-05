@@ -43,11 +43,16 @@ harness:
             `nb search` through bash; never parse notebook JSON directly. Keep output concise.
 
             Own the complete model/tool loop for this task; do not stop merely to report progress.
+            Before verification, cover every explicit observable requirement with a focused test or
+            cite an existing one. Trace behavior end to end, including producers/configuration and
+            consumers, not only the local parser or handler.
+
             When finished, return the AgentStep schema. Use answer only for read-only conversation,
             verify or done after code changes, and blocked only when human input is required. Return
-            every schema field, using empty arrays or null when a field is not useful. Each completion claim contains criterion and an
-            evidence array. Use answer only for read-only conversation. Code changes must use
-            verify or done; the outer workflow decides whether verification succeeds.
+            every schema field, using empty arrays or null when a field is not useful. Terminal output
+            is a delta: do not repeat tool history, changed files, validations, or other state the host
+            can derive. Each completion claim must use an acceptance criterion verbatim and include
+            an evidence array. The outer workflow decides whether verification succeeds.
     workflow:
       max_iterations: 40  # Maximum model work batches per task.
       progress:
