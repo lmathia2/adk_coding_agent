@@ -64,15 +64,6 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert "tui" not in type(composition.server).model_fields
     assert config.models["coding"].provider == "google_adk"
     assert "never parse notebook JSON" in config.agents["coding_worker"].instruction
-    instruction = config.agents["coding_worker"].instruction
-    assert "cover every explicit observable requirement" in instruction
-    assert "Trace behavior end to end" in instruction
-    assert "not only each behavior in isolation" in instruction
-    assert "synthesize optional metadata when its source is absent" in instruction
-    assert "missing optional lint or type-check tools" in instruction
-    assert "do not repeat tool history" in instruction
-    assert "acceptance criterion verbatim" in instruction
-    assert "create commits unless the user explicitly requests" in instruction
 
 
 @pytest.mark.parametrize(
@@ -98,9 +89,6 @@ def test_annotated_standard_profiles_are_complete_and_strict(
     assert config.memory.enabled is memory_enabled
     assert config.memory.ledger == ledger
     assert "never parse notebook JSON" in config.agents["coding_worker"].instruction
-    instruction = config.agents["coding_worker"].instruction
-    assert "cover every explicit observable requirement" in instruction
-    assert "do not repeat tool history" in instruction
     annotations = path.read_text(encoding="utf-8")
     assert "Primary learnable" in annotations
     assert "optimizer-owned" in annotations
