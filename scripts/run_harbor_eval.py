@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run pinned Skein Harbor samples sequentially and retain all traces."""
+"""Run pinned Skein Harbor-compatible samples with Pier and retain all traces."""
 
 from __future__ import annotations
 
@@ -151,6 +151,22 @@ def harbor_binary() -> str:
     return path
 
 
+def pier_binary() -> str:
+    path = shutil.which("pier") or str(Path.home() / ".local/bin/pier")
+    if not Path(path).is_file():
+        raise SystemExit("Pier is not installed; run uv tool install git+https://github.com/datacurve-ai/pier")
+    return path
+
+
+def pier_environment(env: dict[str, str]) -> dict[str, str]:
+    """Let Pier's isolated executable import this checkout and its dependencies."""
+
+    paths = [str(ROOT), *(path for path in sys.path if path)]
+    if env.get("PYTHONPATH"):
+        paths.append(env["PYTHONPATH"])
+    return {**env, "PYTHONPATH": os.pathsep.join(dict.fromkeys(paths))}
+
+
 def docker_ready() -> None:
     if shutil.which("docker") is None:
         raise SystemExit("Docker CLI is required; start Docker Desktop or Colima first")
@@ -230,12 +246,12 @@ def run_command(
     task_path: Path,
 ) -> list[str]:
     command = [
-        harbor_binary(),
+        pier_binary(),
         "run",
         "--path",
         str(task_path),
-        "--agent",
-        "harness.evals.harbor:SkeinHarborAgent",
+        "--agent-import-path",
+        "harness.evals.harbor:SkeinPierAgent",
         "--model",
         args.model,
         "--agent-kwarg",
@@ -247,11 +263,11 @@ def run_command(
         "--agent-kwarg",
         "max_iterations=24",
         "--agent-kwarg",
-        "max_task_input_tokens=2000000",
+        "max_task_input_tokens=20000000",
         "--agent-kwarg",
         f"max_output_tokens={args.max_output_tokens}",
         "--agent-kwarg",
-        "wall_time_seconds=1800",
+        "wall_time_seconds=5400",
         "--n-concurrent",
         "1",
         "--n-attempts",
@@ -358,7 +374,7 @@ def main() -> int:
         return 0
 
     docker_ready()
-    env = os.environ.copy()
+    env = pier_environment(os.environ.copy())
     if args.provider == "openrouter" and not env.get(args.api_key_env):
         dotenv = args.dotenv.expanduser().resolve()
         if not dotenv.is_file():
@@ -439,7 +455,7 @@ def main() -> int:
             resumed = incomplete_job(output, prefix)
             if resumed is not None:
                 task_dir = resumed.parent
-                command = [harbor_binary(), "job", "resume", "--job-path", str(resumed)]
+                command = [pier_binary(), "job", "resume", "--job-path", str(resumed)]
             else:
                 task_dir = next_attempt_dir(output, prefix)
                 task_dir.mkdir(parents=True, exist_ok=True)
@@ -455,8 +471,8 @@ def main() -> int:
             started = time.monotonic()
             timeout_seconds = args.timeout_seconds or (int(task["expected_runtime_seconds"]) + 1800)
             with (
-                (task_dir / "harbor.stdout.log").open("a", encoding="utf-8") as stdout,
-                (task_dir / "harbor.stderr.log").open("a", encoding="utf-8") as stderr,
+                (task_dir / "pier.stdout.log").open("a", encoding="utf-8") as stdout,
+                (task_dir / "pier.stderr.log").open("a", encoding="utf-8") as stderr,
             ):
                 returncode, timed_out = execute(
                     command,

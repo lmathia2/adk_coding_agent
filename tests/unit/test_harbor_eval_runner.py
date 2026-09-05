@@ -35,8 +35,35 @@ def test_frozen_suite_plans(suite: str, count: int, attempts: int) -> None:
     assert plan["attempts"] == attempts
 
 
-def test_harbor_runs_without_interactive_progress() -> None:
+def test_pier_runs_without_interactive_progress() -> None:
     assert '"--quiet"' in SCRIPT.read_text(encoding="utf-8")
+
+
+def test_runner_uses_the_same_pier_interface_as_mini_swe_agent(tmp_path: Path) -> None:
+    runner = load_runner()
+    args = type("Args", (), {
+        "model": "openai/gpt-5.5",
+        "provider": "openrouter",
+        "reasoning": "max",
+        "config": "harness/config/profiles/four-tool.yaml",
+        "max_output_tokens": 16_384,
+        "api_key_env": "OPENROUTER_API_KEY",
+    })()
+
+    command = runner.run_command(
+        {}, args, 1, tmp_path / "job", tmp_path / "deep-swe-task"
+    )
+
+    assert command[:5] == [
+        runner.pier_binary(),
+        "run",
+        "--path",
+        str(tmp_path / "deep-swe-task"),
+        "--agent-import-path",
+    ]
+    assert "harness.evals.harbor:SkeinPierAgent" in command
+    assert command[command.index("--model") + 1] == "openai/gpt-5.5"
+    assert str(ROOT) in runner.pier_environment({})["PYTHONPATH"].split(":")
 
 
 def test_metadata_rejects_changed_fixed_intelligence(tmp_path: Path) -> None:

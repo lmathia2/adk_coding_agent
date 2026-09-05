@@ -50,6 +50,7 @@ def test_evaluation_config_pins_luna_max_without_auth_state(tmp_path: Path) -> N
     assert model.name == "gpt-5.6-luna"
     assert model.reasoning == "max"
     assert config.agents["coding_worker"].generation.max_output_tokens == 16_384
+    assert composition.server.idle_timeout_seconds == request.wall_time_seconds
     assert composition.behavior_sha256 == loaded.behavior_sha256
     assert str(request.auth_state_root) not in path.read_text(encoding="utf-8")
     assert not config.safety.allow_network

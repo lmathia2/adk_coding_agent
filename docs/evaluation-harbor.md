@@ -1,8 +1,8 @@
-# Harbor evaluation adapter
+# Pier evaluation adapter
 
-Skein runs as a host-side Harbor external agent. The ADK/model loop and provider
+Skein runs as a host-side Pier custom agent against Harbor-compatible tasks. The ADK/model loop and provider
 credential stay in the host process; `read`, `bash`, `edit`, `write`, repository
-inspection, and verification execute through Harbor's task environment. Harbor
+inspection, and verification execute through Pier's task environment. Pier
 does not receive the provider credential through agent or task environment variables.
 For this adapter only, dependency, network, unknown-command, and Git authority
 is delegated to Harbor's disposable task environment; its task policy and
@@ -13,7 +13,7 @@ the standard restrictive approval policy.
 
 - Python 3.12
 - Skein: the Git revision recorded by the job
-- Harbor 0.22.0 (`uv.lock` and the `eval` extra)
+- Harbor 0.22.0 (`uv.lock` and the `eval` extra, used for the frozen task cache)
 - Pier 0.3.1 for DeepSWE v1.1
 - concurrency: 1
 - retries: 0 for ordinary agent failures
@@ -25,8 +25,7 @@ Install Harbor without changing the normal Skein runtime:
 uv sync --extra eval
 ```
 
-Pier is a separate Harbor-compatible runner and should remain isolated from the
-project environment:
+Pier is the benchmark runner, matching DeepSWE's mini-SWE-agent interface:
 
 ```bash
 uv tool install datacurve-pier==0.3.1
@@ -35,7 +34,7 @@ uv tool install datacurve-pier==0.3.1
 ## Resumable suite runner
 
 The checked-in CLI runs the frozen samples sequentially and keeps the complete
-Harbor job tree, Skein traces, events, metrics, verifier results, command
+Pier job tree, Skein traces, events, metrics, verifier results, command
 artifacts, stdout/stderr, run metadata, and SHA-256 file inventory:
 
 ```bash
@@ -47,22 +46,22 @@ python scripts/run_harbor_eval.py --suite full
 ```
 
 Rerun the same command after an interruption. Completed task keys are skipped,
-an incomplete Harbor job is resumed with `harbor job resume`, and a finished
+an incomplete Pier job is resumed with `pier job resume`, and a finished
 infrastructure error gets a separate attempt directory. A result written before
 a wrapper crash is recovered from disk without rerunning the task.
 Ordinary verifier failures are completed results and are not retried. The CLI
 rejects a jobs directory whose fixed model, reasoning, sample, configuration,
 attempt count, or Git revision differs from its original run contract.
 
-## Local Harbor run
+## Local Pier run
 
 Use the checked-in external-agent import path and pass no provider secret to
 `--agent-env`, the task, or the container. For an authorized Codex workspace:
 
 ```bash
-harbor run \
+pier run \
   --path "$HOME/.cache/harbor/tasks/packages/terminal-bench/TASK_ID/TASK_ARTIFACT_SHA256" \
-  --agent harness.evals.harbor:SkeinHarborAgent \
+  --agent-import-path harness.evals.harbor:SkeinPierAgent \
   --model gpt-5.6-luna \
   --agent-kwarg provider=openai_codex \
   --agent-kwarg reasoning=max \
@@ -76,9 +75,9 @@ For a fixed-model OpenRouter trial, load `OPENROUTER_API_KEY` into the host shel
 and reference its name only:
 
 ```bash
-harbor run \
+pier run \
   --path "$HOME/.cache/harbor/tasks/packages/terminal-bench/TASK_ID/TASK_ARTIFACT_SHA256" \
-  --agent harness.evals.harbor:SkeinHarborAgent \
+  --agent-import-path harness.evals.harbor:SkeinPierAgent \
   --model meta/muse-spark-1.2-contributor \
   --agent-kwarg provider=openrouter \
   --agent-kwarg reasoning=xhigh \
@@ -89,7 +88,9 @@ harbor run \
   --yes
 ```
 
-Use the same agent import and kwargs with `pier run -p deep-swe/tasks/<task-id>`.
+This is the same `pier run -p ... --model ...` interface used by mini-SWE-agent;
+only the built-in `--agent mini-swe-agent` is replaced by Skein's
+`--agent-import-path`.
 Do not append benchmark-specific instructions. The adapter forwards Harbor's
 instruction unchanged.
 

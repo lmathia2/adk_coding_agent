@@ -1,4 +1,4 @@
-"""Host-side Harbor adapter for Skein's existing coding loop."""
+"""Host-side Pier adapter for Skein's Harbor-compatible task environments."""
 
 from __future__ import annotations
 
@@ -17,9 +17,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 from uuid import uuid4
 
-from harbor.agents.base import BaseAgent
-from harbor.environments.base import BaseEnvironment, ExecResult
-from harbor.models.agent.context import AgentContext
+try:
+    from pier.agents.base import BaseAgent
+    from pier.environments.base import BaseEnvironment, ExecResult
+    from pier.models.agent.context import AgentContext
+except ImportError:  # Harbor remains a test/runtime compatibility fallback.
+    from harbor.agents.base import BaseAgent
+    from harbor.environments.base import BaseEnvironment, ExecResult
+    from harbor.models.agent.context import AgentContext
 from typing_extensions import override
 
 from app.agent.factory import default_harness_registry
@@ -335,8 +340,8 @@ class HarborRepositoryRuntime(RepositoryRuntime):
         ).hexdigest()
 
 
-class SkeinHarborAgent(BaseAgent):
-    """Run Skein on the host while all coding operations stay in Harbor."""
+class SkeinPierAgent(BaseAgent):
+    """Run Skein on the host while all coding operations stay in Pier."""
 
     SUPPORTS_WINDOWS = False
     _skein_provider: Literal["openai_codex", "openrouter"]
@@ -401,7 +406,7 @@ class SkeinHarborAgent(BaseAgent):
         assert self._workspace is not None
         loop = asyncio.get_running_loop()
         bridge = _AsyncBridge(loop)
-        self.logger.info("Initializing Skein Harbor runtime for %s", self._workspace)
+        self.logger.info("Initializing Skein Pier runtime for %s", self._workspace)
         files = HarborWorkspaceEnvironment(environment, bridge, self._workspace)
         repository = await asyncio.to_thread(
             HarborRepositoryRuntime,
@@ -412,7 +417,7 @@ class SkeinHarborAgent(BaseAgent):
         state_root = self.logs_dir / "skein-state"
         shadow = self.logs_dir / "workspace"
         shadow.mkdir(parents=True, exist_ok=True)
-        task_id = str(self.context_id or self.session_id or hashlib.sha256(instruction.encode()).hexdigest()[:24])
+        task_id = hashlib.sha256(instruction.encode()).hexdigest()[:24]
 
         def runtime_factory(
             _settings: Any,
@@ -429,7 +434,7 @@ class SkeinHarborAgent(BaseAgent):
             )
             return ExecutionRuntime(files=files, commands=commands, repository=repository)
 
-        self.logger.info("Skein Harbor repository snapshot initialized")
+        self.logger.info("Skein Pier repository snapshot initialized")
         registry = default_harness_registry(execution_runtime_factory=runtime_factory)
 
         def assembly_builder(**kwargs: Any):
@@ -483,9 +488,13 @@ class SkeinHarborAgent(BaseAgent):
         }
 
 
+SkeinHarborAgent = SkeinPierAgent
+
+
 __all__ = [
     "HarborCommandSandbox",
     "HarborRepositoryRuntime",
     "HarborWorkspaceEnvironment",
     "SkeinHarborAgent",
+    "SkeinPierAgent",
 ]

@@ -382,7 +382,6 @@ class AdkRunExecutionFactory:
             auto_create_session=False,
         )
         config = composition.harness.config
-        max_iterations = int(getattr(getattr(config, "workflow", None), "max_iterations", 40))
         coding_model_name = assembly.build_info.models.get("coding")
         coding_model_provider = assembly.build_info.model_providers.get("coding")
         coding_model_status = (
@@ -400,7 +399,7 @@ class AdkRunExecutionFactory:
             app_name=assembly.app.name,
             session_service=self.services.session_service,
             controls=assembly.controls,
-            max_llm_calls=max(1, min(5_000, max_iterations * 4)),
+            max_llm_calls=5_000,
             coding_model_status=coding_model_status,
             explicit_public_messages=assembly.explicit_public_messages,
             approvals=assembly.approvals,

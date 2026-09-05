@@ -214,9 +214,7 @@ def prepare_evaluation_config(request: EvaluationRunRequest) -> tuple[Path, Harn
     server["first_event_timeout_seconds"] = min(
         float(server["first_event_timeout_seconds"]), request.wall_time_seconds
     )
-    server["idle_timeout_seconds"] = min(
-        float(server["idle_timeout_seconds"]), request.wall_time_seconds
-    )
+    server["idle_timeout_seconds"] = request.wall_time_seconds
 
     composition = parse_harness_composition(payload)
     destination = request.state_root.expanduser().resolve() / "evaluation" / "config.yaml"
