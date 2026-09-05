@@ -68,6 +68,7 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert "cover every explicit observable requirement" in instruction
     assert "Trace behavior end to end" in instruction
     assert "not only each behavior in isolation" in instruction
+    assert "synthesize optional metadata when its source is absent" in instruction
     assert "missing optional lint or type-check tools" in instruction
     assert "do not repeat tool history" in instruction
     assert "acceptance criterion verbatim" in instruction
