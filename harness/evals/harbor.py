@@ -347,20 +347,20 @@ class SkeinPierAgent(BaseAgent):
 
     SUPPORTS_WINDOWS = False
     _skein_provider: Literal["openai_codex", "openrouter"]
-    _skein_reasoning: ReasoningEffort
+    _skein_reasoning: ReasoningEffort | None
 
     def __init__(
         self,
         *args: Any,
         provider: Literal["openai_codex", "openrouter"] = "openai_codex",
         model_name: str | None = "gpt-5.6-luna",
-        reasoning: ReasoningEffort = "max",
+        reasoning: ReasoningEffort | None = None,
         api_key_env: str | None = None,
         auth_state_root: str | Path | None = None,
         config: str | Path = DEFAULT_COMPOSITION_PATH,
         max_iterations: int = 24,
         max_task_input_tokens: int = 2_000_000,
-        max_output_tokens: int = 16_384,
+        max_output_tokens: int | None = None,
         wall_time_seconds: float = 1_800,
         **kwargs: Any,
     ) -> None:

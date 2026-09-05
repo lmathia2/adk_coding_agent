@@ -96,6 +96,20 @@ def test_evaluation_config_pins_openrouter_model_and_secret_reference(tmp_path: 
     assert "EVAL_OPENROUTER_KEY" in path.read_text(encoding="utf-8")
 
 
+def test_evaluation_config_preserves_provider_generation_defaults(tmp_path: Path) -> None:
+    request = _request(tmp_path, tmp_path).model_copy(
+        update={"provider": "openrouter", "model": "openai/gpt-5.5", "reasoning": None}
+    )
+
+    _, composition = runner.prepare_evaluation_config(request)
+    config = composition.harness.config
+    assert isinstance(config, SkeinConfig)
+    model = config.models[config.agents["coding_worker"].model]
+
+    assert model.reasoning is None
+    assert config.agents["coding_worker"].generation.max_output_tokens is None
+
+
 def test_evaluation_rejects_a_dirty_workspace_before_model_start(tmp_path: Path) -> None:
     request = _request(tmp_path, _repository(tmp_path / "repo", dirty=True))
 

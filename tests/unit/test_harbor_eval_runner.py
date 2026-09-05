@@ -66,6 +66,23 @@ def test_runner_uses_the_same_pier_interface_as_mini_swe_agent(tmp_path: Path) -
     assert str(ROOT) in runner.pier_environment({})["PYTHONPATH"].split(":")
 
 
+def test_provider_defaults_omit_reasoning_and_output_limit(tmp_path: Path) -> None:
+    runner = load_runner()
+    args = type("Args", (), {
+        "model": "openai/gpt-5.5",
+        "provider": "openrouter",
+        "reasoning": None,
+        "config": "harness/config/profiles/four-tool.yaml",
+        "max_output_tokens": None,
+        "api_key_env": "OPENROUTER_API_KEY",
+    })()
+
+    command = runner.run_command({}, args, 1, tmp_path / "job", tmp_path / "task")
+
+    assert not any("reasoning=" in value for value in command)
+    assert not any("max_output_tokens=" in value for value in command)
+
+
 def test_metadata_rejects_changed_fixed_intelligence(tmp_path: Path) -> None:
     runner = load_runner()
     path = tmp_path / "run-metadata.json"

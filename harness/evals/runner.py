@@ -50,7 +50,7 @@ class EvaluationRunRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=50_000)
     provider: Literal["openai_codex", "openrouter"] = "openai_codex"
     model: str = Field(min_length=1, max_length=128)
-    reasoning: ReasoningEffort
+    reasoning: ReasoningEffort | None = None
     api_key_env: str | None = Field(
         default=None,
         pattern=r"^[A-Z][A-Z0-9_]{1,127}$",
