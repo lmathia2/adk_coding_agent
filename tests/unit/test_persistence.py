@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from google.adk.errors import StaleSessionError
+from google.adk.events import Event
 from google.genai import types
 from pydantic import ValidationError
 
@@ -20,6 +22,7 @@ from harness.persistence.adk_services import (
     local_durable_settings,
     settings_from_composition,
 )
+from harness.persistence.observed_session import ObservedSessionService
 
 
 def test_bundled_composition_selects_local_durable_backends() -> None:
@@ -105,6 +108,40 @@ async def test_local_adk_services_survive_reconstruction(tmp_path: Path) -> None
     assert session.state["phase"] == "coding"
     assert artifact is not None
     assert artifact.text == "durable"
+
+
+@pytest.mark.asyncio
+async def test_shallow_session_copy_can_append_after_runner_write(tmp_path: Path) -> None:
+    service = build_service_bundle(local_durable_settings(tmp_path)).session_service
+    assert isinstance(service, ObservedSessionService)
+    session = await service.create_session(
+        app_name="coding_harness", user_id="user", session_id="session"
+    )
+    worker_session = session.model_copy(deep=False)
+    independent_session = await service.get_session(
+        app_name="coding_harness", user_id="user", session_id="session"
+    )
+    assert independent_session is not None
+
+    await service.append_event(
+        session, Event(author="worker", timestamp=session.last_update_time + 1)
+    )
+    await service.append_event(
+        worker_session,
+        Event(author="compactor", timestamp=session.last_update_time + 1),
+    )
+
+    with pytest.raises(StaleSessionError):
+        await service.append_event(
+            independent_session,
+            Event(author="stale", timestamp=session.last_update_time + 1),
+        )
+
+    stored = await service.get_session(
+        app_name="coding_harness", user_id="user", session_id="session"
+    )
+    assert stored is not None
+    assert [event.author for event in stored.events] == ["worker", "compactor"]
 
 
 @pytest.mark.asyncio

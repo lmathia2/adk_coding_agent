@@ -82,9 +82,9 @@ def build_service_bundle(
     *,
     session_sink: SessionSink | None = None,
 ) -> AdkServiceBundle:
-    session_service = build_session_service(settings)
-    if session_sink is not None:
-        session_service = ObservedSessionService(session_service, session_sink)
+    session_service = ObservedSessionService(
+        build_session_service(settings), session_sink
+    )
     return AdkServiceBundle(
         session_service=session_service,
         artifact_service=build_artifact_service(settings),
