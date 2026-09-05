@@ -102,6 +102,22 @@ def test_private_python_module_finds_publicly_named_test(tmp_path: Path) -> None
     )
 
 
+def test_discovery_runs_changed_test_files(tmp_path: Path) -> None:
+    manifest = RepositoryManifest(
+        root=Path("/remote/repository"),
+        commands=[BuildCommand("test", "pytest", "pyproject.toml")],
+        file_paths=frozenset({"src/parser.py", "tests/test_new_behavior.py"}),
+    )
+
+    plan = discover_validation_plan(
+        manifest, ["src/parser.py", "tests/test_new_behavior.py"]
+    )
+
+    test = next(command for command in plan.commands if command.category == "test")
+    assert test.command == "pytest tests/test_new_behavior.py"
+    assert test.targeted
+
+
 def test_metadata_free_unittest_must_execute_at_least_one_test(tmp_path: Path) -> None:
     plan = ValidationPlan(
         changed_paths=["hello.py"],
@@ -208,6 +224,7 @@ def test_failed_advisory_check_does_not_skip_behavioral_verification(tmp_path: P
 
     assert report.passed
     assert [result.category for result in results] == ["lint", "test"]
+    assert report.recommended_next_action is None
 
 
 def test_verifier_uses_explicit_managed_sandbox(

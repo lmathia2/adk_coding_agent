@@ -171,7 +171,7 @@ def build_report(
         next_action = "Revert or justify changes outside the permitted scope"
     elif not strength_satisfied:
         next_action = f"Add and pass a trusted {required} verification command"
-    elif diagnostics:
+    elif diagnostics and not passed:
         next_action = "Fix the first failing validation command and rerun verification"
     elif any(not row.satisfied for row in criteria_rows):
         next_action = "Add environmental verification for each unsatisfied criterion"

@@ -38,33 +38,37 @@ def find_adjacent_tests(
         path = root / relative
         suffix = path.suffix.lower()
         stem = path.stem
-        if suffix in {".py", ".pyi"} and not stem.startswith("test_"):
-            test_stem = stem.lstrip("_") or stem
-            tests.extend(
-                _existing_candidates(
-                    root,
-                    (
-                        path.with_name(f"test_{test_stem}.py"),
-                        root / "tests" / path.parent.relative_to(root) / f"test_{test_stem}.py",
-                        root / "tests" / f"test_{test_stem}.py",
-                    ),
-                    known_paths,
+        if suffix in {".py", ".pyi"}:
+            if stem.startswith("test_"):
+                tests.extend(_existing_candidates(root, (path,), known_paths))
+            else:
+                test_stem = stem.lstrip("_") or stem
+                tests.extend(
+                    _existing_candidates(
+                        root,
+                        (
+                            path.with_name(f"test_{test_stem}.py"),
+                            root / "tests" / path.parent.relative_to(root) / f"test_{test_stem}.py",
+                            root / "tests" / f"test_{test_stem}.py",
+                        ),
+                        known_paths,
+                    )
                 )
-            )
-        elif suffix in {".ts", ".tsx", ".js", ".jsx"} and not any(
-            marker in stem for marker in (".test", ".spec")
-        ):
-            tests.extend(
-                _existing_candidates(
-                    root,
-                    (
-                        path.with_name(f"{stem}.test{suffix}"),
-                        path.with_name(f"{stem}.spec{suffix}"),
-                        path.parent / "__tests__" / f"{stem}.test{suffix}",
-                    ),
-                    known_paths,
+        elif suffix in {".ts", ".tsx", ".js", ".jsx"}:
+            if any(marker in stem for marker in (".test", ".spec")):
+                tests.extend(_existing_candidates(root, (path,), known_paths))
+            else:
+                tests.extend(
+                    _existing_candidates(
+                        root,
+                        (
+                            path.with_name(f"{stem}.test{suffix}"),
+                            path.with_name(f"{stem}.spec{suffix}"),
+                            path.parent / "__tests__" / f"{stem}.test{suffix}",
+                        ),
+                        known_paths,
+                    )
                 )
-            )
     return sorted(set(tests))
 
 
