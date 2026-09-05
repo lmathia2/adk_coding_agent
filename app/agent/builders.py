@@ -21,7 +21,7 @@ from google.genai import types
 
 from harness.approvals.waiting import ApprovalWaiter
 from harness.config import GenerationConfig, NotebookPtcConfig, ToolSurfaceConfig
-from harness.models.agent_step import AgentStep
+from harness.models.agent_step import StructuredAgentStep
 from harness.notebook import (
     NotebookCell,
     externalize_mime_bundle,
@@ -764,7 +764,7 @@ def build_coding_worker(
         instruction="",
         tools=model_tools,
         output_schema=(
-            AgentStep
+            StructuredAgentStep
             if getattr(getattr(model, "capabilities", None), "output_schema_and_tools", False)
             else None
         ),

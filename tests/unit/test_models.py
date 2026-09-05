@@ -8,6 +8,7 @@ from harness.models import (
     TaskLedger,
     TaskRequest,
 )
+from harness.models.agent_step import StructuredAgentStep
 
 
 def test_task_request_adds_default_acceptance_criterion() -> None:
@@ -90,3 +91,13 @@ def test_agent_step_round_trip() -> None:
         files_in_focus=["src/parser.py"],
     )
     assert AgentStep.model_validate_json(step.model_dump_json()) == step
+
+
+def test_provider_terminal_schema_requires_every_property() -> None:
+    schema = StructuredAgentStep.model_json_schema()
+
+    assert set(schema["required"]) == set(schema["properties"])
+    assert schema["$defs"]["StructuredCompletionClaim"]["required"] == [
+        "criterion",
+        "evidence",
+    ]

@@ -35,3 +35,28 @@ class AgentStep(BaseModel):
     discovered_constraints: list[str] = Field(default_factory=list)
     files_in_focus: list[str] = Field(default_factory=list)
     completion_claims: list[CompletionClaim] = Field(default_factory=list)
+
+
+class StructuredCompletionClaim(BaseModel):
+    """Strict-provider form: every property is required by OpenAI JSON schema."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    criterion: str
+    evidence: list[str]
+
+
+class StructuredAgentStep(BaseModel):
+    """Provider-native terminal schema; optional values are required but nullable."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["answer", "verify", "blocked", "done"]
+    message: str = Field(max_length=16_000)
+    progress: list[str]
+    next_action: str | None
+    decisions: list[str]
+    questions: list[str]
+    discovered_constraints: list[str]
+    files_in_focus: list[str]
+    completion_claims: list[StructuredCompletionClaim]

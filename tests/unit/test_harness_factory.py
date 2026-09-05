@@ -44,7 +44,7 @@ from harness.config import (
     load_harness_composition,
     parse_harness_composition,
 )
-from harness.models.agent_step import AgentStep
+from harness.models.agent_step import StructuredAgentStep
 from harness.server import PROTOCOL_VERSION, ServerHello
 from harness.tools.adk_adapter import AdkCodingTools
 
@@ -471,7 +471,7 @@ def test_worker_uses_native_structured_output_without_adding_a_model_tool(tmp_pa
         OpenRouterResponsesLlm(model="openai/gpt-5.5", api_key="test"),
     )
 
-    assert worker.agent.output_schema is AgentStep
+    assert worker.agent.output_schema is StructuredAgentStep
     assert [tool.__name__ for tool in worker.agent.tools] == ["read", "bash", "edit", "write"]
 
 
