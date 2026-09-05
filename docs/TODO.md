@@ -89,7 +89,8 @@ See `docs/design/pi-terminal-migration.md` for delivery gates.
 - [x] Remove Magnitude, LiteLLM integration, and installer/launcher branches; retain Codex and native ADK provider seams.
 - [x] Replace shadowed legacy tools with the tested atomic file primitives and remove unwired adapters.
 - [x] Reduce fixed-graph configuration and optional orchestration layers without weakening verification or approvals.
-- [x] Remove the unreachable coding-aware compaction trigger and keep ADK's token-threshold compactor as the sole live overflow path.
+- [x] Remove ADK's model-authored compactor; derive bounded memory views from the append-only log.
+- [x] Give the ADK worker sole ownership of the coding loop and fail closed on non-terminal results.
 - [x] Verify retained paths and report source-line and McCabe-complexity changes.
 
 Each checked item is committed independently.
@@ -124,7 +125,7 @@ intentional removals.
 - [x] Pin native FFF search and expose bounded, cursor-paginated discovery through the existing `bash` tool.
 - [x] Implement event reduction, SQLite persistence, tool receipts, steering, and checkpoints.
 - [x] Implement deterministic verification and acceptance-criterion evidence.
-- [x] Wire the ADK 2.x coding agent, dynamic workflow, caching, compaction backstop, and resumability.
+- [x] Wire the ADK 2.x coding agent, deterministic verification workflow, caching, and resumability.
 - [x] Add unit, integration, resume, security, and Agents CLI evaluation fixtures.
 - [x] Add CI and operational documentation after the MVP contracts are stable.
 

@@ -360,19 +360,20 @@ so Docker alone does not isolate the entire harness.
 
 Files use confined paths, atomic replacement, optional hash preconditions, and
 mutation receipts. Tool output is bounded and large logs are recoverable as artifacts.
-The outer workflow—not model prose—decides whether a coding task is verified.
+The ADK worker owns the complete model/tool loop; the deterministic workflow—not
+model prose—decides whether a coding task is verified.
 
 Structured requests can specify `goal`, `acceptance_criteria`, and
 `verification_requirements`. Executable changes require behavioral checks by
 default; `verification_level: syntax` is an explicit weaker contract.
 
-## Harbor evaluations
+## Pier evaluations
 
 Install the optional evaluation dependencies first:
 
     ./install.sh --dev --eval
 
-The Harbor runner executes the frozen samples sequentially and preserves each full job directory: raw agent trajectories, Skein events and traces, command artifacts, verifier output, stdout/stderr, metadata, and file hashes. Completed task keys are skipped on restart; interrupted jobs use Harbor job resume; failed jobs get separate retry directories.
+The Pier runner executes the frozen Harbor-compatible samples sequentially and preserves each full job directory: raw agent trajectories, Skein events and traces, command artifacts, verifier output, stdout/stderr, metadata, and file hashes. Completed task keys are skipped on restart; interrupted jobs use Pier job resume; failed jobs get separate retry directories.
 
     .venv/bin/python scripts/run_harbor_eval.py --suite smoke --plan
     .venv/bin/python scripts/run_harbor_eval.py --suite smoke --task-id modernize-scientific-stack

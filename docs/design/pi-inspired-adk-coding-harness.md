@@ -165,7 +165,7 @@ A transcript may remain append-only and complete while the model sees only a car
 
 ### 5.1 The harness is a context compiler
 
-Before each coding work batch, the harness compiles a bounded `ContextPacket` from:
+Before each coding run or deterministic verification retry, the harness compiles a bounded `ContextPacket` from:
 
 - The original goal and acceptance criteria.
 - Current Task Ledger state.
@@ -234,19 +234,17 @@ packets therefore cannot change the routing key.
 
 This matches the Google design's stable-context-before-dynamic-query rule. Unlike
 the local Codex and Pi implementations, Skein reconstructs a bounded task packet on
-each worker step rather than replaying an append-only transcript, so only the system,
+each worker invocation rather than replaying an append-only transcript, so only the system,
 tools, and trusted project instructions are guaranteed reusable across every step.
 ADK may extend an explicit Gemini cache through unchanged leading contents. Expanding
 the guaranteed prefix with a repository snapshot or changing to append-only replay
 remains an evaluation-gated context-policy change, not a caching prerequisite.
 
-### 5.3 One main agent, deterministic outer loop
+### 5.3 One main agent, one coding loop
 
-The coding model should be invoked as one bounded worker inside a programmatic ADK workflow. The outer workflow decides whether to:
+The ADK coding worker owns the complete model/tool loop. The programmatic workflow decides only whether to:
 
-- Continue implementation.
-- Update the repository index.
-- Replan.
+- Deliver external steering at a safe boundary.
 - Run verification.
 - Ask for human input.
 - Finish.
@@ -255,9 +253,9 @@ A coding model should not be asked on every step to choose among planner, coder,
 
 A specialized reviewer may be added later, but it should receive only the task, final diff, and verification evidence, not a duplicate of the entire coding transcript.
 
-The supported implementation delegates overflow compaction to ADK's configured
-token-threshold event compactor. The earlier separate coding-aware threshold was
-unreachable under the smaller hard work-packet budget and has been removed.
+The worker's final result is native structured output when the provider supports
+schemas alongside tools. A malformed result or terminal `continue` fails closed;
+it never starts a second hidden coding loop.
 
 ---
 
@@ -586,14 +584,16 @@ Compaction algorithm:
 4. Retain the newest raw events up to the recent-tail budget.
 5. Serialize older events into a neutral transcript representation.
 6. Truncate large historical tool outputs before summarization.
-7. Summarize using a cheaper model when quality is sufficient.
-8. Merge the previous summary with newly summarized history.
-9. Persist structured JSON and readable Markdown.
+7. Run a versioned deterministic projection over the append-only events.
+8. Merge the previous structured view with newly selected evidence.
+9. Persist canonical JSON and readable Markdown views.
 10. Record files read, files modified, validations, and decisions.
 11. Generate a new prefix hash and mark the compaction as an intentional cache reset.
 12. Continue from summary plus retained tail.
 
-ADK's built-in event/token compaction should remain as an overflow safety net, while the coding-aware compactor is the primary policy.
+ADK's model-authored event compactor is disabled. It performs unmetered model calls
+and injects summary prose into coding history. JSONL remains the source of truth;
+DuckDB and LanceDB are optional indexes over the same events.
 
 ### 7.3 Session branching and checkpoints
 
@@ -666,11 +666,11 @@ class AgentStep(BaseModel):
     completion_claims: list[str] = []
 ```
 
-The outer workflow reduces this into the Task Ledger. `status="done"` never directly completes the task; it routes to verification.
+The deterministic workflow reduces this into the Task Ledger. `status="done"` never directly completes the task; it routes to verification. `continue` is reserved for internal steering transitions and is not a valid terminal coding result.
 
 ### 8.3 Progress invariant
 
-Each work batch must produce at least one of:
+Each complete coding run must produce at least one of:
 
 - New repository evidence.
 - A meaningful code change.
@@ -689,7 +689,7 @@ no_progress_count >= 3: replan or request human input
 
 ### 8.4 User steering
 
-At the end of each work batch:
+At a safe model/tool boundary:
 
 1. Drain urgent steering messages.
 2. Update the goal contract if necessary.
@@ -954,16 +954,19 @@ ADK provides the workflow substrate without becoming the model-facing abstractio
 | Large logs and reports | Artifact service |
 | Policy and telemetry | Plugins and callbacks |
 | User steering | Durable queue plus state/event updates |
-| Context overflow protection | ADK compaction as backstop |
+| Context overflow protection | Bounded views derived from the append-only log |
 | Provider-side Gemini caching | ADK context-cache configuration |
 
-The coding agent should run as one bounded work batch:
+The coding agent should own one complete model/tool loop:
 
 ```text
-inspect -> reason -> tool calls -> observe -> coherent change or decision -> AgentStep
+inspect -> reason -> tool calls -> observe -> verify/done/answer/blocked AgentStep
 ```
 
-After the batch, the ADK workflow reduces events into state, drains steering, updates the index, checks budgets, and decides whether to compact, continue, verify, or block.
+Before every inner model call, plugins check actual cumulative usage. After the worker
+returns, the workflow reduces events into state and decides whether to verify, block,
+or finish. Only failed deterministic verification or external steering may re-enter
+the worker.
 
 For Gemini-backed execution, configure ADK context caching for sufficiently large stable prefixes. Keep an independent prefix hash because provider cache semantics vary and cannot compensate for a mutating prompt.
 
@@ -1140,7 +1143,7 @@ held-out test pass rate
 acceptance-criterion satisfaction
 regression and scope-violation rates
 input/output/uncached/cache tokens
-context tokens per work batch
+context tokens per model call
 stable-prefix reuse rate
 compactions per task
 tool calls and duplicate actions

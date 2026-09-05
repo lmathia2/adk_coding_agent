@@ -393,6 +393,14 @@ class HarnessMetricsPlugin(BasePlugin):
             )
         )
         task_id = self._task_id(callback_context)
+        input_limit = _integer(
+            _context_value(callback_context, "task_input_token_limit", 0)
+        )
+        used_input = int(self.store.task_summary(task_id)["input_tokens"] or 0)
+        if input_limit and used_input >= input_limit:
+            raise RuntimeError(
+                f"Task input-token budget exhausted ({used_input} used, {input_limit} allowed)"
+            )
         prefix_hash = str(
             _context_value(
                 callback_context,

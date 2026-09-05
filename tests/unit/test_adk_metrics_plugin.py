@@ -109,6 +109,29 @@ def test_plugin_records_one_model_call(tmp_path) -> None:
     assert summary["prefix_versions"] == 1
 
 
+def test_plugin_enforces_actual_input_budget_before_each_inner_model_call(tmp_path) -> None:
+    plugin = HarnessMetricsPlugin(
+        database=tmp_path / "metrics.db",
+        static_prefix_hash="prefix",
+        static_prefix_tokens=500,
+        default_model="test-model",
+        default_task_id="task-1",
+    )
+    context = _Context(state={"task_id": "task-1", "task_input_token_limit": 1_000})
+    asyncio.run(plugin.before_model_callback(callback_context=context, llm_request=_Request()))
+    asyncio.run(
+        plugin.after_model_callback(
+            callback_context=context,
+            llm_response=_Response(usage_metadata=_Usage(prompt_token_count=1_000)),
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="input-token budget exhausted"):
+        asyncio.run(
+            plugin.before_model_callback(callback_context=context, llm_request=_Request())
+        )
+
+
 def test_plugin_prefers_provider_reported_cost_and_concrete_model(tmp_path) -> None:
     database = tmp_path / "metrics.db"
     plugin = HarnessMetricsPlugin(

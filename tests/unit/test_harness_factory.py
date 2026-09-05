@@ -35,6 +35,7 @@ from harness.agent import (
     RuntimeCapability,
     SteeringCommand,
 )
+from harness.ai.openrouter_responses import OpenRouterResponsesLlm
 from harness.config import (
     GenerationConfig,
     HarnessComposition,
@@ -43,6 +44,7 @@ from harness.config import (
     load_harness_composition,
     parse_harness_composition,
 )
+from harness.models.agent_step import AgentStep
 from harness.server import PROTOCOL_VERSION, ServerHello
 from harness.tools.adk_adapter import AdkCodingTools
 
@@ -457,6 +459,20 @@ def test_worker_passes_generation_settings_through_adk(tmp_path: Path) -> None:
     assert worker.agent.generate_content_config.temperature == 0.2
     assert worker.agent.generate_content_config.top_p == 0.9
     assert worker.agent.generate_content_config.max_output_tokens == 8_192
+
+
+def test_worker_uses_native_structured_output_without_adding_a_model_tool(tmp_path: Path) -> None:
+    settings = settings_from_composition(
+        load_harness_composition(),
+        RuntimeBindings(workspace=tmp_path, state_root=tmp_path / "state"),
+    )
+    worker = build_coding_worker(
+        settings,
+        OpenRouterResponsesLlm(model="openai/gpt-5.5", api_key="test"),
+    )
+
+    assert worker.agent.output_schema is AgentStep
+    assert [tool.__name__ for tool in worker.agent.tools] == ["read", "bash", "edit", "write"]
 
 
 @pytest.mark.asyncio

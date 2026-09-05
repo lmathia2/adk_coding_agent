@@ -32,10 +32,7 @@ def test_agents_cli_entrypoint_imports_with_adk_2x(monkeypatch, tmp_path) -> Non
     assert module.app.context_cache_config.min_tokens == 4_096
     assert module.app.context_cache_config.ttl_seconds == 1_800
     assert module.app.context_cache_config.cache_intervals == 10
-    assert module.app.events_compaction_config.compaction_interval is None
-    assert module.app.events_compaction_config.overlap_size is None
-    assert module.app.events_compaction_config.token_threshold == 96_000
-    assert module.app.events_compaction_config.event_retention_size == 20
+    assert module.app.events_compaction_config is None
     assert any(isinstance(plugin, HarnessMetricsPlugin) for plugin in module.app.plugins)
     assert any(isinstance(plugin, CodingToolArtifactPlugin) for plugin in module.app.plugins)
     assert any(isinstance(plugin, SteeringPlugin) for plugin in module.app.plugins)

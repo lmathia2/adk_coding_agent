@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable, Mapping, Sequence
 
 from google.adk.agents.context_cache_config import ContextCacheConfig
-from google.adk.apps.app import App, EventsCompactionConfig, ResumabilityConfig
+from google.adk.apps.app import App, ResumabilityConfig
 from google.adk.plugins.base_plugin import BasePlugin
 from pydantic import BaseModel
 
@@ -534,12 +534,6 @@ class SkeinHarnessFactory:
                 min_tokens=config.adk.context_cache.min_tokens,
                 ttl_seconds=config.adk.context_cache.ttl_seconds,
                 cache_intervals=config.adk.context_cache.cache_intervals,
-            ),
-            events_compaction_config=EventsCompactionConfig(
-                compaction_interval=config.adk.event_compaction.interval,
-                overlap_size=config.adk.event_compaction.overlap,
-                token_threshold=config.adk.event_compaction.token_threshold,
-                event_retention_size=config.adk.event_compaction.retention,
             ),
             resumability_config=ResumabilityConfig(is_resumable=config.adk.resumable),
         )

@@ -216,13 +216,6 @@ def tuning_spec(composition: HarnessComposition) -> TuningSpec:
         ("cache_intervals", "Provider context-cache refresh interval"),
     ):
         add(f"adk.context_cache.{field}", getattr(cache, field), "integer", description)
-    compaction = config.adk.event_compaction
-    for field, description in (
-        ("token_threshold", "ADK overflow-compaction threshold"),
-        ("retention", "Events retained after ADK overflow compaction"),
-    ):
-        add(f"adk.event_compaction.{field}", getattr(compaction, field), "integer", description)
-
     return TuningSpec(
         base_behavior_sha256=composition.behavior_sha256,
         primary_objective=TuningObjective(metric="outcome_passed", direction="maximize"),

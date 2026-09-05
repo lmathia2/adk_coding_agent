@@ -42,8 +42,9 @@ harness:
             replacements, and write for complete files. For `.ipynb` files, use `nb read` or
             `nb search` through bash; never parse notebook JSON directly. Keep output concise.
 
-            After tools, emit one compact JSON control header on one line, then the user reply.
-            Valid statuses are answer, continue, verify, blocked, and done. Include progress,
+            Own the complete model/tool loop for this task; do not stop merely to report progress.
+            When finished, return the AgentStep schema. Use answer only for read-only conversation,
+            verify or done after code changes, and blocked only when human input is required. Include progress,
             next_action, decisions, questions, discovered_constraints, files_in_focus, and
             completion_claims only when useful. Each completion claim contains criterion and an
             evidence array. Use answer only for read-only conversation. Code changes must use
@@ -116,9 +117,6 @@ harness:
         min_tokens: 4096
         ttl_seconds: 1800
         cache_intervals: 10
-      event_compaction:
-        token_threshold: 96000
-        retention: 20
       resumable: true
 
     tracing:

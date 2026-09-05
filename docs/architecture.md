@@ -48,10 +48,11 @@ safe optimization subset; change topology by registering another factory.
 
 ## Minimal coding loop
 
-The workflow initializes/replays a task ledger, builds a bounded work packet,
-runs the coding worker, and reduces its typed result. Deterministic routes continue,
-replan, verify, block, or finish. ADK owns token-threshold event compaction; model
-prose cannot mark a task verified.
+The workflow initializes/replays a task ledger and builds a bounded work packet.
+The ADK coding worker then owns the complete model/tool loop until it returns a typed
+answer, verification request, or blocker. The deterministic workflow only re-enters
+the worker after external steering or failed verification; a terminal `continue` or
+malformed result fails closed. Model prose cannot mark a task verified.
 
 The static instruction excludes volatile task/session data. Dynamic packets hold the
 ledger, repository manifest, selected skills, recent events, compaction snapshot, and
@@ -60,7 +61,9 @@ model, system instruction, tool declarations, and tool configuration with the fi
 call and fails closed on mutation. Codex/OpenResponses cache keys cover those stable
 inputs and the output format, never the dynamic packet. Diagnostic prefix hashes are
 deterministic behavior identities rather than claims about provider serialization.
-Even tiny context budgets are hard bounds.
+Actual usage is checked before every inner model call. ADK's model-authored event
+compactor is disabled; bounded memory views are derived reproducibly from the
+append-only task log.
 
 Directory skills are trusted operator/project inputs. Project instructions and
 skills require explicit project trust; selected bodies are budgeted and hashed.

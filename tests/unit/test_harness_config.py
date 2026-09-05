@@ -115,6 +115,18 @@ def test_server_total_deadline_cannot_be_shorter_than_first_event_deadline() -> 
         parse_harness_composition(payload)
 
 
+def test_server_idle_deadline_can_match_a_long_total_deadline() -> None:
+    payload = _composition_payload()
+    payload["server"] = {
+        "idle_timeout_seconds": 5_400,
+        "total_timeout_seconds": 5_400,
+    }
+
+    composition = parse_harness_composition(payload)
+
+    assert composition.server.idle_timeout_seconds == 5_400
+
+
 def test_task_input_budget_cannot_be_smaller_than_one_work_packet() -> None:
     payload = _composition_payload()
     payload["harness"]["config"]["context"] = {

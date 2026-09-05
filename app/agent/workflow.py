@@ -330,13 +330,11 @@ def _record_outcome(
 
 def _malformed_step(error: ValueError) -> AgentStep:
     return AgentStep(
-        status="continue",
+        status="blocked",
         progress=[],
-        next_action=(
-            "Continue the task, then return a valid single-line AgentStep control header followed by Markdown"
-        ),
+        next_action="Retry with a model that supports the required AgentStep schema",
         decisions=[],
-        questions=[],
+        questions=["The coding run ended without a valid AgentStep result."],
         discovered_constraints=[str(error)[:1_000]],
         files_in_focus=[],
         completion_claims=[],
@@ -350,6 +348,7 @@ def _set_model_call_state(
     dynamic_tokens: int,
     stable_prefix_hash: str,
     static_prefix_tokens: int,
+    task_input_token_limit: int | None = None,
     steering_owner: str | None = None,
     steering_packet_message_ids: tuple[str, ...] = (),
 ) -> None:
@@ -361,6 +360,8 @@ def _set_model_call_state(
         "static_prefix_tokens_estimate": static_prefix_tokens,
         "dynamic_context_tokens_estimate": dynamic_tokens,
     }
+    if task_input_token_limit is not None:
+        state_delta["task_input_token_limit"] = task_input_token_limit
     if steering_owner is not None:
         state_delta["steering_owner"] = steering_owner
         state_delta["steering_packet_message_ids"] = list(steering_packet_message_ids)
@@ -947,6 +948,7 @@ async def _orchestrate_owned(
             dynamic_tokens=dynamic_tokens,
             stable_prefix_hash=deps.static_prefix_hash,
             static_prefix_tokens=deps.static_prefix_tokens,
+            task_input_token_limit=task_input_budget,
             steering_owner=owner,
             steering_packet_message_ids=tuple(message.message_id for message in leased),
         )
@@ -991,6 +993,20 @@ async def _orchestrate_owned(
 
         if reply_stream is not None:
             step = reply_stream.finish(step)
+
+        if step.status == "continue":
+            # The ADK coding worker owns its complete model/tool loop. A final
+            # response cannot hand ordinary coding work back to this workflow.
+            step = step.model_copy(
+                update={
+                    "status": "blocked",
+                    "next_action": "Resume with a terminal answer, verification request, or blocker",
+                    "questions": [
+                        *step.questions,
+                        "The coding run stopped before requesting verification.",
+                    ],
+                }
+            )
 
         if step.status == "answer":
             # Tool effects and explicit task obligations cannot be waived by a

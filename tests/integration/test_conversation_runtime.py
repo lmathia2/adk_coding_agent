@@ -263,6 +263,17 @@ async def test_greeting_finishes_in_one_model_call_without_tools_or_verification
 
 
 @pytest.mark.asyncio
+async def test_terminal_continue_does_not_start_a_second_coding_loop(tmp_path) -> None:
+    model = ScriptedModel(model="fixture")
+    model._responses = [reply("continue", "I stopped early"), reply("done", "unused")]
+
+    events, _, _ = await run_fixture(tmp_path, model, "Implement the requested feature", max_iterations=2)
+
+    assert model._calls == 1
+    assert next(e.value for e in events if e.name == "coding.workflow.output")["status"] == "blocked"
+
+
+@pytest.mark.asyncio
 async def test_read_only_explanation_can_answer_without_coding_verification(tmp_path) -> None:
     model = ScriptedModel(model="fixture")
     model._responses = [[types.Part(function_call=types.FunctionCall(
@@ -316,6 +327,7 @@ async def test_two_turns_keep_adk_history_but_reset_task_budgets_and_skills(tmp_
             thread_id="conversation", user_id="user", input=prompt)
         store.update_status(record.run_id, "running")
         execution = await factory.create(record)
+        assert execution.max_llm_calls == 5_000
         try:
             batches = [batch async for batch in execution.events()]
         finally:

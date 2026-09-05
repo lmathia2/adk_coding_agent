@@ -271,16 +271,8 @@ class ContextCacheConfig(FrozenModel):
     cache_intervals: int = Field(default=10, ge=1)
 
 
-class EventCompactionConfig(FrozenModel):
-    interval: int | None = Field(default=None, ge=1)
-    overlap: int | None = Field(default=None, ge=0)
-    token_threshold: int = Field(default=96_000, ge=4_096)
-    retention: int = Field(default=20, ge=1)
-
-
 class AdkConfig(FrozenModel):
     context_cache: ContextCacheConfig = ContextCacheConfig()
-    event_compaction: EventCompactionConfig = EventCompactionConfig()
     resumable: Literal[True] = True
 
 
@@ -367,7 +359,7 @@ class ServerConfig(FrozenModel):
     max_connections: int = Field(default=32, ge=1, le=10_000)
     outbound_queue_size: int = Field(default=256, ge=1, le=100_000)
     first_event_timeout_seconds: float = Field(default=120, gt=0, le=3_600)
-    idle_timeout_seconds: float = Field(default=180, gt=0, le=3_600)
+    idle_timeout_seconds: float = Field(default=180, gt=0, le=86_400)
     total_timeout_seconds: float = Field(default=1_800, gt=0, le=86_400)
     first_event_retries: int = Field(default=1, ge=0, le=3)
     close_timeout_seconds: float = Field(default=15, gt=0, le=300)

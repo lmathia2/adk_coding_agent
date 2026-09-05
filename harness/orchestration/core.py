@@ -59,6 +59,17 @@ def reduce_agent_step(ledger: TaskLedger, step: AgentStep) -> TaskLedger:
     data["iteration"] = int(data.get("iteration", 0)) + 1
     if step.next_action:
         data["next_action"] = step.next_action
+    data["progress"] = list(
+        dict.fromkeys([*data.get("progress", []), *step.progress])
+    )
+    decisions = list(data.get("decisions", []))
+    known_decisions = {str(decision.get("summary", "")) for decision in decisions}
+    decisions.extend(
+        {"summary": decision}
+        for decision in dict.fromkeys(step.decisions)
+        if decision not in known_decisions
+    )
+    data["decisions"] = decisions
     if "constraints" in data:
         data["constraints"] = list(
             dict.fromkeys([*data.get("constraints", []), *step.discovered_constraints])

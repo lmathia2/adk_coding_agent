@@ -40,9 +40,16 @@ def test_task_and_step_parsing() -> None:
 
 def test_reducer_and_routes() -> None:
     ledger = _ledger()
-    step = AgentStep(status="continue", progress=["found service"], next_action="edit it")
+    step = AgentStep(
+        status="continue",
+        progress=["found service"],
+        decisions=["Reuse the existing service"],
+        next_action="edit it",
+    )
     ledger = reduce_agent_step(ledger, step)
     assert ledger.next_action == "edit it"
+    assert ledger.progress == ["found service"]
+    assert [decision.summary for decision in ledger.decisions] == ["Reuse the existing service"]
     assert decide_route(ledger, step) == HarnessRoute.CONTINUE
 
     verify = AgentStep(

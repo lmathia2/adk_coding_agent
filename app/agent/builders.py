@@ -21,6 +21,7 @@ from google.genai import types
 
 from harness.approvals.waiting import ApprovalWaiter
 from harness.config import GenerationConfig, NotebookPtcConfig, ToolSurfaceConfig
+from harness.models.agent_step import AgentStep
 from harness.notebook import (
     NotebookCell,
     externalize_mime_bundle,
@@ -757,11 +758,16 @@ def build_coding_worker(
         description=(
             "Executes notebook-native PTC in one persistent CPython tool."
             if active_ptc_config.enabled
-            else "Executes one bounded coding work batch with four composable tools."
+            else "Owns one complete coding run with four composable tools."
         ),
         static_instruction=settings.static_instruction,
         instruction="",
         tools=model_tools,
+        output_schema=(
+            AgentStep
+            if getattr(getattr(model, "capabilities", None), "output_schema_and_tools", False)
+            else None
+        ),
         generate_content_config=(
             types.GenerateContentConfig(**generation) if generation else None
         ),
