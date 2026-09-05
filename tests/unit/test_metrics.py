@@ -70,6 +70,7 @@ def test_metrics_separate_cached_and_uncached_context(tmp_path: Path) -> None:
     assert summary["cache_read_tokens"] == 1_900
     assert summary["uncached_input_tokens"] == 1_200
     assert summary["prefix_versions"] == 1
+    assert summary["peak_context_tokens"] == 1_600
     assert summary["tool_calls"] == 1
     assert summary["omitted_bytes"] == 10_000
     assert summary["cost_per_passed_task"] == 0.22

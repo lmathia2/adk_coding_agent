@@ -484,6 +484,10 @@ class SkeinPierAgent(BaseAgent):
         context.n_cache_tokens = int(metrics.get("cache_read_tokens", 0) or 0)
         context.n_output_tokens = int(metrics.get("output_tokens", 0) or 0)
         context.cost_usd = result.api_equivalent_cost_usd
+        if "peak_context_tokens" in type(context).model_fields:
+            context.peak_context_tokens = int(metrics.get("peak_context_tokens", 0) or 0)
+            context.summarization_count = int(metrics.get("outcome_compactions", 0) or 0)
+            context.n_agent_steps = int(metrics.get("model_calls", 0) or 0)
         context.metadata = {
             "skein": result.model_dump(mode="json", exclude={"final_answer"}),
             "final_answer": result.final_answer,

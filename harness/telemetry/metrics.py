@@ -227,6 +227,7 @@ class MetricsStore:
                     COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
                     COALESCE(SUM(cost_usd), 0.0) AS cost_usd,
                     COALESCE(SUM(latency_ms), 0) AS model_latency_ms,
+                    COALESCE(MAX(input_tokens), 0) AS peak_context_tokens,
                     COUNT(*) AS model_calls,
                     COUNT(DISTINCT static_prefix_hash) AS prefix_versions
                 FROM model_usage WHERE task_id=?
