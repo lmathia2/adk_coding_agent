@@ -13,7 +13,7 @@ from harness.models.agent_step import StructuredAgentStep
 
 def test_task_request_adds_default_acceptance_criterion() -> None:
     request = TaskRequest(goal="Fix the parser")
-    assert request.acceptance_criteria == ["The requested change is implemented and verified."]
+    assert request.acceptance_criteria == ["Fix the parser"]
 
 
 def test_task_control_contract_round_trips_into_ledger() -> None:
@@ -38,6 +38,7 @@ def test_task_control_contract_round_trips_into_ledger() -> None:
     assert ledger.verification_requirements == ["python held_out_verify.py"]
     assert ledger.verification_level == "behavioral"
     assert ledger.max_input_tokens == 12_000
+    assert ledger.counterexample_review_completed is False
 
 
 def test_strict_models_reject_unknown_fields() -> None:

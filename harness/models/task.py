@@ -56,7 +56,7 @@ class TaskRequest(StrictModel):
     @model_validator(mode="after")
     def ensure_acceptance_criteria(self) -> TaskRequest:
         if not self.acceptance_criteria and self.mode == "coding":
-            self.acceptance_criteria = ["The requested change is implemented and verified."]
+            self.acceptance_criteria = [self.goal]
         return self
 
 
@@ -114,6 +114,7 @@ class TaskLedger(StrictModel):
     files_read: list[str] = Field(default_factory=list)
     files_modified: list[str] = Field(default_factory=list)
     validations: list[ValidationResult] = Field(default_factory=list)
+    counterexample_review_completed: bool = False
 
     next_action: str | None = None
     iteration: int = Field(default=0, ge=0)

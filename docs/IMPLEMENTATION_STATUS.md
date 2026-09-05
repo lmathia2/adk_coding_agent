@@ -79,7 +79,9 @@ historical feature checklist or book-rubric score.
 - Atomic confined file mutations, replay receipts, command approvals, and
   local/Docker command execution.
 - Deterministic completion verification sharing the configured sandbox and
-  task-scoped approvals.
+  task-scoped approvals. Coding tasks preserve the full request as their default
+  criterion and receive one durable, task-agnostic counterexample pass before
+  verification after workspace changes or mutation-capable tool use.
 - Local task events, SQLite checkpoints/steering/metrics/run registry,
   SQLite or in-memory ADK sessions, and local or in-memory artifacts.
 - WebSocket/AG-UI transport, replay, steering, cancellation, and Pi-toolkit terminal.

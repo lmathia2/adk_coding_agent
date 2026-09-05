@@ -175,7 +175,9 @@ async def test_streamed_candidate_with_coding_obligations_stays_private(tmp_path
         {"acceptance_criteria": ["Behavior is tested"]} if mode == "criteria"
         else {"mode": "coding"} if mode == "coding" else {"mode": "auto"}
     )})
-    events, _, calls = await run_fixture(tmp_path, model, prompt, monkeypatch=monkeypatch)
+    events, _, calls = await run_fixture(
+        tmp_path, model, prompt, monkeypatch=monkeypatch, max_iterations=2
+    )
     assert calls
     assert "UNVERIFIED_COMPLETION_CLAIM" not in "".join(e.delta or "" for e in events if e.type == AgUiEventType.TEXT_MESSAGE_CONTENT)
 
@@ -289,12 +291,20 @@ async def test_answer_after_write_is_withheld_and_forces_verification(tmp_path, 
     model = ScriptedModel(model="fixture")
     model._responses = [[types.Part(function_call=types.FunctionCall(
         id="write1", name="write", args={"path": "hello.py", "content": "print('hello')\n"},
-    ))], reply("answer", "Unverified completion claim")]
-    events, workspace, calls = await run_fixture(tmp_path, model, "Create hello.py", monkeypatch=monkeypatch)
+    ))], reply("answer", "Unverified completion claim"), reply("done", "Reviewed")]
+    events, workspace, calls = await run_fixture(
+        tmp_path,
+        model,
+        "Create hello.py",
+        monkeypatch=monkeypatch,
+        max_iterations=2,
+    )
     assert (workspace / "hello.py").read_text() == "print('hello')\n"
+    assert model._calls == 3
+    assert "Try to falsify the current implementation once" in model._requests[-1]
     assert len(calls) == 1
     assert calls[0]["request"]["mode"] == "coding"
-    assert calls[0]["request"]["acceptance_criteria"]
+    assert calls[0]["request"]["acceptance_criteria"] == ["Create hello.py"]
     assert all(e.delta != "Unverified completion claim" for e in events)
     assert next(e.value for e in events if e.name == "coding.workflow.output")["status"] == "blocked"
 

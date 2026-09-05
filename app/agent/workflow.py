@@ -22,7 +22,7 @@ from harness.environment import RepositoryRuntime
 from harness.models.agent_step import AgentStep
 from harness.models.checkpoint import Checkpoint
 from harness.models.ledger import TaskLedger
-from harness.models.task import TaskRequest
+from harness.models.task import TaskPhase, TaskRequest
 from harness.notebook import materialize_notebook, reduce_notebook
 from harness.orchestration import (
     HarnessRoute,
@@ -1106,12 +1106,43 @@ async def _orchestrate_owned(
                 _ledger_patch(previous, ledger),
                 idempotency_key=f"steering-safe-point:{ledger.iteration}",
             )
-        route = decide_route(
-            ledger,
-            step,
-            pending_steering=pending_steering,
-            replan_after_no_progress=deps.progress_replan_threshold,
-            block_after_no_progress=deps.progress_human_threshold,
+        elif (
+            step.status in {"verify", "done"}
+            and (
+                ctx.state.get("verification_required_task") == task_id
+                or _workspace_fingerprint(deps, task_id) != current_fingerprint
+            )
+            and not ledger.counterexample_review_completed
+        ):
+            previous = ledger
+            ledger = TaskLedger.model_validate({
+                **ledger.model_dump(mode="python"),
+                "phase": "review",
+                "status": "active",
+                "counterexample_review_completed": True,
+                "next_action": (
+                    "Try to falsify the current implementation once before verification. "
+                    "Test omitted, default, boundary, and interacting inputs; fix confirmed "
+                    "defects, then request verification."
+                ),
+            })
+            deps.event_store.append(
+                task_id,
+                EventKind.LEDGER_PATCHED,
+                _ledger_patch(previous, ledger),
+                idempotency_key="counterexample-review",
+            )
+            step = step.model_copy(update={"message": ""})
+        route = (
+            HarnessRoute.CONTINUE
+            if ledger.phase == TaskPhase.REVIEW
+            else decide_route(
+                ledger,
+                step,
+                pending_steering=pending_steering,
+                replan_after_no_progress=deps.progress_replan_threshold,
+                block_after_no_progress=deps.progress_human_threshold,
+            )
         )
         if step.message and route == HarnessRoute.CONTINUE:
             _record_message(

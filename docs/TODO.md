@@ -91,6 +91,8 @@ See `docs/design/pi-terminal-migration.md` for delivery gates.
 - [x] Reduce fixed-graph configuration and optional orchestration layers without weakening verification or approvals.
 - [x] Remove ADK's model-authored compactor; derive bounded memory views from the append-only log.
 - [x] Give the ADK worker sole ownership of the coding loop and fail closed on non-terminal results.
+- [x] Add one durable counterexample pass before coding-task verification without
+  expanding the worker or tool topology.
 - [x] Verify retained paths and report source-line and McCabe-complexity changes.
 
 Each checked item is committed independently.
