@@ -62,6 +62,7 @@ def test_discovery_selects_syntax_targeted_tests_and_diff(tmp_path: Path) -> Non
     )
     plan = discover_validation_plan(manifest, ["auth.py"])
     assert [item.category for item in plan.commands] == ["syntax", "lint", "test", "diff"]
+    assert not next(item for item in plan.commands if item.category == "lint").required
     test = next(item for item in plan.commands if item.category == "test")
     assert test.targeted
     assert "test_auth.py" in test.command
@@ -84,6 +85,25 @@ def test_metadata_free_python_change_runs_adjacent_unittest(tmp_path: Path) -> N
         "python -m unittest discover -s . -p test_hello.py -v"
     )
     assert tests[0].minimum_test_count == 1
+
+
+def test_private_python_module_finds_publicly_named_test(tmp_path: Path) -> None:
+    (tmp_path / "src" / "pkg").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "src" / "pkg" / "_parser.py").write_text("", encoding="utf-8")
+    (tmp_path / "tests" / "test_parser.py").write_text("", encoding="utf-8")
+
+    plan = discover_validation_plan(
+        RepositoryManifest(
+            root=tmp_path,
+            commands=[BuildCommand("test", "pytest", "pyproject.toml")],
+        ),
+        ["src/pkg/_parser.py"],
+    )
+
+    assert next(command for command in plan.commands if command.category == "test").command == (
+        "pytest tests/test_parser.py"
+    )
 
 
 def test_metadata_free_unittest_must_execute_at_least_one_test(tmp_path: Path) -> None:
@@ -165,6 +185,33 @@ def test_failed_command_stops_ladder_and_recommends_fix(tmp_path: Path) -> None:
     assert len(results) == 1
     assert report.tests_failed == 1
     assert report.recommended_next_action
+
+
+def test_failed_advisory_check_does_not_skip_behavioral_verification(tmp_path: Path) -> None:
+    plan = ValidationPlan(
+        changed_paths=["solver.py"],
+        commands=[
+            ValidationCommand(
+                category="lint", command="missing-linter", source="fixture", required=False
+            ),
+            ValidationCommand(category="test", command="pytest", source="fixture"),
+        ],
+    )
+
+    report, results = run_validation_plan(
+        tmp_path,
+        plan,
+        acceptance_criteria=["Implementation works"],
+        executor=lambda command: CommandResult(
+            category=command.category,
+            command=command.command,
+            exit_code=1 if command.category == "lint" else 0,
+            stdout="1 passed" if command.category == "test" else "",
+        ),
+    )
+
+    assert report.passed
+    assert [result.category for result in results] == ["lint", "test"]
 
 
 def test_verifier_uses_explicit_managed_sandbox(

@@ -69,6 +69,7 @@ def test_harbor_runtime_keeps_files_commands_and_repository_in_task_environment(
     subprocess.run(("git", "init", "-q"), cwd=workspace, check=True)
     subprocess.run(("git", "config", "user.email", "test@example.com"), cwd=workspace, check=True)
     subprocess.run(("git", "config", "user.name", "Test"), cwd=workspace, check=True)
+    (workspace / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
     (workspace / "app.py").write_text("value = 1\n", encoding="utf-8")
     subprocess.run(("git", "add", "."), cwd=workspace, check=True)
     subprocess.run(("git", "commit", "-qm", "initial"), cwd=workspace, check=True)
@@ -91,6 +92,10 @@ def test_harbor_runtime_keeps_files_commands_and_repository_in_task_environment(
             max_output_bytes=64,
             known_secrets=("private-token",),
         )
+
+        (workspace / "__pycache__").mkdir()
+        (workspace / "__pycache__" / "app.pyc").write_bytes(b"cache")
+        assert await asyncio.to_thread(repository.changed_paths, None) == []
 
         assert await asyncio.to_thread(files.read_bytes, "app.py") == b"value = 1\n"
         mutation = await asyncio.to_thread(

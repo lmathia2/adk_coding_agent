@@ -299,8 +299,8 @@ class HarborRepositoryRuntime(RepositoryRuntime):
 
     def _snapshot(self) -> dict[str, str]:
         output = self._exec(
-            "LC_ALL=C find . -type f ! -path './.git/*' ! -path './.artifacts/*' "
-            "-exec sha256sum {} +"
+            "git ls-files --cached --others --exclude-standard -z "
+            "| xargs -0 -r sha256sum --"
         )
         snapshot: dict[str, str] = {}
         for line in output.splitlines():

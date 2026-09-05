@@ -28,13 +28,14 @@ def find_adjacent_tests(root: Path, changed_paths: Iterable[str]) -> list[str]:
         suffix = path.suffix.lower()
         stem = path.stem
         if suffix in {".py", ".pyi"} and not stem.startswith("test_"):
+            test_stem = stem.lstrip("_") or stem
             tests.extend(
                 _existing_candidates(
                     root,
                     (
-                        path.with_name(f"test_{stem}.py"),
-                        root / "tests" / path.parent.relative_to(root) / f"test_{stem}.py",
-                        root / "tests" / f"test_{stem}.py",
+                        path.with_name(f"test_{test_stem}.py"),
+                        root / "tests" / path.parent.relative_to(root) / f"test_{test_stem}.py",
+                        root / "tests" / f"test_{test_stem}.py",
                     ),
                 )
             )
@@ -86,6 +87,7 @@ def discover_validation_plan(
                     category=kind,
                     command=discovered.command,
                     source=discovered.source,
+                    required=False,
                 )
             )
 
