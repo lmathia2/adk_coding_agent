@@ -83,6 +83,29 @@ def test_provider_defaults_omit_reasoning_and_output_limit(tmp_path: Path) -> No
     assert not any("max_output_tokens=" in value for value in command)
 
 
+def test_provider_default_reasoning_keeps_explicit_output_limit() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--suite",
+            "smoke",
+            "--plan",
+            "--reasoning",
+            "provider-default",
+            "--max-output-tokens",
+            "32768",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    plan = json.loads(completed.stdout)
+    assert plan["reasoning"] is None
+    assert plan["max_output_tokens"] == 32_768
+
+
 def test_metadata_rejects_changed_fixed_intelligence(tmp_path: Path) -> None:
     runner = load_runner()
     path = tmp_path / "run-metadata.json"

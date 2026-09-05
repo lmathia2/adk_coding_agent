@@ -319,7 +319,11 @@ def main() -> int:
     parser.add_argument("--suite", choices=tuple(MANIFESTS), default="smoke")
     parser.add_argument("--provider", default="openrouter")
     parser.add_argument("--model", default="meta/muse-spark-1.2-contributor")
-    parser.add_argument("--reasoning", default="xhigh")
+    parser.add_argument(
+        "--reasoning",
+        default="xhigh",
+        help="reasoning effort, or provider-default to leave it unset",
+    )
     parser.add_argument("--config", default="harness/config/profiles/four-tool.yaml")
     parser.add_argument("--attempts", type=int)
     parser.add_argument("--retries", type=int, default=1)
@@ -344,8 +348,9 @@ def main() -> int:
         parser.error("--limit must be positive")
     if args.timeout_seconds is not None and args.timeout_seconds < 1:
         parser.error("--timeout-seconds must be positive")
-    if args.provider_defaults:
+    if args.provider_defaults or args.reasoning == "provider-default":
         args.reasoning = None
+    if args.provider_defaults:
         args.max_output_tokens = None
     if args.max_output_tokens is not None and not 256 <= args.max_output_tokens <= 131_072:
         parser.error("--max-output-tokens must be between 256 and 131072")
@@ -375,6 +380,7 @@ def main() -> int:
                     "attempts": attempts,
                     "retries": args.retries,
                     "timeout_seconds": args.timeout_seconds,
+                    "reasoning": args.reasoning,
                     "max_output_tokens": args.max_output_tokens,
                 }
             )
