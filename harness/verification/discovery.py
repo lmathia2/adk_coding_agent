@@ -11,15 +11,26 @@ from harness.repo.discovery import RepositoryManifest
 from .models import ValidationCommand, ValidationPlan
 
 
-def _existing_candidates(root: Path, candidates: Iterable[Path]) -> list[str]:
+def _existing_candidates(
+    root: Path,
+    candidates: Iterable[Path],
+    known_paths: frozenset[str] | None = None,
+) -> list[str]:
     found: list[str] = []
     for candidate in candidates:
-        if candidate.is_file():
-            found.append(candidate.relative_to(root).as_posix())
+        relative = candidate.relative_to(root).as_posix()
+        exists = candidate.is_file() if known_paths is None else relative in known_paths
+        if exists:
+            found.append(relative)
     return sorted(set(found))
 
 
-def find_adjacent_tests(root: Path, changed_paths: Iterable[str]) -> list[str]:
+def find_adjacent_tests(
+    root: Path,
+    changed_paths: Iterable[str],
+    *,
+    known_paths: frozenset[str] | None = None,
+) -> list[str]:
     """Infer likely tests using conservative naming conventions."""
 
     tests: list[str] = []
@@ -37,6 +48,7 @@ def find_adjacent_tests(root: Path, changed_paths: Iterable[str]) -> list[str]:
                         root / "tests" / path.parent.relative_to(root) / f"test_{test_stem}.py",
                         root / "tests" / f"test_{test_stem}.py",
                     ),
+                    known_paths,
                 )
             )
         elif suffix in {".ts", ".tsx", ".js", ".jsx"} and not any(
@@ -50,6 +62,7 @@ def find_adjacent_tests(root: Path, changed_paths: Iterable[str]) -> list[str]:
                         path.with_name(f"{stem}.spec{suffix}"),
                         path.parent / "__tests__" / f"{stem}.test{suffix}",
                     ),
+                    known_paths,
                 )
             )
     return sorted(set(tests))
@@ -77,7 +90,9 @@ def discover_validation_plan(
             )
         )
 
-    adjacent_tests = find_adjacent_tests(manifest.root, changed)
+    adjacent_tests = find_adjacent_tests(
+        manifest.root, changed, known_paths=manifest.file_paths
+    )
     command_by_kind = {item.kind: item for item in manifest.commands}
     for kind in ("lint", "typecheck"):
         discovered = command_by_kind.get(kind)

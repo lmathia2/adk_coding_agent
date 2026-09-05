@@ -61,6 +61,41 @@ class _Environment:
         shutil.copyfile(source_path, target_path)
 
 
+class _TimeoutEnvironment(_Environment):
+    async def exec(
+        self,
+        command: str,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+        timeout_sec: int | None = None,
+        user: str | int | None = None,
+    ) -> _Result:
+        raise RuntimeError(f"Command timed out after {timeout_sec} seconds")
+
+
+def test_harbor_sandbox_normalizes_pier_command_timeout(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        environment = _TimeoutEnvironment()
+        sandbox = HarborCommandSandbox(
+            environment,  # type: ignore[arg-type]
+            _AsyncBridge(asyncio.get_running_loop()),
+            tmp_path.as_posix(),
+            tmp_path / "artifacts",
+            max_output_bytes=1_000,
+            known_secrets=(),
+        )
+
+        result = await asyncio.to_thread(
+            sandbox.execute,
+            SandboxRequest(command="pytest", timeout_seconds=7),
+        )
+
+        assert result.status == "timeout"
+        assert result.exit_code == 124
+
+    asyncio.run(exercise())
+
+
 def test_harbor_runtime_keeps_files_commands_and_repository_in_task_environment(
     tmp_path: Path,
 ) -> None:

@@ -263,7 +263,9 @@ class HarborCommandSandbox(CommandSandbox):
                     *environment_secret_values(dict(request.environment)),
                 ),
             )
-        except TimeoutError:
+        except (TimeoutError, RuntimeError) as error:
+            if isinstance(error, RuntimeError) and "timed out" not in str(error).lower():
+                raise
             return bounded_result(
                 status="timeout",
                 exit_code=124,

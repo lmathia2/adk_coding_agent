@@ -72,6 +72,7 @@ class RepositoryManifest:
     instruction_files: list[Path] = field(default_factory=list)
     top_level: list[str] = field(default_factory=list)
     tracked_file_count: int = 0
+    file_paths: frozenset[str] | None = None
 
     def to_compact_text(self) -> str:
         """Render stable model-facing text without timestamps or random values."""
@@ -249,6 +250,7 @@ def repository_manifest_from_snapshot(
         commands=commands,
         top_level=top_level,
         tracked_file_count=len(names),
+        file_paths=frozenset(names),
     )
 
 
@@ -325,4 +327,5 @@ def build_repository_manifest(root: Path, cwd: Path | None = None) -> Repository
         instruction_files=discover_instruction_files(root, cwd),
         top_level=top_level,
         tracked_file_count=len(files),
+        file_paths=frozenset(path.relative_to(root).as_posix() for path in files),
     )

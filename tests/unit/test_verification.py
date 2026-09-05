@@ -88,15 +88,11 @@ def test_metadata_free_python_change_runs_adjacent_unittest(tmp_path: Path) -> N
 
 
 def test_private_python_module_finds_publicly_named_test(tmp_path: Path) -> None:
-    (tmp_path / "src" / "pkg").mkdir(parents=True)
-    (tmp_path / "tests").mkdir()
-    (tmp_path / "src" / "pkg" / "_parser.py").write_text("", encoding="utf-8")
-    (tmp_path / "tests" / "test_parser.py").write_text("", encoding="utf-8")
-
     plan = discover_validation_plan(
         RepositoryManifest(
-            root=tmp_path,
+            root=Path("/remote/repository"),
             commands=[BuildCommand("test", "pytest", "pyproject.toml")],
+            file_paths=frozenset({"src/pkg/_parser.py", "tests/test_parser.py"}),
         ),
         ["src/pkg/_parser.py"],
     )
