@@ -313,6 +313,26 @@ def test_plugin_covers_every_adk_callback_and_preserves_provider_objects(
     assert {span.correlation_id for span in spans} == {"inv-1"}
 
 
+def test_event_callback_omits_streaming_partials(tmp_path: Path) -> None:
+    plugin = HarnessTracePlugin(database=tmp_path / "trace.db", clock=_clock)
+
+    async def invoke() -> None:
+        await plugin.on_event_callback(
+            invocation_context=_context(),
+            event={"author": "worker", "partial": True, "content": "delta"},
+        )
+        await plugin.on_event_callback(
+            invocation_context=_context(),
+            event={"author": "worker", "partial": False, "content": "complete"},
+        )
+
+    asyncio.run(invoke())
+
+    spans = plugin.store.query("task-1", categories=["event"])
+    assert len(spans) == 1
+    assert spans[0].name == "worker"
+
+
 def test_error_callbacks_are_redacted_and_parented(tmp_path: Path) -> None:
     secret = "password-that-must-not-leak"
     plugin = HarnessTracePlugin(

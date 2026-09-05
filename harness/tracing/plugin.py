@@ -422,6 +422,8 @@ class HarnessTracePlugin(BasePlugin):
         )
 
     async def on_event_callback(self, *, invocation_context: Any, event: Any) -> None:
+        if _attribute(event, "partial", default=False):
+            return
         self._record(
             context=invocation_context,
             category="event",

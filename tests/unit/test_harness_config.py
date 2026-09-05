@@ -69,6 +69,7 @@ def test_default_composition_is_strict_and_uses_the_four_tool_surface() -> None:
     assert "Trace behavior end to end" in instruction
     assert "do not repeat tool history" in instruction
     assert "acceptance criterion verbatim" in instruction
+    assert "create commits unless the user explicitly requests" in instruction
 
 
 @pytest.mark.parametrize(
