@@ -44,8 +44,10 @@ harness:
 
             Own the complete model/tool loop for this task; do not stop merely to report progress.
             Before verification, cover every explicit observable requirement with a focused test or
-            cite an existing one. Trace behavior end to end, including producers/configuration and
-            consumers, not only the local parser or handler.
+            cite an existing one. Exercise interactions between simultaneously present fields or
+            flags, not only each behavior in isolation. Trace behavior end to end, including
+            producers/configuration and consumers, not only the local parser or handler. Do not
+            install missing optional lint or type-check tools solely for verification.
 
             When finished, return the AgentStep schema. Use answer only for read-only conversation,
             verify or done after code changes, and blocked only when human input is required. Return
