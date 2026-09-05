@@ -6,6 +6,35 @@
 >
 > Related: [current architecture](../architecture.md), [trace-native tenets](../design/trace-native-repl-agent.md), [implementation status](../IMPLEMENTATION_STATUS.md), [evaluation](../evaluation.md)
 
+## Brief: the problem, proposal, and contribution
+
+A long-running coding agent must remember what happened, recover the current task,
+and decide which evidence to inspect next. A larger transcript helps until it no
+longer fits; a summary fits but can omit the detail needed to verify a decision.
+Retaining every event solves storage, but does not by itself solve useful recall.
+Process recovery adds another question: which actions actually happened before the
+agent stopped? A remembered completion claim cannot answer that reliably.
+
+Skein proposes treating the construction of context as an explicit computation over
+retained evidence. For example, “count failed verification attempts before checkpoint
+C, grouped by command, and fetch the corresponding errors” becomes a parameterized
+Python function or SQL query. The function's result carries its scope, historical
+boundary, source references, and completeness. A later invocation can rerun that
+computation at C or request a new view at a later boundary. An optional model call
+can explain the result without becoming the authority for the count.
+
+This preserves both evidence and the method used to select it. A small working note
+explains the agent's current intent; context programs retrieve or compute missing
+details. The same evidence also supports deterministic task reconstruction and
+effect reconciliation. The desired outcome is lower rediscovery cost and more
+reliable continuation, measured through actual task execution.
+
+The broad ideas are established. Executable memory, tiered recall, temporal records,
+and programmatic context management all have precedents. The proposed contribution
+is a language-independent, bounded, provenance-bearing context-program contract
+integrated with a coding harness's recovery and verification boundary. Its usefulness
+and any research novelty remain hypotheses, not demonstrated results.
+
 ## Decision
 
 A context program is a versioned computation that constructs useful context from
@@ -27,7 +56,94 @@ recovery. Establish identity and checkpoint consistency before enabling recovery
 Compare deterministic handoffs with fresh-context reconstruction empirically.
 SQL, semantic retrieval, and summary caching are independently gated extensions.
 
-## Existing foundations and external lessons
+## Relationship to cognitive memory architectures
+
+Cognitive architectures provide a useful vocabulary for separating responsibilities.
+ACT-R distinguishes declarative facts from procedural productions and accesses
+modules through buffers. Soar combines working memory, procedural productions, and
+long-term semantic/episodic systems. This predates LLM memory and already separates
+stored knowledge from the mechanisms that retrieve and act on it.
+Sources: [ACT-R overview](https://act-r.psy.cmu.edu/about/),
+[Soar architecture](https://soar.eecs.umich.edu/soar_manual/02_TheSoarArchitecture/),
+[Soar memory overview](https://soar.eecs.umich.edu/home/About/).
+
+The following is an engineering analogy, not a claim that Skein implements those
+architectures or models human cognition. The categories do not require separate
+databases, agents, or services.
+
+| Memory function | Skein representation | Important distinction |
+| --- | --- | --- |
+| Working memory: what is available now | Bounded model packet, recent tail, selected note/context results | The live Python heap is additional computational workspace, not automatically model-visible context. |
+| Episodic memory: what happened | Ordered task/session events, attempts, receipts, source artifacts | A record is evidence of an observation or action, not proof that every recorded assertion is true. |
+| Semantic memory: what is believed or known | Typed facts and evidence-bound derived views, with correction/scope metadata | Semantic memory is a kind of knowledge; vector similarity is only one retrieval technique. |
+| Procedural memory: how to do or recall something | Reusable context programs and ordinary tested tool procedures | A query that constructs context is distinct from a skill that performs an external action. |
+| Future intentions and monitoring | Task ledger, unresolved work, steering, verification obligations | These describe pending commitments; they cannot be reconstructed safely from advisory notes alone. |
+| Consolidation and forgetting | Optional summary derivation, explicit invalidation/retention, context eviction | Dropping prompt content is different from deleting evidence or learning new facts. |
+
+A context program crosses these categories: it may retrieve an episode, aggregate
+facts, or construct working context. It is an access/computation abstraction rather
+than a proposed new category of memory. A stored program for reconstructing context
+is a form of procedural knowledge; its output may be episodic or semantic content.
+
+Skein adopts the separation of knowledge, working state, and control. It does not
+adopt cognitive activation/decay equations, production-rule conflict resolution,
+automatic chunking, or claims of biological plausibility. Those mechanisms would
+require their own workload and evaluation, not names borrowed from cognitive science.
+
+## Related implementations and limits of the comparison
+
+The papers and primary documentation below establish conceptual precedents. They
+are not a benchmark ranking. Reported results use different models, tasks, and
+success criteria; this ADR does not transfer their scores to Skein. A capability
+not discussed by a source is not evidence that the system lacks it.
+
+| System / line of work | Common or related mechanism | How this proposal differs in emphasis |
+| --- | --- | --- |
+| [MemGPT (2023)](https://arxiv.org/abs/2310.08560) | Agent-controlled movement between limited active context and external memory. | Formalize retrieved/computed views with temporal boundaries and provenance; tiered memory itself is established. |
+| [Generative Agents (2023)](https://arxiv.org/abs/2304.03442) | Retained observations, higher-level reflections, and retrieval for planning. | Notes/reflections remain advisory; the evaluation target is verified coding and recovery, not behavioral believability. |
+| [Voyager (2023)](https://voyager.minedojo.org/) | Reusable executable skills stored for later composition. | Store methods for constructing context as well as task procedures; executable procedural memory is not new. |
+| [RLMs (2025)](https://arxiv.org/abs/2512.24601) | Inspect and decompose externally held context programmatically. | Add durable cross-invocation program/evidence identities and coding-specific recovery contracts; Python context access is established. |
+| [Zep/Graphiti (2025)](https://arxiv.org/abs/2501.13956) | Temporal knowledge graphs combining conversational and structured evidence. | Use a common bounded computation contract without requiring a graph representation; temporal memory is prior art. |
+| [Letta Context Repositories (2026)](https://www.letta.com/blog/context-repositories/) | Git-versioned memory files, scripts for context management, progressive disclosure, and background consolidation. | Keep retained evidence authoritative and views rebuildable; no requirement for a consolidation agent or mutable system-prompt memory. |
+| [M★ (2026)](https://arxiv.org/abs/2604.11811) | Explicit Python memory programs covering schema, storage/read-write logic, and agent instructions, optimized through program evolution. | Closest precedent for memory-as-programs. Skein fixes safety/control contracts and starts with reviewed programs; automatic harness evolution is outside this proposal. |
+| [User as Code (2026)](https://arxiv.org/abs/2606.16707) | Append-only history checkpointed into typed Python state/functions, supporting executable queries and aggregation. | Closest precedent for log-plus-executable-memory. Skein focuses on bounded context construction and recovery of coding work rather than an executable user model. |
+
+The coding-agent source comparison reviewed Codex `986ff1cc7c`, Pi `853a80d26`,
+and OpenCode `8e0f1c253b`. Configuration and later releases can change behavior:
+
+| Implementation | Observed mechanism | Lesson for Skein |
+| --- | --- | --- |
+| [Pi](https://pi.dev/docs/latest/compaction) | Append-only session tree; structured summary and retained recent messages; branch summaries and extension hooks. | Preserve history and interaction boundaries; start with simple local storage. Model-facing exact retrieval is a separate design decision. |
+| [Posthorse](https://github.com/fitchmultz/pi-posthorse) | No-summary context rollover for its Pi fork, durable notes, and historical recovery. | Direct precedent for the fresh-window/notes/history experiment. Its retained-history exposure policy is not Skein's authorization/redaction contract. |
+| [Codex reset](https://github.com/openai/codex/blob/986ff1cc7c/codex-rs/core/src/compact_token_budget.rs) and [history/notes](https://github.com/openai/codex/blob/986ff1cc7c/codex-rs/ext/history-notes/src/tools.rs) | Conventional compaction plus model/configuration-gated fresh-window reset and history/notes access. Separate [memory extraction/consolidation](https://github.com/openai/codex/blob/986ff1cc7c/codex-rs/memories/README.md) supports later recall. | Separate window recovery from cross-session learning. Do not assume every client/model enables the same path or that backend history is immediately consistent. |
+| [OpenCode V2](https://opencode.ai/v2/docs/compaction) | Durable messages outlive active context; a generated checkpoint combines summary and serialized recent tail; instruction epochs are explicit. V1 has different pruning/tail behavior. | Make context boundaries durable and historical material distinct from current instructions. A conversational checkpoint is not a workspace/effect restore point. |
+
+### What is established, what is proposed, and what could be novel
+
+**Established mechanisms:** external memory, programmatic retrieval, executable
+skills/memory, versioned files, database views, event replay, temporal queries,
+summary-plus-tail compaction, and fresh-window recovery with notes. Neither the
+term “context program” nor language independence establishes research novelty.
+
+**Proposed Skein synthesis:** one explicit contract for authorized evidence selection,
+computation, bounded model exposure, and reproducible context reconstruction; combined
+with receipts and checkpoints that keep execution authority in deterministic code.
+Its distinguishing engineering emphasis is the boundary between what the model
+remembers, what the evidence supports, and what the harness may safely resume.
+
+**Potential contribution to establish empirically:** preserving and reusing the
+computation that constructs context may improve temporal/aggregate correctness,
+reduce rediscovery, and make post-reset behavior more reproducible than summary-only
+or ad hoc retrieval. No claim of first invention or proven superiority is made.
+A targeted literature review cannot establish uniqueness of this combination.
+
+The decisive comparison is not just memory on versus off. It is ad hoc programmatic
+retrieval versus persisted, versioned program reuse over identical evidence with
+the same model, permissions, and budgets. If reuse provides no benefit, keep ordinary
+tested functions and provenance, and do not build a richer lifecycle or claim that
+program persistence is the source of improved quality.
+
+## Existing Skein foundations and delivery boundary
 
 This is an integration plan, not a greenfield memory system. Skein already has:
 
@@ -47,20 +163,9 @@ The current checkpoint writer uses an iteration label as `invocation_id`; recove
 must persist the real ADK invocation ID. Existing infrastructure is not proof of
 safe process recovery or improved model performance.
 
-The comparison reviewed Codex `986ff1cc7c`, Pi `853a80d26`, and OpenCode `8e0f1c253b`:
-
-- Pi demonstrates append-only history plus a summary and recent tail.
-- Codex has conventional compaction and a model/configuration-gated token-budget
-  path that starts a fresh window without generating a summary, with history and
-  notes support. Its separate cross-session pipeline extracts/consolidates previous
-  work. These are different mechanisms, not universal defaults.
-- OpenCode distinguishes durable messages from active context; V2 combines a
-  summary with a serialized tail and makes instruction epochs explicit. V1 pruning
-  behavior should not be conflated with V2.
-
-These implementations motivate experiments, not assumptions about Skein quality.
-Retaining history is insufficient without a bounded recovery entry point and access
-to missing evidence.
+The first release adds bounded recall and notes to these foundations. Later phases
+test context reset, safe process recovery, and cross-session continuity. Cognitive
+categories and related-work comparisons do not imply additional services or stores.
 
 ## Authority and fixed invariants
 
@@ -205,6 +310,7 @@ memory:
     max_result_bytes: 16000
     max_scan_events: 10000
     timeout_seconds: 2
+    reuse: false                 # proposed, stage 5 experiment: reviewed program library
   working_notes: false           # proposed, stage 2
   summary_cache: false           # proposed, optional extension
 context:
@@ -230,6 +336,8 @@ Validate before starting a worker:
 - Safe-auto requires persistent sessions/artifacts and the completed recovery
   implementation; it never enables unknown-effect replay.
 - Conversation continuity requires PTC and owned conversation binding.
+- Program reuse requires active programs; expose only reviewed, version-pinned
+  functions from a finite allowlist. It cannot load arbitrary notebook code.
 - Lance retains existing DuckDB/provider prerequisites. Storage selection does not
   imply SQL execution or promote a program.
 - Budgets must be positive and within fixed code-owned ceilings.
@@ -247,6 +355,16 @@ experiment. Stage 4 delivers recovery after its identity/checkpoint prerequisite
 it does not depend on fresh context winning. Stage 5 extends continuity and scope.
 Each stage includes focused implementation/tests, execution evidence, and a report.
 Proposed checks and profiles below are deliverables, not claims they already exist.
+
+| Phase | Smallest useful delivery | Question answered by execution |
+| --- | --- | --- |
+| 0 | Frozen fixtures, requests, and baseline | Can we reproduce and independently grade long-running work? |
+| 1 | Bounded Python retrieval and aggregate views | Can the agent recover exact evidence omitted from active context? |
+| 2 | Durable notes and handoff | Does explicit working state reduce rediscovery without making stale notes authoritative? |
+| 3 | Fresh-window alternative | Can notes and retrieval replace the old tail at lower cost without losing constraints? |
+| 4 | Validated checkpoints and effect-aware resume | Does process death lead to safe continuation or a correctly diagnosed blocker? |
+| 5 | Explicit history scope, notebook continuity, reusable programs | Do previous experience and reusable retrieval procedures help subsequent work? |
+| Optional | SQL, semantic retrieval, summary caching | Does each added mechanism improve its specific workload enough to justify its cost? |
 
 ### Stage 0 — freeze baseline and execution fixtures
 
@@ -426,6 +544,26 @@ rediscovery, correct reuse, stale-fact errors, and verified task outcomes.
 Gate: access/lifecycle checks and common empirical criteria pass. Automatic global
 memory consolidation/project-memory injection is not introduced.
 
+After those continuity checks, test program reuse as an independent treatment:
+
+1. Record context computations authored during training/development tasks. Review
+   and test a small reusable subset as ordinary Python functions, with fixed versions,
+   typed inputs, and no embedded answers. No learned program is admitted from held-out
+   test data. Include preparation/review cost in the reuse-cost report.
+2. Add `context_programs.reuse` to make that finite library available; primitive
+   history/read/filter capabilities remain identical in both treatments. Where PTC
+   is used, both arms use PTC so tool-surface changes do not explain the result.
+3. Run repeated and shifted tasks with reuse off/on, matching initial evidence,
+   context policy, and budgets. Use changed dates, commands, repositories, and source
+   scopes to detect hardcoded assumptions. Pin versions during a trial.
+4. Measure program validity, semantic correctness, calls saved, total cost including
+   construction, cross-task reuse, and results after restart/schema incompatibility.
+   Reject incompatible versions explicitly; do not execute stale code silently.
+
+This isolates the procedural-memory hypothesis from simple evidence retention.
+If reuse fails to help, leave it off and retain ad hoc composition; do not add a
+general registry or automated program evolution to rescue the claim.
+
 Limitation: no portable workspace restore or distributed execution.
 
 ### Independently gated extensions
@@ -458,9 +596,27 @@ Do not execute a Cartesian product of all switches.
 | A | Safe-auto recovery | N with explicit recovery and identical crash schedule |
 | P | PTC enabled | Winning four-tool profile, separate surface experiment |
 | PC | Conversation PTC continuity | P with run continuity |
+| U | Reviewed context-program reuse enabled | Same active-retrieval/PTC profile with reuse off |
 
 Keep SQL/Python, lexical/semantic, and cached/uncached summaries as separate pairs.
 Compare JSONL/DuckDB mechanically when model-visible context is identical.
+
+### Hypotheses and comparisons tied to prior work
+
+| Hypothesis | Closest precedent | Controlled comparison and falsification |
+| --- | --- | --- |
+| External evidence improves recall after compaction | MemGPT, Pi, Codex, Posthorse | R versus B1; if evidence recovery/task success does not improve at acceptable cost, do not claim value from active retrieval. |
+| Working notes improve continuation | Cognitive working-state separation, Posthorse/Codex, Letta | N versus R; measure wrong-note resistance as well as reduced rediscovery. Reject if notes amplify stale beliefs. |
+| Fresh windows can replace retained tails | Codex/Posthorse versus Pi/OpenCode-style retention | F versus N; rejection means handoff-tail remains the default, not that persistent memory failed. |
+| Computation handles temporal/full-set questions better than selected snippets | User as Code, Zep temporal modeling | Full-set deterministic views versus bounded snippet retrieval over the same ledger; grade exact counts, knowledge boundaries, and completeness. Both arms retain access controls. |
+| Reusable context procedures improve repeated work | M★, RLM programmatic access, executable skill libraries | U versus reuse-off with identical primitives; improvement must exceed construction/selection cost and generalize to held-out parameters. |
+| Evidence-bound checkpoints improve recovery | Event replay and existing ADK/Skein execution mechanisms | Safe-auto versus explicit continuation with identical fault schedules; no safety checks are disabled. |
+
+These are mechanism ablations inside Skein. A handoff-tail baseline is not a full
+Pi/OpenCode reproduction, and ad hoc Python is not an implementation of RLM or M★.
+Any later native-harness benchmark must freeze each harness/model/config separately
+and report protocol, scope, and verifier differences. Do not label internal ablations
+as head-to-head wins against those systems.
 
 ### Cases, measurements, and promotion
 
@@ -551,7 +707,8 @@ behavior changes and their empirical reports.
 7. Checkpoint publication/reconciliation and crash tests.
 8. Safe-auto recovery and interrupted live evaluation.
 9. Prior-run/explicit-session retrieval, then optional conversation PTC continuity.
-10. Only justified SQL, semantic, or summary extensions, independently tested.
+10. Optional reviewed-program reuse and its held-out reuse-versus-ad-hoc evaluation.
+11. Only justified SQL, semantic, or summary extensions, independently tested.
 
 Stop after slices 1–4 for the first context-memory release. Finish slices 6–8 for
 safe local process recovery whether or not fresh context wins. Keep defaults until
