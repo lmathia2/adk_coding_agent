@@ -101,3 +101,6 @@ def test_provider_terminal_schema_requires_every_property() -> None:
         "criterion",
         "evidence",
     ]
+    result = StructuredAgentStep.model_validate({"status": "done"})
+    assert result.next_action is None
+    assert result.progress == []
